@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
-import { setAction } from "../../redux/bomSlice";
+import { setAction } from "../redux/bomSlice";
 
 const CreateBOM = () => {
     const navigate = useNavigate();
@@ -37,6 +37,7 @@ const CreateBOM = () => {
 
                 <div
                     style={styles.optionCard}
+                    onClick={() => navigate("/select-existing-bom")}
                     onMouseEnter={(e) =>
                         (e.currentTarget.style.backgroundColor = "#e5e7eb")
                     }
