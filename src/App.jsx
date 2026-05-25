@@ -9,6 +9,8 @@ import ResourceComponentInfo from './createBom/startFromScratch/ResourceComponen
 import CreateBOM from './createBom/CreateBOM';
 import SelectExistingBOM from './createBom/startFromExisting/SelectExistingBOM';
 import ModifyExistingBOM from './createBom/startFromExisting/ModifyExistingBOM';
+import EngineeringChangeLog from './EngineeringChange/Engineeringlog';
+import DownloadBOM from './DownloadBom/DownloadBomData';
 
 function App() {
 
@@ -17,7 +19,10 @@ function App() {
       <Routes>
         {/* Home */}
         <Route path="/" element={<Dashboard />} />
-
+        {/* Engineering-change log */}
+        <Route path="/change-log" element={<EngineeringChangeLog />} />
+         {/* Download BOM */}
+        <Route path="/download-bom" element={<DownloadBOM />} />
         {/* CreateBOM */}
         <Route path="/create-bom" element={<CreateBOM />} />
 
