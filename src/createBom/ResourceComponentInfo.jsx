@@ -19,7 +19,7 @@ import {
   selectLocationsError,
   selectHasInactiveSelected,
   selectHasInactiveLocationsSelected,
-} from "../../redux/bomSlice";
+} from "../redux/bomSlice";
 
 const ResourceComponentInfo = () => {
   const navigate = useNavigate();

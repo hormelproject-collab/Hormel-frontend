@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
-import { setAction } from "../../redux/bomSlice";
+import { setAction } from "../redux/bomSlice";
 
 const CreateBOM = () => {
     const navigate = useNavigate();

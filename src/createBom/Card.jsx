@@ -1,5 +1,5 @@
 import { useDispatch } from "react-redux";
-import { setAction } from "../../redux/bomSlice";
+import { setAction } from "../redux/bomSlice";
 
 
 const Card = ({ title, color, Icon, onClick }) => {

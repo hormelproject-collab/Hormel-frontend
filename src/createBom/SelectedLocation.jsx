@@ -11,7 +11,7 @@ import {
   selectHasInactiveLocationsSelected,
   selectLocationsLoading,
   selectLocationsError,
-} from "../../redux/bomSlice";
+} from "../redux/bomSlice";
 
 const SelectedLocation = () => {
   const navigate = useNavigate();
