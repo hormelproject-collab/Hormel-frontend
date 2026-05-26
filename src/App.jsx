@@ -11,6 +11,7 @@ import EngineeringChangeLog from './EngineeringChange/Engineeringlog';
 import DownloadBOM from './DownloadBom/DownloadBomData';
 
 
+
 function App() {
 
   return (
@@ -28,7 +29,7 @@ function App() {
         <Route path="/produced-items" element={<ProducedItems />} />  {/* step 1 */}
         <Route path="/select-location" element={<SelectedLocation />} />{/* step 2 */}
         <Route path="/resource-component" element={<ResourceComponentInfo />} /> {/* step 3 */}
-
+        
       </Routes>
     </BrowserRouter>
   );

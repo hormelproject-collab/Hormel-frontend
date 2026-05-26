@@ -52,7 +52,7 @@ export default function EngineeringChangeLog() {
         setError("");
 
         // keep your existing call
-        const res = await fetch("http://localhost:8080/api/engineering-changes");
+        const res = await fetch("http://localhost:3000/api/engineering-changes");
         const data = await res.json();
         setRawData(data.items || []);
       } catch (e) {
