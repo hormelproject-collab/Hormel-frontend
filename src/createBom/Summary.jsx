@@ -1,10 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import StepHeader from "../components/progresscircle";
 import ResponseModal from "./ResponseModal";
-import { postbomtable } from "../Services/Apirequest";
-import { useScreen } from "../customhooks/useDevice";
+import { useScreen } from "../styles/useDevice";
 import { layout, typography, cards, tables, buttons, tokens } from "../styles/layout";
+import axios from "axios";
 
 export default function SummaryPage() {
   const screen = useScreen();
@@ -42,6 +41,76 @@ export default function SummaryPage() {
     ];
   }, [producedItems]);
 
+  const postbomtable = async () => {
+  // ✅ Correct UI-driven mock request (array of 1 record)
+  const mockRequest = [
+    {
+      bomId: "BOM1_Item001_Location 8",
+
+      // ✅ Recommended metadata (UI usually provides; CSV can generate)
+      engineeringChange: {
+        ecNumber: "EC747159",
+        creationDate: "2026-05-15",
+      },
+
+      producedItem: {
+        item: "Item001",
+        description: "",
+        status: "Active",
+        releaseFlag: "",
+      },
+
+      locations: [
+        {
+          locationId: "",
+          locationName: "Location 8",
+          locationStatus: "Active",
+
+          resourceInfo: {
+            resource: "Resource1",
+            resourceRelevancy: "MPS",
+            bomVersion: "PRIMARY",
+            routingId: "ROUTING_Item001_Location 8_Resource1",
+            priority: 10,
+            // ✅ Co-product association must be 1 only when coProducts exist
+            coProductAssociation: 1,
+          },
+
+          componentItems: [
+            {
+              componentItem: "Item1289",
+              description: "",
+              standardUsage: 1.1378, // ✅ Quantity Consumed Per > 0
+            },
+          ],
+
+          // ✅ Co-products must use qtyProducedPer (NOT standardUsage)
+          // ✅ For coProductAssociation=1, at least one coProduct qtyProducedPer should be < 1
+          coProducts: [
+            {
+              coProductItem: "Item2000",
+              description: "",
+              qtyProducedPer: 0.25,
+            },
+          ],
+
+          // ✅ If coProducts exist, isCoProduct should be true
+          flags: {
+            isCoProduct: true,
+            noComponentItems: false,
+            replicateForAllLocations: false,
+          },
+        },
+      ],
+    },
+  ];
+  
+  const response = await axios.post("http://localhost:3000/bom-explosion", mockRequest);
+
+  // ✅ Axios automatically parses JSON
+  return response.data;
+};
+
   const submitBOMs = async () => {
     setSubmitting(true);
     try {
@@ -63,9 +132,6 @@ export default function SummaryPage() {
           <h1 style={typography.pageTitle(screen)}>Create New BOM - Start from Scratch</h1>
           <div style={typography.subtitle(screen)}>Multi-location BOM creation wizard</div>
 
-          <div style={{ marginTop: 14 }}>
-            <StepHeader activeStep={4}/>
-          </div>
 
           <div style={{ ...cards.container, marginTop: 16 }}>
             <div style={cards.header(screen)}>

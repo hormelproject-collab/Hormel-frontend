@@ -11,12 +11,8 @@ import SelectExistingBOM from './createBom/startFromExisting/SelectExistingBOM';
 import ModifyExistingBOM from './createBom/startFromExisting/ModifyExistingBOM';
 import EngineeringChangeLog from './EngineeringChange/Engineeringlog';
 import DownloadBOM from './DownloadBom/DownloadBomData';
+import SummaryPage from './createBom/Summary';
 
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 63f5edceb7647f4a13e796af529c07370f80e783
 function App() {
 
   return (
@@ -35,16 +31,13 @@ function App() {
         <Route path="/produced-items" element={<ProducedItems />} />  {/* step 1 */}
         <Route path="/select-location" element={<SelectedLocation />} />{/* step 2 */}
         <Route path="/resource-component" element={<ResourceComponentInfo />} /> {/* step 3 */}
-<<<<<<< HEAD
-        
-=======
+         <Route path="/summary" element={<SummaryPage />} /> {/* step 4 */}
 
         {/* Start from Existing BOM*/}
         <Route path="/select-existing-bom" element={<SelectExistingBOM />} /> {/* step 1 */}
         <Route path="/modify-existing-bom/:id" element={<ModifyExistingBOM />} /> {/* step 2 */}
 
 
->>>>>>> 63f5edceb7647f4a13e796af529c07370f80e783
       </Routes>
     </BrowserRouter>
   );

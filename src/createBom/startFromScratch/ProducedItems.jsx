@@ -10,7 +10,7 @@ import {
   selectHasInactiveSelected,
   selectItemsLoading,
   selectItemsError,
-} from "../redux/bomSlice";
+} from "../../redux/bomSlice";
 
 // small helper for responsive inline styling (you said you want breakpoints)
 const useWindowWidth = () => {
