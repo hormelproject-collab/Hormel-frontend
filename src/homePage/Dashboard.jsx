@@ -1,4 +1,4 @@
-import Card from "../createBom/Card";
+import Card from "../createBom/startFromScratch/Card";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 

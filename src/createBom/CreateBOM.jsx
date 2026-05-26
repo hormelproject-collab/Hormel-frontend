@@ -37,6 +37,7 @@ const CreateBOM = () => {
 
                 <div
                     style={styles.optionCard}
+                    onClick={() => navigate("/select-existing-bom")}
                     onMouseEnter={(e) =>
                         (e.currentTarget.style.backgroundColor = "#e5e7eb")
                     }
