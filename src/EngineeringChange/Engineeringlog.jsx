@@ -1,30 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const DATE_RANGES = { 1: 1, 7: 7, 30: 30 };
-
-function daysAgo(dateStr) {
-  const today = new Date();
-  const d = new Date(dateStr);
-  return Math.floor((today - d) / (1000 * 60 * 60 * 24));
-}
-
-function changeTypePill(type) {
-  const base = {
-    padding: "6px 14px",
-    borderRadius: 999,
-    fontWeight: 600,
-    fontSize: 14,
-    display: "inline-block"
-  };
-
-  if (type === "Added") return { ...base, background: "#DCFCE7", color: "#166534" };
-  if (type === "Modified") return { ...base, background: "#FEF3C7", color: "#92400E" };
-  if (type === "Deleted") return { ...base, background: "#FEE2E2", color: "#991B1B" };
-
-  return base;
-}
-
 export default function EngineeringChangeLog() {
   const navigate = useNavigate();
 
@@ -32,18 +8,16 @@ export default function EngineeringChangeLog() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // NEW: show small loader for the clicked row
-  const [rowLoadingId, setRowLoadingId] = useState("");
-
-  const [timeRange, setTimeRange] = useState(30);
   const [userFilter, setUserFilter] = useState("ALL");
   const [showMineOnly, setShowMineOnly] = useState(false);
 
-  const [searchBomId, setSearchBomId] = useState("");
-  const [searchLocation, setSearchLocation] = useState("");
-  const [searchProducedItem, setSearchProducedItem] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
-  const currentUser = localStorage.getItem("userName") || "John Smith";
+  const [criteria1, setCriteria1] = useState("None");
+  const [criteria2, setCriteria2] = useState("None");
+
+  const [searchValues, setSearchValues] = useState({});
 
   useEffect(() => {
     async function load() {
@@ -51,197 +25,476 @@ export default function EngineeringChangeLog() {
         setLoading(true);
         setError("");
 
-        // keep your existing call
-        const res = await fetch("http://localhost:3000/api/engineering-changes");
+        const payload = {
+          fromDate,
+          toDate,
+          userFilter,
+          showMineOnly,
+          criteria1,
+          criteria2,
+          search: {
+            criteria1Value: searchValues[criteria1] || "",
+            criteria2Value: searchValues[criteria2] || ""
+          }
+        };
+
+        const res = await fetch("http://localhost:3000/api/engineering-change-log", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch engineering change log");
+        }
+
         const data = await res.json();
         setRawData(data.items || []);
       } catch (e) {
+        console.error("Engineering change log load error:", e);
         setError("Failed to load data");
       } finally {
         setLoading(false);
       }
     }
+
     load();
-  }, []);
+  }, [fromDate, toDate, userFilter, showMineOnly, criteria1, criteria2, searchValues]);
 
-  const users = useMemo(
-    () => ["ALL", ...new Set(rawData.map(r => r.changedBy))],
-    [rawData]
-  );
+  const users = useMemo(() => {
+    return ["ALL", ...new Set(rawData.map((r) => r.changedBy).filter(Boolean))];
+  }, [rawData]);
 
-  const filteredData = useMemo(() => {
-    return rawData.filter(r => {
-      if (daysAgo(r.changeDate) > DATE_RANGES[timeRange]) return false;
-      if (userFilter !== "ALL" && r.changedBy !== userFilter) return false;
-      if (showMineOnly && r.changedBy !== currentUser) return false;
-      if (searchBomId && !r.bomId.toLowerCase().includes(searchBomId.toLowerCase())) return false;
-      if (searchLocation && !String(r.locationId).includes(searchLocation)) return false;
-      if (searchProducedItem && !r.producedItem.toLowerCase().includes(searchProducedItem.toLowerCase())) return false;
-      return true;
+  const criteriaOptions = [
+    "None",
+    "Location",
+    "BOM ID",
+    "Resource",
+    "Produced Item",
+    "Component Item",
+    "Co-Product Item"
+  ];
+
+  const getPlaceholder = (criteria) => {
+    if (criteria === "None") return "";
+    return `Search ${criteria}`;
+  };
+
+  const handleRowClick = (engineeringChangeId) => {
+    navigate("/change-log-details", {
+      state: { engineeringChangeId }
     });
-  }, [
-    rawData,
-    timeRange,
-    userFilter,
-    showMineOnly,
-    searchBomId,
-    searchLocation,
-    searchProducedItem,
-    currentUser
-  ]);
+  };
 
-  // ✅ NEW: click handler -> call detail API -> navigate to details screen
-  async function onRowClick(engineeringChangeId) {
-    navigate("/engineering-changes-Detail", { state: { engineeringChangeId: engineeringChangeId } });
-  }
+  const changeTypePill = (type) => {
+    const base = {
+      display: "inline-block",
+      padding: "4px 10px",
+      borderRadius: 999,
+      fontSize: 12,
+      fontWeight: 600,
+      color: "#fff",
+      lineHeight: 1.2
+    };
+
+    if (type === "Added") return { ...base, background: "#2e7d32" };
+    if (type === "Modified") return { ...base, background: "#f97316" };
+    if (type === "Deleted") return { ...base, background: "#dc2626" };
+
+    return { ...base, background: "#6b7280" };
+  };
+
+  const renderMultiLineValue = (value) => {
+    if (!value) return "-";
+
+    return String(value)
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item, index) => (
+        <div key={index} style={{ lineHeight: 1.35 }}>
+          {item}
+        </div>
+      ));
+  };
+
+  const renderDate = (dateValue) => {
+    if (!dateValue) return "-";
+
+    const parts = String(dateValue).split("-");
+    if (parts.length !== 3) return dateValue;
+
+    return (
+      <>
+        {parts[0]}-{parts[1]}-
+        <br />
+        {parts[2]}
+      </>
+    );
+  };
 
   return (
-    <div style={{ padding: 32, background: "#fff" }}>
-      <h1 style={{ fontSize: 40, marginBottom: 4 }}>Engineering Change Log</h1>
-      <p style={{ color: "#6B7280", fontSize: 18 }}>
-        View and track all BOM changes made by users
-      </p>
-      <hr style={{ margin: "24px 0", borderColor: "#E5E7EB" }} />
+    <div style={page}>
+      {/* BACK */}
+      <div onClick={() => navigate(-1)} style={backLink}>
+        ← BACK TO MAIN MENU
+      </div>
 
-      {/* Filters Card */}
-      <div style={{
-        border: "1px solid #E5E7EB",
-        borderRadius: 16,
-        padding: 24,
-        boxShadow: "0 2px 6px rgba(0,0,0,0.06)"
-      }}>
-        {/* Row 1 */}
-        <div style={{ display: "flex", gap: 24, alignItems: "flex-end" }}>
+      {/* TITLE */}
+      <h1 style={title}>Engineering Change Summary</h1>
+
+      {/* FILTER CARD */}
+      <div style={filterCard}>
+        <div style={filterHeading}>Filters & Search</div>
+
+        {/* TOP FILTER ROW */}
+        <div style={topGrid}>
+          {/* FROM DATE */}
           <div>
-            <label>Time Range</label>
-            <select
-              value={timeRange}
-              onChange={e => setTimeRange(+e.target.value)}
-              style={{ display: "block", width: 240 }}
-            >
-              <option value={30}>Last 30 Days</option>
-              <option value={7}>Last 7 Days</option>
-              <option value={1}>Last 1 Day</option>
-            </select>
+            <div style={label}>From Date</div>
+            <input
+              type="date"
+              style={input}
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+            />
           </div>
 
+          {/* TO DATE */}
           <div>
-            <label>User</label>
+            <div style={label}>To Date</div>
+            <input
+              type="date"
+              style={input}
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+            />
+          </div>
+
+          {/* USER FILTER */}
+          <div>
+            <div style={label}>User Filter</div>
             <select
+              style={input}
               value={userFilter}
-              onChange={e => setUserFilter(e.target.value)}
-              style={{ display: "block", width: 240 }}
+              onChange={(e) => setUserFilter(e.target.value)}
             >
-              {users.map(u => (
-                <option key={u}>{u === "ALL" ? "All Users" : u}</option>
+              <option value="ALL">User Filter</option>
+              {users.map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
               ))}
             </select>
           </div>
 
-          <label style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          {/* CHECKBOX */}
+          <div style={checkboxWrap}>
             <input
               type="checkbox"
               checked={showMineOnly}
-              onChange={e => setShowMineOnly(e.target.checked)}
+              onChange={(e) => setShowMineOnly(e.target.checked)}
             />
-            Show My Changes Only
-          </label>
-
-          <button
-            style={{
-              marginLeft: "auto",
-              padding: "12px 20px",
-              borderRadius: 12,
-              background: "#F3F4F6",
-              border: "none",
-              fontWeight: 600
-            }}
-          >
-            ⬇ Export Changes
-          </button>
+            <span style={checkboxText}>Show My Changes Only</span>
+          </div>
         </div>
 
-        {/* Row 2 */}
-        <div style={{ display: "flex", gap: 24, marginTop: 20 }}>
-          <input
-            placeholder="Search BOM ID"
-            value={searchBomId}
-            onChange={e => setSearchBomId(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <input
-            placeholder="Search Location"
-            value={searchLocation}
-            onChange={e => setSearchLocation(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <input
-            placeholder="Search Produced Item"
-            value={searchProducedItem}
-            onChange={e => setSearchProducedItem(e.target.value)}
-            style={{ flex: 1 }}
-          />
+        {/* CRITERIA 1 */}
+        <div style={criteriaGrid}>
+          <div>
+            <div style={label}>Search By (Criteria 1)</div>
+            <select
+              style={input}
+              value={criteria1}
+              onChange={(e) => setCriteria1(e.target.value)}
+            >
+              {criteriaOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div style={label}>&nbsp;</div>
+            {criteria1 !== "None" ? (
+              <input
+                style={input}
+                placeholder={getPlaceholder(criteria1)}
+                value={searchValues[criteria1] || ""}
+                onChange={(e) =>
+                  setSearchValues((prev) => ({
+                    ...prev,
+                    [criteria1]: e.target.value
+                  }))
+                }
+              />
+            ) : (
+              <div style={emptyCriteriaSpace} />
+            )}
+          </div>
+        </div>
+
+        {/* CRITERIA 2 */}
+        <div style={criteriaGridSecond}>
+          <div>
+            <div style={label}>Search By (Criteria 2)</div>
+            <select
+              style={input}
+              value={criteria2}
+              onChange={(e) => setCriteria2(e.target.value)}
+            >
+              {criteriaOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div style={label}>&nbsp;</div>
+            {criteria2 !== "None" ? (
+              <input
+                style={input}
+                placeholder={getPlaceholder(criteria2)}
+                value={searchValues[criteria2] || ""}
+                onChange={(e) =>
+                  setSearchValues((prev) => ({
+                    ...prev,
+                    [criteria2]: e.target.value
+                  }))
+                }
+              />
+            ) : (
+              <div style={emptyCriteriaSpace} />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Table */}
-      {loading && <p>Loading…</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {/* EXPORT ROW */}
+      <div style={exportRow}>
+        <div style={exportText}>
+          Export generates a detailed Excel file with 5 tabs: High-Level Summary,
+          Main BOM Details, Component Details, Co-Product Details, and Modified Field Comparison
+        </div>
 
-      <table width="100%" style={{ marginTop: 24, borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: "1px solid #E5E7EB" }}>
-            {[
-              "ENGINEERING CHANGE #",
-              "CHANGE DATE",
-              "CHANGE TYPE",
-              "LOCATION",
-              "BOM ID",
-              "USER",
-              "CHANGE SUMMARY"
-            ].map(h => (
-              <th
-                key={h}
-                style={{ textAlign: "left", padding: 16, fontSize: 13, letterSpacing: 1 }}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
+        <button style={exportButton}>
+          ⬇ EXPORT FILTERED CHANGE LOG
+        </button>
+      </div>
 
-        <tbody>
-          {filteredData.map(r => {
-            const isRowLoading = rowLoadingId === r.engineeringChangeId;
+      {/* TABLE */}
+      {loading && <p style={{ marginTop: 16 }}>Loading...</p>}
+      {error && <p style={{ color: "red", marginTop: 16 }}>{error}</p>}
 
-            return (
+      <div style={tableWrapper}>
+        <table style={table}>
+          <thead style={thead}>
+            <tr>
+              <th style={th}>Engineering Change #</th>
+              <th style={th}>Change Date</th>
+              <th style={th}>Change Type</th>
+              <th style={th}>Location(s)</th>
+              <th style={th}>BOM ID(s)</th>
+              <th style={th}>Resource(s)</th>
+              <th style={th}>User</th>
+              <th style={th}>Change Summary</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rawData.map((r) => (
               <tr
                 key={r.engineeringChangeId}
-                onClick={() => onRowClick(r.engineeringChangeId)}
-                style={{
-                  borderBottom: "1px solid #E5E7EB",
-                  cursor: "pointer",
-                  background: isRowLoading ? "#F9FAFB" : "transparent"
+                onClick={() => handleRowClick(r.engineeringChangeId)}
+                style={row}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#f9fafb";
                 }}
-                onMouseEnter={e => { if (!isRowLoading) e.currentTarget.style.background = "#F9FAFB"; }}
-                onMouseLeave={e => { if (!isRowLoading) e.currentTarget.style.background = "transparent"; }}
-                title="Click to view details"
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#ffffff";
+                }}
               >
-                <td style={{ padding: 16, fontWeight: 600, color: "#111" }}>
-                  {r.engineeringChangeId}
-                  {isRowLoading && <span style={{ marginLeft: 10, color: "#6B7280" }}>Loading…</span>}
+                <td style={td}>{r.engineeringChangeId}</td>
+                <td style={td}>{renderDate(r.changeDate)}</td>
+                <td style={td}>
+                  <span style={changeTypePill(r.changeType)}>
+                    {r.changeType}
+                  </span>
                 </td>
-                <td>{r.changeDate}</td>
-                <td><span style={changeTypePill(r.changeType)}>{r.changeType}</span></td>
-                <td>{r.locationId}</td>
-                <td>{r.bomId}</td>
-                <td>{r.changedBy}</td>
-                <td>{r.changeSummary}</td>
+                <td style={td}>{renderMultiLineValue(r.locationId)}</td>
+                <td style={td}>{renderMultiLineValue(r.bomId)}</td>
+                <td style={td}>{renderMultiLineValue(r.resource)}</td>
+                <td style={td}>{r.changedBy || "-"}</td>
+                <td style={td}>{r.changeSummary || "-"}</td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
+
+/* STYLES */
+const page = {
+  padding: 24,
+  background: "#ffffff",
+  minHeight: "100vh"
+};
+
+const backLink = {
+  color: "#2563eb",
+  cursor: "pointer",
+  marginBottom: 12,
+  fontWeight: 500,
+  fontSize: 14
+};
+
+const title = {
+  fontSize: 24,
+  fontWeight: 700,
+  marginBottom: 18,
+  color: "#111827"
+};
+
+const filterCard = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 10,
+  padding: 20,
+  marginBottom: 18,
+  background: "#fff"
+};
+
+const filterHeading = {
+  fontWeight: 700,
+  fontSize: 16,
+  marginBottom: 14
+};
+
+const topGrid = {
+  display: "grid",
+  gridTemplateColumns: "220px 220px 260px auto",
+  gap: 20,
+  alignItems: "end",
+  marginBottom: 18
+};
+
+const criteriaGrid = {
+  display: "grid",
+  gridTemplateColumns: "260px 1fr",
+  gap: 16,
+  alignItems: "end",
+  marginBottom: 14
+};
+
+const criteriaGridSecond = {
+  display: "grid",
+  gridTemplateColumns: "260px 1fr",
+  gap: 16,
+  alignItems: "end"
+};
+
+const input = {
+  width: "100%",
+  height: 42,
+  padding: "8px 12px",
+  borderRadius: 6,
+  border: "1px solid #d1d5db",
+  fontSize: 14,
+  outline: "none",
+  boxSizing: "border-box"
+};
+
+const label = {
+  fontSize: 12,
+  color: "#6b7280",
+  marginBottom: 6,
+  fontWeight: 500
+};
+
+const checkboxWrap = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  height: 42,
+  paddingBottom: 2
+};
+
+const checkboxText = {
+  fontSize: 14,
+  color: "#111827",
+  whiteSpace: "nowrap"
+};
+
+const emptyCriteriaSpace = {
+  height: 42
+};
+
+const exportRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 14,
+  gap: 16
+};
+
+const exportText = {
+  fontSize: 12,
+  color: "#6b7280",
+  lineHeight: 1.4
+};
+
+const exportButton = {
+  background: "#2563eb",
+  color: "#fff",
+  padding: "10px 16px",
+  borderRadius: 6,
+  border: "none",
+  fontWeight: 600,
+  cursor: "pointer",
+  whiteSpace: "nowrap"
+};
+
+const tableWrapper = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 8,
+  overflow: "hidden"
+};
+
+const table = {
+  width: "100%",
+  borderCollapse: "collapse"
+};
+
+const thead = {
+  background: "#f3f4f6"
+};
+
+const th = {
+  textAlign: "left",
+  padding: "14px 12px",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "#374151",
+  borderBottom: "1px solid #e5e7eb",
+  verticalAlign: "top"
+};
+
+const td = {
+  padding: "12px",
+  fontSize: 13,
+  color: "#111827",
+  verticalAlign: "top"
+};
+
+const row = {
+  borderTop: "1px solid #e5e7eb",
+  cursor: "pointer",
+  background: "#ffffff"
+};

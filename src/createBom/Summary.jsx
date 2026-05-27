@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import ResponseModal from "./ResponseModal";
 import { useScreen } from "../styles/useDevice";
-import { layout, typography, cards, tables, buttons, tokens } from "../styles/layout";
+import { layout } from "../styles/layout";
 import axios from "axios";
 
 export default function SummaryPage() {
   const screen = useScreen();
   const routerLocation = useLocation();
+  const navigate = useNavigate();
 
   const [response, setResponse] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -18,98 +19,84 @@ export default function SummaryPage() {
   const summaryRows = useMemo(() => {
     if (producedItems?.length) {
       return producedItems.map((p, idx) => ({
-        location: p.location || "-",
         producedItem: p.id || "-",
-        bomId: p.bomId || `AUTO_BOM_${idx + 1}`,
-        routingId: p.routingId || `AUTO_ROUTING_${idx + 1}`,
+        description: p.description || "Item Desc",
+        location: p.location || "-",
+        bomId: p.bomId || `BOM_${idx + 1}`,
+        routingId: p.routingId || `ROUTING_${idx + 1}`,
       }));
     }
 
     return [
       {
-        location: "1",
         producedItem: "Item123",
-        bomId: "PRIMARY_Item123_1",
-        routingId: "ROUTING_Item123_1_Resource1",
-      },
-      {
-        location: "1",
-        producedItem: "Item456",
-        bomId: "BOM1_Item456_1",
-        routingId: "ROUTING_Item456_2_Resource2",
+        description: "Item Desc 1",
+        location: "Location 1",
+        bomId: "BOM1_Item123_Location1",
+        routingId: "ROUTING_Item123_Location1_Resource1",
       },
     ];
   }, [producedItems]);
 
+  // ✅ UNCHANGED (as you asked)
   const postbomtable = async () => {
-  // ✅ Correct UI-driven mock request (array of 1 record)
-  const mockRequest = [
-    {
-      bomId: "BOM1_Item001_Location 8",
-
-      // ✅ Recommended metadata (UI usually provides; CSV can generate)
-      engineeringChange: {
-        ecNumber: "EC747159",
-        creationDate: "2026-05-15",
-      },
-
-      producedItem: {
-        item: "Item001",
-        description: "",
-        status: "Active",
-        releaseFlag: "",
-      },
-
-      locations: [
-        {
-          locationId: "",
-          locationName: "Location 8",
-          locationStatus: "Active",
-
-          resourceInfo: {
-            resource: "Resource1",
-            resourceRelevancy: "MPS",
-            bomVersion: "PRIMARY",
-            routingId: "ROUTING_Item001_Location 8_Resource1",
-            priority: 10,
-            // ✅ Co-product association must be 1 only when coProducts exist
-            coProductAssociation: 1,
-          },
-
-          componentItems: [
-            {
-              componentItem: "Item1289",
-              description: "",
-              standardUsage: 1.1378, // ✅ Quantity Consumed Per > 0
-            },
-          ],
-
-          // ✅ Co-products must use qtyProducedPer (NOT standardUsage)
-          // ✅ For coProductAssociation=1, at least one coProduct qtyProducedPer should be < 1
-          coProducts: [
-            {
-              coProductItem: "Item2000",
-              description: "",
-              qtyProducedPer: 0.25,
-            },
-          ],
-
-          // ✅ If coProducts exist, isCoProduct should be true
-          flags: {
-            isCoProduct: true,
-            noComponentItems: false,
-            replicateForAllLocations: false,
-          },
+    const mockRequest = [
+      {
+        bomId: "BOM1_Item001_Location 8",
+        engineeringChange: {
+          ecNumber: "EC747159",
+          creationDate: "2026-05-15",
         },
-      ],
-    },
-  ];
-  
-  const response = await axios.post("http://localhost:3000/bom-explosion", mockRequest);
+        producedItem: {
+          item: "Item001",
+          description: "",
+          status: "Active",
+          releaseFlag: "",
+        },
+        locations: [
+          {
+            locationId: "",
+            locationName: "Location 8",
+            locationStatus: "Active",
+            resourceInfo: {
+              resource: "Resource1",
+              resourceRelevancy: "MPS",
+              bomVersion: "PRIMARY",
+              routingId: "ROUTING_Item001_Location 8_Resource1",
+              priority: 10,
+              coProductAssociation: 1,
+            },
+            componentItems: [
+              {
+                componentItem: "Item1289",
+                description: "",
+                standardUsage: 1.1378,
+              },
+            ],
+            coProducts: [
+              {
+                coProductItem: "Item2000",
+                description: "",
+                qtyProducedPer: 0.25,
+              },
+            ],
+            flags: {
+              isCoProduct: true,
+              noComponentItems: false,
+              replicateForAllLocations: false,
+            },
+          },
+        ],
+      },
+    ];
 
-  // ✅ Axios automatically parses JSON
-  return response.data;
-};
+    const response = await axios.post(
+      "http://localhost:3000/bom-explosion",
+      mockRequest
+    );
+
+    return response.data;
+  };
 
   const submitBOMs = async () => {
     setSubmitting(true);
@@ -127,92 +114,139 @@ export default function SummaryPage() {
 
   return (
     <>
-      <div style={layout.page}>
-        <div style={layout.container(screen)}>
-          <h1 style={typography.pageTitle(screen)}>Create New BOM - Start from Scratch</h1>
-          <div style={typography.subtitle(screen)}>Multi-location BOM creation wizard</div>
+      <div style={{ ...layout.page, background: "#f5f6f8" }}>
+        <div style={{ maxWidth: 1200, margin: "auto", padding: 24 }}>
+          
+          {/* BACK */}
+          <div
+            onClick={() => navigate(-1)}
+            style={{
+              color: "#2563eb",
+              cursor: "pointer",
+              fontWeight: 500,
+              marginBottom: 20,
+            }}
+          >
+            ← BACK
+          </div>
 
+          {/* TITLE */}
+          <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 6 }}>
+            Step 4: New BOM Summary & Routing Priority
+          </h1>
 
-          <div style={{ ...cards.container, marginTop: 16 }}>
-            <div style={cards.header(screen)}>
-              <div style={typography.sectionTitle}>Step 4: Summary</div>
-              <div style={{ ...typography.helperText, marginTop: 6 }}>
-                Review and submit your BOM data
-              </div>
-              <div style={{ height: 1, background: tokens.colors.border, marginTop: 16 }} />
-            </div>
+          <div style={{ color: "#6b7280", marginBottom: 28 }}>
+            Review the BOM records to be created
+          </div>
 
-            <div style={cards.padding(screen)}>
-              <div
-                style={{
-                  display: "flex",
-                  gap: screen.isMobile ? 24 : 80,
-                  flexWrap: "wrap",
-                  marginBottom: 16,
-                }}
-              >
-                <div style={{ display: "flex", gap: 10 }}>
-                  <div style={{ fontSize: 18 }}>📄</div>
-                  <div>
-                    <div style={{ fontSize: 12, color: tokens.colors.textMuted }}>
-                      Engineering Change #
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>EC-721362</div>
-                  </div>
-                </div>
+          {/* SECTION TITLE */}
+          <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 14 }}>
+            Main Summary Table
+          </h2>
 
-                <div style={{ display: "flex", gap: 10 }}>
-                  <div style={{ fontSize: 18 }}>📅</div>
-                  <div>
-                    <div style={{ fontSize: 12, color: tokens.colors.textMuted }}>
-                      Creation Date
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>04/16/2026</div>
-                  </div>
-                </div>
-              </div>
+          {/* TABLE CARD */}
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                
+                <thead style={{ background: "#f3f4f6" }}>
+                  <tr>
+                    <th style={th}>Produced Item</th>
+                    <th style={th}>Item Description</th>
+                    <th style={th}>Location</th>
+                    <th style={th}>BOM ID</th>
+                    <th style={th}>Routing ID</th>
+                  </tr>
+                </thead>
 
-              <div style={{ overflowX: "auto" }}>
-                <table style={tables.table}>
-                  <thead>
-                    <tr>
-                      <th style={tables.th}>LOCATION</th>
-                      <th style={tables.th}>PRODUCED ITEM</th>
-                      <th style={tables.th}>BOM ID</th>
-                      <th style={tables.th}>ROUTING ID</th>
+                <tbody>
+                  {summaryRows.map((row, idx) => (
+                    <tr key={idx} style={{ borderTop: "1px solid #e5e7eb" }}>
+                      <td style={td}>{row.producedItem}</td>
+                      <td style={td}>{row.description}</td>
+                      <td style={td}>{row.location}</td>
+                      <td style={td}>{row.bomId}</td>
+                      <td style={td}>{row.routingId}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {summaryRows.map((row, idx) => (
-                      <tr key={idx}>
-                        <td style={tables.td}>{row.location}</td>
-                        <td style={tables.td}>{row.producedItem}</td>
-                        <td style={tables.td}>{row.bomId}</td>
-                        <td style={tables.td}>{row.routingId}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-                <button
-                  onClick={submitBOMs}
-                  disabled={submitting}
-                  style={{
-                    ...buttons.base,
-                    ...(submitting ? buttons.disabled : buttons.success),
-                  }}
-                >
-                  {submitting ? "Submitting..." : "Submit & Create BOMs"}
-                </button>
-              </div>
+              </table>
             </div>
+          </div>
+
+          {/* NOTES */}
+          <div style={{ marginTop: 28 }}>
+            <textarea
+              placeholder="Notes (Optional)"
+              style={{
+                width: "100%",
+                height: 120,
+                borderRadius: 6,
+                border: "1px solid #d1d5db",
+                padding: 16,
+                fontSize: 14,
+              }}
+            />
+          </div>
+
+          {/* SUBMIT BUTTON */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: 20,
+            }}
+          >
+            <button
+              onClick={submitBOMs}
+              disabled={submitting}
+              style={{
+                background: "#2e7d32",
+                color: "#fff",
+                padding: "14px 26px",
+                borderRadius: 6,
+                border: "none",
+                fontSize: 16,
+                fontWeight: 600,
+                cursor: "pointer",
+                opacity: submitting ? 0.7 : 1,
+              }}
+            >
+              {submitting ? "Submitting..." : "✅ SUBMIT & CREATE BOM(S)"}
+            </button>
           </div>
         </div>
       </div>
 
-      {showModal && <ResponseModal response={response} onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <ResponseModal
+          response={response}
+          onClose={() => setShowModal(false)}
+        />
+      )}
     </>
   );
 }
+
+/* TABLE STYLES */
+const th = {
+  textAlign: "left",
+  padding: "16px",
+  fontSize: 14,
+  fontWeight: 600,
+  color: "#374151",
+};
+
+const td = {
+  padding: "16px",
+  fontSize: 14,
+  color: "#111827",
+};

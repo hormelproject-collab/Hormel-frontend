@@ -10,6 +10,7 @@ import CreateBOM from './createBom/CreateBOM';
 import SelectExistingBOM from './createBom/startFromExisting/SelectExistingBOM';
 import ModifyExistingBOM from './createBom/startFromExisting/ModifyExistingBOM';
 import EngineeringChangeLog from './EngineeringChange/Engineeringlog';
+import EngineeringChangeDetail from './EngineeringChange/EngineeringChangesDetail';
 import DownloadBOM from './DownloadBom/DownloadBomData';
 import SummaryPage from './createBom/Summary';
 
@@ -22,6 +23,7 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         {/* Engineering-change log */}
         <Route path="/change-log" element={<EngineeringChangeLog />} />
+        <Route path="/change-log-details" element={<EngineeringChangeDetail />} />
          {/* Download BOM */}
         <Route path="/download-bom" element={<DownloadBOM />} />
         {/* CreateBOM */}
