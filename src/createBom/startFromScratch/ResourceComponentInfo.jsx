@@ -1,12 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IoIosArrowDown, IoIosArrowUp } from "react-icons/io";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-
-// ✅ import from your bomSlice file
 import {
   fetchItemMaster,
   fetchLocationMaster,
+  fetchResourceComponentMetadata,
   selectAllItemMaster,
   selectAllLocations,
   selectSelectedProducedItemIds,
@@ -19,45 +18,58 @@ import {
   selectLocationsError,
   selectHasInactiveSelected,
   selectHasInactiveLocationsSelected,
+  selectResourceMetaLoading,
+  selectResourceMetaError,
+  selectBomVersions,
+  selectResourceItemOptions,
+  selectResourceOptionsByKey,
+  selectResourceComponentConfigs,
+  ensureResourceComponentConfig,
+  setResourceComponentConfig,
+  replicateResourceComponentInfoToLocations,
 } from "../../redux/bomSlice";
+
+const buildConfigKey = (item, location) => `${item}__${location}`;
+const buildBomId = (bomVersion, item, location) =>
+  `${bomVersion}_${item}_${location}`;
+const buildRoutingId = (item, location, resource) =>
+  `ROUTING_${item}_${location}_${resource}`;
 
 const ResourceComponentInfo = () => {
   const navigate = useNavigate();
+  const routerLocation = useLocation();
   const dispatch = useDispatch();
 
-  // ✅ selected entities from redux
   const producedItems = useSelector(selectSelectedProducedItems);
   const locations = useSelector(selectSelectedLocations);
-
-  // ✅ ids (useful for refresh scenario)
   const producedItemIds = useSelector(selectSelectedProducedItemIds);
   const locationIds = useSelector(selectSelectedLocationIds);
-
-  // ✅ master adapter data (to know if we need to fetch)
   const allItems = useSelector(selectAllItemMaster);
   const allLocations = useSelector(selectAllLocations);
-
-  // ✅ loading + error
   const itemsLoading = useSelector(selectItemsLoading);
   const itemsError = useSelector(selectItemsError);
   const locationsLoading = useSelector(selectLocationsLoading);
   const locationsError = useSelector(selectLocationsError);
-
-  // ✅ inactive checks (safe guard)
+  const resourceMetaLoading = useSelector(selectResourceMetaLoading);
+  const resourceMetaError = useSelector(selectResourceMetaError);
   const hasInactiveItems = useSelector(selectHasInactiveSelected);
   const hasInactiveLocs = useSelector(selectHasInactiveLocationsSelected);
+  const bomVersions = useSelector(selectBomVersions);
+  const itemOptions = useSelector(selectResourceItemOptions);
+  const resourceOptionsByKey = useSelector(selectResourceOptionsByKey);
+  const resourceComponentConfigs = useSelector(selectResourceComponentConfigs);
 
-  // ✅ Accordion state
   const [openItem, setOpenItem] = useState(null);
-  const [openLocationKey, setOpenLocationKey] = useState(null); // unique key per item+location
+  const [openLocationKey, setOpenLocationKey] = useState(null);
+  const [resourceDropdownKey, setResourceDropdownKey] = useState(null);
+  const [pageError, setPageError] = useState("");
 
-  // ✅ If user refreshes Step 3, selected IDs exist but master lists may be empty
   useEffect(() => {
     if (producedItemIds.length > 0 && allItems.length === 0 && !itemsLoading) {
-      dispatch(fetchItemMaster(500));
+      dispatch(fetchItemMaster());
     }
     if (locationIds.length > 0 && allLocations.length === 0 && !locationsLoading) {
-      dispatch(fetchLocationMaster(500));
+      dispatch(fetchLocationMaster());
     }
   }, [
     dispatch,
@@ -69,205 +81,760 @@ const ResourceComponentInfo = () => {
     locationsLoading,
   ]);
 
-  // ✅ Default open first item when data arrives
   useEffect(() => {
     if (!openItem && producedItems.length > 0) {
       setOpenItem(producedItems[0].id);
     }
   }, [producedItems, openItem]);
 
+  useEffect(() => {
+    if (!openLocationKey && producedItems.length > 0 && locations.length > 0) {
+      setOpenLocationKey(
+        buildConfigKey(producedItems[0].item, locations[0].location)
+      );
+    }
+  }, [producedItems, locations, openLocationKey]);
+
+  useEffect(() => {
+    if (producedItems.length === 0 || locations.length === 0) return;
+
+    dispatch(
+      fetchResourceComponentMetadata({
+        items: producedItems.map((x) => x.item),
+        locations: locations.map((x) => x.location),
+      })
+    );
+  }, [dispatch, producedItems, locations]);
+
+  useEffect(() => {
+    producedItems.forEach((item) => {
+      locations.forEach((loc) => {
+        const key = buildConfigKey(item.item, loc.location);
+        dispatch(
+          ensureResourceComponentConfig({
+            key,
+            item: item.item,
+            location: loc.location,
+          })
+        );
+      });
+    });
+  }, [dispatch, producedItems, locations]);
+
+  const itemOptionMap = useMemo(() => {
+    const map = new Map();
+    itemOptions.forEach((row) => {
+      map.set(String(row.item ?? "").trim(), row);
+    });
+    return map;
+  }, [itemOptions]);
+
   const isBlocked =
     producedItems.length === 0 ||
     locations.length === 0 ||
     hasInactiveItems ||
-    hasInactiveLocs;
+    hasInactiveLocs ||
+    itemsLoading ||
+    locationsLoading ||
+    resourceMetaLoading;
+
+  const getConfig = (item, location) => {
+    const key = buildConfigKey(item, location);
+    return (
+      resourceComponentConfigs[key] || {
+        item,
+        location,
+        resources: [],
+        bomVersion: "PRIMARY",
+        noComponentItems: false,
+        producedCoProduct: true,
+        replicateToAll: false,
+        components: [],
+        coproducts: [],
+      }
+    );
+  };
+
+  const updateConfig = (item, location, patch) => {
+    const key = buildConfigKey(item, location);
+    dispatch(
+      setResourceComponentConfig({
+        key,
+        config: patch,
+      })
+    );
+  };
+
+  const handleBOMVersionChange = (item, location, value) => {
+    updateConfig(item, location, { bomVersion: value });
+  };
+
+  const handleResourceToggle = (item, location, resource) => {
+    const config = getConfig(item, location);
+    const resources = Array.isArray(config.resources) ? config.resources : [];
+    const exists = resources.includes(resource);
+    const nextResources = exists
+      ? resources.filter((x) => x !== resource)
+      : [...resources, resource];
+
+    updateConfig(item, location, { resources: nextResources });
+  };
+
+  const handleNoComponentItems = (item, location, checked) => {
+    updateConfig(item, location, {
+      noComponentItems: checked,
+      components: checked ? [] : getConfig(item, location).components,
+    });
+  };
+
+  const handleProducedCoProduct = (item, location, checked) => {
+    updateConfig(item, location, {
+      producedCoProduct: checked,
+    });
+  };
+
+  const addComponentRow = (item, location) => {
+    const config = getConfig(item, location);
+    const nextRows = [...(config.components || [])];
+    nextRows.push({
+      id: `component-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      componentItem: "",
+      description: "",
+      standardUsage: "",
+    });
+    updateConfig(item, location, { components: nextRows });
+  };
+
+  const removeComponentRow = (item, location, rowId) => {
+    const config = getConfig(item, location);
+    const nextRows = (config.components || []).filter((row) => row.id !== rowId);
+    updateConfig(item, location, { components: nextRows });
+  };
+
+  const changeComponentRow = (item, location, rowId, patch) => {
+    const config = getConfig(item, location);
+    const nextRows = (config.components || []).map((row) => {
+      if (row.id !== rowId) return row;
+
+      let nextRow = { ...row, ...patch };
+
+      if (patch.componentItem !== undefined) {
+        const itemInfo = itemOptionMap.get(String(patch.componentItem ?? "").trim());
+        nextRow.description = itemInfo?.item_description ?? "";
+      }
+
+      return nextRow;
+    });
+
+    updateConfig(item, location, { components: nextRows });
+  };
+
+  const addCoProductRow = (item, location) => {
+    const config = getConfig(item, location);
+    const nextRows = [...(config.coproducts || [])];
+    nextRows.push({
+      id: `coproduct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      coProductItem: "",
+      description: "",
+      qtyProduced: "",
+    });
+    updateConfig(item, location, { coproducts: nextRows });
+  };
+
+  const removeCoProductRow = (item, location, rowId) => {
+    const config = getConfig(item, location);
+    const nextRows = (config.coproducts || []).filter((row) => row.id !== rowId);
+    updateConfig(item, location, { coproducts: nextRows });
+  };
+
+  const changeCoProductRow = (item, location, rowId, patch) => {
+    const config = getConfig(item, location);
+    const nextRows = (config.coproducts || []).map((row) => {
+      if (row.id !== rowId) return row;
+
+      let nextRow = { ...row, ...patch };
+
+      if (patch.coProductItem !== undefined) {
+        const itemInfo = itemOptionMap.get(String(patch.coProductItem ?? "").trim());
+        nextRow.description = itemInfo?.item_description ?? "";
+      }
+
+      return nextRow;
+    });
+
+    updateConfig(item, location, { coproducts: nextRows });
+  };
+
+  const handleReplicate = (item, location, checked) => {
+    const sourceKey = buildConfigKey(item, location);
+
+    updateConfig(item, location, {
+      replicateToAll: checked,
+    });
+
+    if (checked) {
+      const targetKeys = locations
+        .filter((loc) => String(loc.location) !== String(location))
+        .map((loc) => buildConfigKey(item, loc.location));
+
+      dispatch(
+        replicateResourceComponentInfoToLocations({
+          sourceKey,
+          targetKeys,
+        })
+      );
+    }
+  };
+
+  const validateAllConfigs = () => {
+    for (const item of producedItems) {
+      for (const loc of locations) {
+        const config = getConfig(item.item, loc.location);
+
+        if (!config.bomVersion) {
+          return "BOM Version is required for every item and location.";
+        }
+
+        // if (!Array.isArray(config.resources) || config.resources.length === 0) {
+        //   return `At least one resource is required for ${item.item} / ${loc.location}.`;
+        // }
+
+        if (!config.noComponentItems) {
+          const componentRows = config.components || [];
+          for (const row of componentRows) {
+            if (!row.componentItem) continue;
+            const usageValue = Number(row.standardUsage);
+            if (!(usageValue > 0)) {
+              return `Standard Usage must be greater than 0 for component ${row.componentItem} in ${item.item} / ${loc.location}.`;
+            }
+          }
+        }
+
+        const coRows = config.coproducts || [];
+        for (const row of coRows) {
+          if (!row.coProductItem) continue;
+          const qtyValue = Number(row.qtyProduced);
+          if (!(qtyValue < 1)) {
+            return `Qty Produced must be less than 1 for co-product ${row.coProductItem} in ${item.item} / ${loc.location}.`;
+          }
+        }
+      }
+    }
+
+    return "";
+  };
+
+  const handleNext = () => {
+    const validationMessage = validateAllConfigs();
+    if (validationMessage) {
+      setPageError(validationMessage);
+      return;
+    }
+
+    setPageError("");
+
+    navigate("/summary", {
+      state: {
+        producedItems,
+        locations,
+        resourceComponentConfigs,
+        resourceOptionsByKey,
+        previousState: routerLocation?.state ?? null,
+      },
+    });
+  };
 
   return (
-    <div style={styles.container}>
-      {/* Back */}
-      <div style={styles.back} onClick={() => navigate(-1)}>
-        ← BACK
-      </div>
-
-      <h2 style={styles.title}>Step 3: Resource & Component Info</h2>
-      <p style={styles.sub}>
-        Configure resources and components for each item and location
-      </p>
-
-      {/* ✅ Loading / Error states */}
-      {(itemsLoading || locationsLoading) && (
-        <div style={styles.infoBox}>Loading data...</div>
-      )}
-
-      {(itemsError || locationsError) && (
-        <div style={styles.errorBox}>
-          {itemsError ? `Items Error: ${itemsError}` : null}
-          {itemsError && locationsError ? <br /> : null}
-          {locationsError ? `Locations Error: ${locationsError}` : null}
+    <div style={styles.page}>
+      <div style={styles.inner}>
+        <div style={styles.back} onClick={() => navigate(-1)}>
+          ← BACK
         </div>
-      )}
 
-      {/* ✅ Missing selections */}
-      {producedItems.length === 0 || locations.length === 0 ? (
-        <div style={styles.warningBox}>
-          ⚠️ No selected Produced Items / Locations found. Please complete Step 1
-          and Step 2 first.
-        </div>
-      ) : null}
+        <h1 style={styles.title}>Step 3: Resource & Component Info</h1>
+        <p style={styles.subTitle}>
+          Configure resources and components for each item and location
+        </p>
 
-      {/* ✅ Safety warning if somehow inactive got through */}
-      {(hasInactiveItems || hasInactiveLocs) && (
-        <div style={styles.warningBox}>
-          ⚠️ Inactive item/location selected. Please deselect inactive entries in previous steps before continuing.
-        </div>
-      )}
+        {(itemsLoading || locationsLoading || resourceMetaLoading) && (
+          <div style={styles.infoBox}>Loading data...</div>
+        )}
 
-      {/* ✅ Actual UI */}
-      {producedItems.map((item) => (
-        <div key={item.id} style={styles.card}>
-          {/* ITEM HEADER */}
-          <div
-            style={styles.header}
-            onClick={() => setOpenItem(openItem === item.id ? null : item.id)}
-          >
-            <div>
-              {/* show item number + desc from redux */}
-              <div style={{ fontWeight: "600" }}>{item.item}</div>
-              <div style={{ color: "#666", fontSize: "13px" }}>{item.desc}</div>
-            </div>
-
-            <span>
-              {openItem === item.id ? <IoIosArrowUp /> : <IoIosArrowDown />}
-            </span>
+        {(itemsError || locationsError || resourceMetaError || pageError) && (
+          <div style={styles.errorBox}>
+            {itemsError ? `Items Error: ${itemsError}` : null}
+            {itemsError && (locationsError || resourceMetaError || pageError) ? <br /> : null}
+            {locationsError ? `Locations Error: ${locationsError}` : null}
+            {locationsError && (resourceMetaError || pageError) ? <br /> : null}
+            {resourceMetaError ? `Step 3 Error: ${resourceMetaError}` : null}
+            {resourceMetaError && pageError ? <br /> : null}
+            {pageError || null}
           </div>
+        )}
 
-          {/* ITEM BODY */}
-          {openItem === item.id && (
-            <div style={styles.innerArea}>
-              {locations.map((loc) => {
-                const locKey = `${item.id}|${loc.id}`;
-                const isOpenLoc = openLocationKey === locKey;
+        {producedItems.length === 0 || locations.length === 0 ? (
+          <div style={styles.warningBox}>
+            No selected Produced Items / Locations found. Please complete Step 1
+            and Step 2 first.
+          </div>
+        ) : null}
 
-                // display text
-                const locLabel = loc.name || `Location ${loc.location || ""}`;
+        {(hasInactiveItems || hasInactiveLocs) && (
+          <div style={styles.warningBox}>
+            Inactive item/location selected. Please deselect inactive entries in
+            previous steps before continuing.
+          </div>
+        )}
 
-                return (
-                  <div key={locKey} style={styles.cardInner}>
-                    {/* LOCATION HEADER */}
-                    <div
-                      style={styles.headerInner}
-                      onClick={() =>
-                        setOpenLocationKey(isOpenLoc ? null : locKey)
-                      }
-                    >
-                      <span style={{ fontWeight: 600 }}>
-                        {locLabel}
-                      </span>
+        {producedItems.map((item) => {
+          const itemOpen = openItem === item.id;
 
-                      <span>
-                        {isOpenLoc ? <IoIosArrowUp /> : <IoIosArrowDown />}
-                      </span>
-                    </div>
+          return (
+            <div key={item.id} style={styles.itemCard}>
+              <div
+                style={styles.itemHeader}
+                onClick={() => setOpenItem(itemOpen ? null : item.id)}
+              >
+                <div>
+                  <div style={styles.itemTitle}>{item.item}</div>
+                  <div style={styles.itemDesc}>{item.desc}</div>
+                </div>
+                <span>{itemOpen ? <IoIosArrowUp /> : <IoIosArrowDown />}</span>
+              </div>
 
-                    {/* LOCATION BODY */}
-                    {isOpenLoc && (
-                      <div style={styles.formArea}>
-                        {/* GRID FORM */}
-                        <div style={styles.grid}>
-                          <select style={styles.input} defaultValue="">
-                            <option value="" disabled>
-                              Resource *
-                            </option>
-                            <option>Resource A</option>
-                            <option>Resource B</option>
-                          </select>
+              {itemOpen && (
+                <div style={styles.itemBody}>
+                  {locations.map((loc) => {
+                    const key = buildConfigKey(item.item, loc.location);
+                    const config = getConfig(item.item, loc.location);
+                    const isOpenLoc = openLocationKey === key;
+                    const resourceOptions = resourceOptionsByKey[key] || [];
+                    const selectedResources = Array.isArray(config.resources)
+                      ? config.resources
+                      : [];
+                    const selectedResourceRows = resourceOptions.filter((row) =>
+                      selectedResources.includes(row.resource)
+                    );
+                    const bomVersion = config.bomVersion || "PRIMARY";
+                    const bomId = buildBomId(bomVersion, item.item, loc.location);
 
-                          <input
-                            placeholder="Resource Relevancy"
-                            style={styles.inputDisabled}
-                            disabled
-                          />
-
-                          <input
-                            placeholder="Item BOM Routing Priority"
-                            style={styles.input}
-                          />
-
-                          <select style={styles.input} defaultValue="">
-                            <option value="" disabled>
-                              BOM Version *
-                            </option>
-                            <option>V1</option>
-                            <option>V2</option>
-                          </select>
-
-                          <input
-                            placeholder="BOM ID"
-                            style={styles.inputDisabled}
-                            disabled
-                          />
-
-                          <input
-                            placeholder="Routing ID"
-                            style={styles.inputDisabled}
-                            disabled
-                          />
-                        </div>
-
-                        {/* CHECKBOXES */}
-                        <div style={styles.checkRow}>
-                          <label style={styles.chkLabel}>
-                            <input type="checkbox" />
-                            <span style={styles.chkText}>Produced Co-Product?</span>
-                          </label>
-
-                          <label style={styles.chkLabel}>
-                            <input type="checkbox" />
-                            <span style={styles.chkText}>No Component Items</span>
-                          </label>
-                        </div>
-
-                        {/* COMPONENT SECTION */}
-                        <div style={styles.componentBox}>
-                          <div style={styles.componentHeader}>
-                            <span style={{ fontWeight: 600 }}>Component Items</span>
-                            <button type="button" style={styles.addBtn}>
-                              + ADD COMPONENT
-                            </button>
+                    return (
+                      <div key={key} style={styles.locationCard}>
+                        <div
+                          style={styles.locationHeader}
+                          onClick={() => setOpenLocationKey(isOpenLoc ? null : key)}
+                        >
+                          <div style={styles.locationHeaderText}>
+                            {loc.name || `Location ${loc.location}`}
                           </div>
+                          <span>
+                            {isOpenLoc ? <IoIosArrowUp /> : <IoIosArrowDown />}
+                          </span>
                         </div>
 
-                        {/* REPLICATE */}
-                        <label style={styles.replicateRow}>
-                          <input type="checkbox" />
-                          <span style={styles.chkText}>
-                            Replicate for All Selected Locations
-                          </span>
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
+                        {isOpenLoc && (
+                          <div style={styles.locationBody}>
+                            <div style={styles.topGrid}>
+                              <div>
+                                <div style={styles.label}>Resource(s) *</div>
+                                <div style={styles.multiSelectWrap}>
+                                  <div
+                                    style={styles.multiSelectBox}
+                                    onClick={() =>
+                                      setResourceDropdownKey(
+                                        resourceDropdownKey === key ? null : key
+                                      )
+                                    }
+                                  >
+                                    <div style={styles.chipsWrap}>
+                                      {selectedResources.length === 0 ? (
+                                        <span style={styles.placeholderText}>
+                                          Select Resource(s)
+                                        </span>
+                                      ) : (
+                                        selectedResources.map((resource) => (
+                                          <span
+                                            key={resource}
+                                            style={styles.chip}
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            {resource}
+                                            <span
+                                              style={styles.chipX}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleResourceToggle(
+                                                  item.item,
+                                                  loc.location,
+                                                  resource
+                                                );
+                                              }}
+                                            >
+                                              ×
+                                            </span>
+                                          </span>
+                                        ))
+                                      )}
+                                    </div>
+                                    <span style={styles.dropdownArrow}>▾</span>
+                                  </div>
 
-      {/* NEXT BUTTON */}
-      <div style={styles.bottom}>
-        <button
-          style={{
-            ...styles.nextBtn,
-            backgroundColor: isBlocked ? "#d1d5db" : "#2563eb",
-            color: isBlocked ? "#666" : "white",
-            cursor: isBlocked ? "not-allowed" : "pointer",
-          }}
-          disabled={isBlocked}
-          onClick={() => navigate("/summary")}   // ✅ change to your actual summary route
-        >
-          NEXT: REVIEW SUMMARY →
-        </button>
+                                  {resourceDropdownKey === key && (
+                                    <div style={styles.dropdownMenu}>
+                                      {resourceOptions.length === 0 ? (
+                                        <div style={styles.dropdownEmpty}>
+                                          No resources available
+                                        </div>
+                                      ) : (
+                                        resourceOptions.map((row) => {
+                                          const checked = selectedResources.includes(
+                                            row.resource
+                                          );
+
+                                          return (
+                                            <label
+                                              key={row.resource}
+                                              style={styles.dropdownRow}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() =>
+                                                  handleResourceToggle(
+                                                    item.item,
+                                                    loc.location,
+                                                    row.resource
+                                                  )
+                                                }
+                                              />
+                                              <span>{row.resource}</span>
+                                            </label>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div style={styles.helperText}>
+                                  If desired resource is not found, please check
+                                  Oracle work definitions
+                                </div>
+                              </div>
+
+                              <div>
+                                <div style={styles.label}>BOM Version *</div>
+                                <select
+                                  style={styles.input}
+                                  value={bomVersion}
+                                  onChange={(e) =>
+                                    handleBOMVersionChange(
+                                      item.item,
+                                      loc.location,
+                                      e.target.value
+                                    )
+                                  }
+                                >
+                                  {(bomVersions.length > 0
+                                    ? bomVersions
+                                    : [
+                                        "PRIMARY",
+                                        ...Array.from(
+                                          { length: 20 },
+                                          (_, index) => `BOM${index + 1}`
+                                        ),
+                                      ]
+                                  ).map((version) => (
+                                    <option key={version} value={version}>
+                                      {version}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div style={styles.singleFieldWrap}>
+                              <div style={styles.label}>BOM ID</div>
+                              <input
+                                value={bomId}
+                                readOnly
+                                style={styles.inputDisabled}
+                              />
+                              <div style={styles.helperText}>Auto-populated</div>
+                            </div>
+
+                            <div style={styles.generatedBox}>
+                              <div style={styles.generatedTitle}>
+                                Generated Routing IDs
+                              </div>
+                              <div style={styles.generatedTable}>
+                                <div style={styles.generatedHeader}>
+                                  <div>Resource</div>
+                                  <div>Resource Relevancy</div>
+                                  <div>Routing ID</div>
+                                </div>
+
+                                {selectedResourceRows.length === 0 ? (
+                                  <div style={styles.generatedEmpty}>
+                                    No resources selected
+                                  </div>
+                                ) : (
+                                  selectedResourceRows.map((row) => (
+                                    <div
+                                      key={row.resource}
+                                      style={styles.generatedRow}
+                                    >
+                                      <div>{row.resource}</div>
+                                      <div>{row.resourceRelevancy || "-"}</div>
+                                      <div>
+                                        {buildRoutingId(
+                                          item.item,
+                                          loc.location,
+                                          row.resource
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+
+                            <div style={styles.sectionGreen}>
+                              <div style={styles.sectionHeader}>
+                                <span style={styles.sectionTitle}>
+                                  Component Items
+                                </span>
+                                <button
+                                  type="button"
+                                  style={styles.linkBtn}
+                                  onClick={() =>
+                                    addComponentRow(item.item, loc.location)
+                                  }
+                                  disabled={config.noComponentItems}
+                                >
+                                  + ADD COMPONENT
+                                </button>
+                              </div>
+
+                              {!config.noComponentItems &&
+                                (config.components || []).map((row) => (
+                                  <div key={row.id} style={styles.rowForm}>
+                                    <select
+                                      style={styles.input}
+                                      value={row.componentItem}
+                                      onChange={(e) =>
+                                        changeComponentRow(
+                                          item.item,
+                                          loc.location,
+                                          row.id,
+                                          { componentItem: e.target.value }
+                                        )
+                                      }
+                                    >
+                                      <option value="">Component Item</option>
+                                      {itemOptions.map((option) => (
+                                        <option
+                                          key={option.item}
+                                          value={option.item}
+                                        >
+                                          {option.item}
+                                        </option>
+                                      ))}
+                                    </select>
+
+                                    <input
+                                      value={row.description}
+                                      readOnly
+                                      placeholder="Description"
+                                      style={styles.inputDisabled}
+                                    />
+
+                                    <input
+                                      type="number"
+                                      min="0.0001"
+                                      step="0.0001"
+                                      placeholder="Standard Usage"
+                                      value={row.standardUsage}
+                                      onChange={(e) =>
+                                        changeComponentRow(
+                                          item.item,
+                                          loc.location,
+                                          row.id,
+                                          { standardUsage: e.target.value }
+                                        )
+                                      }
+                                      style={styles.input}
+                                    />
+
+                                    <button
+                                      type="button"
+                                      style={styles.deleteBtn}
+                                      onClick={() =>
+                                        removeComponentRow(
+                                          item.item,
+                                          loc.location,
+                                          row.id
+                                        )
+                                      }
+                                    >
+                                      🗑
+                                    </button>
+                                  </div>
+                                ))}
+
+                              <label style={styles.checkboxRow}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!config.noComponentItems}
+                                  onChange={(e) =>
+                                    handleNoComponentItems(
+                                      item.item,
+                                      loc.location,
+                                      e.target.checked
+                                    )
+                                  }
+                                />
+                                <span>No Component Items</span>
+                              </label>
+                            </div>
+
+                            <div style={styles.sectionBlue}>
+                              <div style={styles.sectionHeader}>
+                                <span style={styles.sectionTitle}>
+                                  Co-Products
+                                </span>
+                                <button
+                                  type="button"
+                                  style={styles.linkBtn}
+                                  onClick={() =>
+                                    addCoProductRow(item.item, loc.location)
+                                  }
+                                >
+                                  + ADD CO-PRODUCT
+                                </button>
+                              </div>
+
+                              {(config.coproducts || []).map((row) => (
+                                <div key={row.id} style={styles.rowForm}>
+                                  <select
+                                    style={styles.input}
+                                    value={row.coProductItem}
+                                    onChange={(e) =>
+                                      changeCoProductRow(
+                                        item.item,
+                                        loc.location,
+                                        row.id,
+                                        { coProductItem: e.target.value }
+                                      )
+                                    }
+                                  >
+                                    <option value="">Co-Product Item</option>
+                                    {itemOptions.map((option) => (
+                                      <option key={option.item} value={option.item}>
+                                        {option.item}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  <input
+                                    value={row.description}
+                                    readOnly
+                                    placeholder="Description"
+                                    style={styles.inputDisabled}
+                                  />
+
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="0.9999"
+                                    step="0.0001"
+                                    placeholder="Qty Produced"
+                                    value={row.qtyProduced}
+                                    onChange={(e) =>
+                                      changeCoProductRow(
+                                        item.item,
+                                        loc.location,
+                                        row.id,
+                                        { qtyProduced: e.target.value }
+                                      )
+                                    }
+                                    style={styles.input}
+                                  />
+
+                                  <button
+                                    type="button"
+                                    style={styles.deleteBtn}
+                                    onClick={() =>
+                                      removeCoProductRow(
+                                        item.item,
+                                        loc.location,
+                                        row.id
+                                      )
+                                    }
+                                  >
+                                    🗑
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <label style={styles.checkboxRow}>
+                              <input
+                                type="checkbox"
+                                checked={!!config.producedCoProduct}
+                                onChange={(e) =>
+                                  handleProducedCoProduct(
+                                    item.item,
+                                    loc.location,
+                                    e.target.checked
+                                  )
+                                }
+                              />
+                              <span>Produced Co-Product?</span>
+                            </label>
+
+                            <label style={styles.checkboxRow}>
+                              <input
+                                type="checkbox"
+                                checked={!!config.replicateToAll}
+                                onChange={(e) =>
+                                  handleReplicate(
+                                    item.item,
+                                    loc.location,
+                                    e.target.checked
+                                  )
+                                }
+                              />
+                              <span>
+                                Replicate Co-Product / Component Information for
+                                Selected Locations
+                              </span>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={styles.bottomBar}>
+          <button
+            style={{
+              ...styles.nextBtn,
+              backgroundColor: isBlocked ? "#e5e7eb" : "#2563eb",
+              color: isBlocked ? "#9ca3af" : "#ffffff",
+              cursor: isBlocked ? "not-allowed" : "pointer",
+            }}
+            disabled={isBlocked}
+            onClick={handleNext}
+          >
+            NEXT: REVIEW SUMMARY →
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -275,149 +842,35 @@ const ResourceComponentInfo = () => {
 
 export default ResourceComponentInfo;
 
-/* ✅ Styles (same as yours + a few small additions) */
 const styles = {
-  container: {
-    padding: "30px",
-    maxWidth: "900px",
-    margin: "auto",
+  page: {
+    minHeight: "100vh",
+    backgroundColor: "#f5f6f8",
+    padding: "24px",
+    boxSizing: "border-box",
   },
-
+  inner: {
+    maxWidth: "980px",
+    margin: "0 auto",
+  },
   back: {
     color: "#2563eb",
     cursor: "pointer",
     marginBottom: "10px",
     width: "fit-content",
+    fontSize: "14px",
   },
-
   title: {
-    fontSize: "26px",
-    fontWeight: "600",
+    margin: "0 0 6px 0",
+    fontSize: "40px",
+    fontWeight: 600,
+    color: "#111827",
   },
-
-  sub: {
-    color: "#666",
-    marginBottom: "20px",
+  subTitle: {
+    margin: "0 0 20px 0",
+    color: "#4b5563",
+    fontSize: "15px",
   },
-
-  card: {
-    border: "1px solid #ddd",
-    borderRadius: "8px",
-    marginBottom: "20px",
-    background: "white",
-  },
-
-  header: {
-    padding: "15px",
-    display: "flex",
-    justifyContent: "space-between",
-    cursor: "pointer",
-    alignItems: "center",
-  },
-
-  innerArea: {
-    padding: "15px",
-  },
-
-  cardInner: {
-    border: "1px solid #eee",
-    borderRadius: "6px",
-    marginTop: "10px",
-    overflow: "hidden",
-  },
-
-  headerInner: {
-    padding: "10px",
-    display: "flex",
-    justifyContent: "space-between",
-    cursor: "pointer",
-    background: "#f9fafb",
-    alignItems: "center",
-  },
-
-  formArea: {
-    padding: "15px",
-  },
-
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "10px",
-  },
-
-  input: {
-    padding: "10px",
-    border: "1px solid #ccc",
-    borderRadius: "6px",
-    background: "white",
-  },
-
-  inputDisabled: {
-    padding: "10px",
-    border: "1px solid #ccc",
-    borderRadius: "6px",
-    background: "#f3f4f6",
-    color: "#666",
-  },
-
-  checkRow: {
-    marginTop: "15px",
-    display: "flex",
-    gap: "20px",
-    flexWrap: "wrap",
-  },
-
-  chkLabel: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-
-  chkText: {
-    fontSize: "13px",
-  },
-
-  componentBox: {
-    marginTop: "15px",
-    padding: "10px",
-    background: "#ecfdf5",
-    borderRadius: "6px",
-    border: "1px solid #bbf7d0",
-  },
-
-  componentHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  addBtn: {
-    border: "none",
-    background: "none",
-    color: "#2563eb",
-    cursor: "pointer",
-    fontWeight: "600",
-  },
-
-  replicateRow: {
-    marginTop: "10px",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-
-  bottom: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginTop: "20px",
-  },
-
-  nextBtn: {
-    padding: "10px 20px",
-    borderRadius: "6px",
-    border: "none",
-  },
-
   infoBox: {
     marginBottom: "12px",
     padding: "10px",
@@ -426,7 +879,6 @@ const styles = {
     border: "1px solid #bfdbfe",
     color: "#1e40af",
   },
-
   warningBox: {
     marginBottom: "12px",
     padding: "10px",
@@ -435,7 +887,6 @@ const styles = {
     border: "1px solid #fed7aa",
     color: "#9a3412",
   },
-
   errorBox: {
     marginBottom: "12px",
     padding: "10px",
@@ -443,5 +894,274 @@ const styles = {
     background: "#fee2e2",
     border: "1px solid #fca5a5",
     color: "#b91c1c",
+    whiteSpace: "pre-wrap",
+  },
+  itemCard: {
+    border: "1px solid #d1d5db",
+    borderRadius: "6px",
+    marginBottom: "18px",
+    background: "#ffffff",
+    overflow: "hidden",
+  },
+  itemHeader: {
+    padding: "14px 16px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    cursor: "pointer",
+  },
+  itemTitle: {
+    fontWeight: 600,
+    fontSize: "14px",
+    color: "#111827",
+  },
+  itemDesc: {
+    color: "#6b7280",
+    fontSize: "13px",
+    marginTop: "2px",
+  },
+  itemBody: {
+    padding: "0 14px 14px",
+  },
+  locationCard: {
+    border: "1px solid #e5e7eb",
+    borderRadius: "6px",
+    marginTop: "10px",
+    overflow: "hidden",
+  },
+  locationHeader: {
+    padding: "12px 14px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    cursor: "pointer",
+    backgroundColor: "#ffffff",
+  },
+  locationHeaderText: {
+    fontWeight: 600,
+    fontSize: "14px",
+    color: "#111827",
+  },
+  locationBody: {
+    padding: "14px",
+    borderTop: "1px solid #e5e7eb",
+  },
+  topGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 380px",
+    gap: "14px",
+    alignItems: "start",
+  },
+  label: {
+    fontSize: "12px",
+    fontWeight: 600,
+    color: "#374151",
+    marginBottom: "6px",
+  },
+  input: {
+    width: "100%",
+    height: "36px",
+    padding: "0 10px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    backgroundColor: "#ffffff",
+    boxSizing: "border-box",
+    fontSize: "14px",
+  },
+  inputDisabled: {
+    width: "100%",
+    height: "36px",
+    padding: "0 10px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    backgroundColor: "#f3f4f6",
+    color: "#6b7280",
+    boxSizing: "border-box",
+    fontSize: "14px",
+  },
+  singleFieldWrap: {
+    marginTop: "10px",
+    maxWidth: "380px",
+  },
+  helperText: {
+    marginTop: "4px",
+    fontSize: "11px",
+    color: "#6b7280",
+  },
+  multiSelectWrap: {
+    position: "relative",
+  },
+  multiSelectBox: {
+    minHeight: "36px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    backgroundColor: "#ffffff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "4px 8px",
+    gap: "8px",
+    cursor: "pointer",
+  },
+  chipsWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexWrap: "wrap",
+    flex: 1,
+  },
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    backgroundColor: "#e5e7eb",
+    color: "#374151",
+    borderRadius: "12px",
+    padding: "2px 8px",
+    fontSize: "12px",
+  },
+  chipX: {
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+  placeholderText: {
+    color: "#9ca3af",
+    fontSize: "14px",
+  },
+  dropdownArrow: {
+    color: "#6b7280",
+    fontSize: "12px",
+  },
+  dropdownMenu: {
+    position: "absolute",
+    top: "40px",
+    left: 0,
+    right: 0,
+    backgroundColor: "#ffffff",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    zIndex: 30,
+    maxHeight: "180px",
+    overflowY: "auto",
+    boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
+  },
+  dropdownRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 10px",
+    fontSize: "14px",
+    cursor: "pointer",
+  },
+  dropdownEmpty: {
+    padding: "10px",
+    fontSize: "13px",
+    color: "#6b7280",
+  },
+  generatedBox: {
+    marginTop: "14px",
+  },
+  generatedTitle: {
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "#111827",
+    marginBottom: "8px",
+  },
+  generatedTable: {
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    overflow: "hidden",
+  },
+  generatedHeader: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 2fr",
+    backgroundColor: "#f3f4f6",
+    padding: "8px 10px",
+    fontSize: "12px",
+    fontWeight: 600,
+    color: "#374151",
+    borderBottom: "1px solid #d1d5db",
+  },
+  generatedRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 2fr",
+    padding: "8px 10px",
+    fontSize: "12px",
+    color: "#111827",
+    borderBottom: "1px solid #e5e7eb",
+  },
+  generatedEmpty: {
+    padding: "10px",
+    fontSize: "12px",
+    color: "#6b7280",
+  },
+  sectionGreen: {
+    marginTop: "16px",
+    padding: "12px",
+    borderRadius: "4px",
+    backgroundColor: "#edf7f0",
+    border: "1px solid #d5eadb",
+  },
+  sectionBlue: {
+    marginTop: "14px",
+    padding: "12px",
+    borderRadius: "4px",
+    backgroundColor: "#eef4fb",
+    border: "1px solid #d8e4f2",
+  },
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "10px",
+  },
+  sectionTitle: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#111827",
+  },
+  linkBtn: {
+    border: "none",
+    background: "none",
+    color: "#2563eb",
+    fontSize: "12px",
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  rowForm: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 180px 36px",
+    gap: "8px",
+    alignItems: "center",
+    marginBottom: "8px",
+  },
+  deleteBtn: {
+    width: "36px",
+    height: "36px",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    fontSize: "16px",
+  },
+  checkboxRow: {
+    marginTop: "10px",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "14px",
+    color: "#111827",
+  },
+  bottomBar: {
+    marginTop: "20px",
+    display: "flex",
+    justifyContent: "flex-end",
+  },
+  nextBtn: {
+    padding: "10px 18px",
+    borderRadius: "4px",
+    border: "none",
+    fontSize: "13px",
+    fontWeight: 500,
+    letterSpacing: "0.2px",
   },
 };
