@@ -333,12 +333,66 @@ const ResourceComponentInfo = () => {
 
     setPageError("");
 
+    const summaryConfigSnapshot = producedItems.flatMap((item) =>
+      locations.map((loc) => {
+        const key = buildConfigKey(item.item, loc.location);
+        const config = getConfig(item.item, loc.location);
+        const resourceOptions = resourceOptionsByKey[key] || [];
+        const selectedResources = Array.isArray(config.resources)
+          ? config.resources
+          : [];
+
+        const selectedResourceRows = resourceOptions.filter((row) =>
+          selectedResources.includes(row.resource)
+        );
+
+        const bomVersion = config.bomVersion || "PRIMARY";
+        const bomId = buildBomId(bomVersion, item.item, loc.location);
+
+        return {
+          key,
+          producedItem: item.item,
+          producedItemDescription:
+            item.description ?? item.desc ?? item.item_description ?? "",
+          location: loc.location,
+          locationName:
+            loc.name ?? loc.location_description ?? loc.location ?? "",
+          bomVersion,
+          bomId,
+          selectedResources: [...selectedResources],
+          generatedRoutingRows: selectedResourceRows.map((row) => ({
+            resource: row.resource ?? "",
+            resourceRelevancy:
+              row.resourceRelevancy ?? row.resource_relevancy ?? "",
+            routingId: buildRoutingId(item.item, loc.location, row.resource),
+          })),
+          noComponentItems: !!config.noComponentItems,
+          producedCoProduct: !!config.producedCoProduct,
+          replicateToAll: !!config.replicateToAll,
+          components: (config.components || []).map((row) => ({
+            id: row.id,
+            componentItem: row.componentItem ?? "",
+            description: row.description ?? "",
+            standardUsage: row.standardUsage ?? "",
+          })),
+          coproducts: (config.coproducts || []).map((row) => ({
+            id: row.id,
+            coProductItem: row.coProductItem ?? "",
+            description: row.description ?? "",
+            qtyProduced: row.qtyProduced ?? "",
+          })),
+        };
+      })
+    );
+
     navigate("/summary", {
       state: {
+        flow: "create-bom",
         producedItems,
         locations,
         resourceComponentConfigs,
         resourceOptionsByKey,
+        summaryConfigSnapshot,
         previousState: routerLocation?.state ?? null,
       },
     });
