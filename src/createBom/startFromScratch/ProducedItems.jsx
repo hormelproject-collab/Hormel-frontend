@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-
 import {
   fetchItemMaster,
   toggleProducedItem,
@@ -12,16 +11,20 @@ import {
   selectItemsError,
 } from "../../redux/bomSlice";
 
-// small helper for responsive inline styling (you said you want breakpoints)
 const useWindowWidth = () => {
   const [w, setW] = useState(window.innerWidth);
+
   useEffect(() => {
     const onResize = () => setW(window.innerWidth);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
   return w;
 };
+
+const getNormalizedStatus = (status) =>
+  String(status ?? "").trim().toUpperCase();
 
 const ProducedItems = () => {
   const navigate = useNavigate();
@@ -31,153 +34,164 @@ const ProducedItems = () => {
   const [search, setSearch] = useState("");
   const [showInactiveWarning, setShowInactiveWarning] = useState(false);
 
-  // redux state
   const items = useSelector(selectAllItemMaster);
   const selectedIds = useSelector(selectSelectedProducedItemIds);
   const hasInactiveSelected = useSelector(selectHasInactiveSelected);
   const loading = useSelector(selectItemsLoading);
   const error = useSelector(selectItemsError);
 
-  // fetch on mount
   useEffect(() => {
-    dispatch(fetchItemMaster(10));
+    // ✅ fetch ALL records
+    dispatch(fetchItemMaster());
   }, [dispatch]);
 
-  // filter on search (memoized)
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((x) => (x.item || "").toLowerCase().includes(q));
-  }, [items, search]);
+ const filteredItems = useMemo(() => {
+  const q = search.trim().toLowerCase();
+  if (!q) return items;
+
+  return items.filter((x) => {
+    return (
+      String(x.item || "").toLowerCase().includes(q) ||
+      String(x.desc || "").toLowerCase().includes(q) ||
+      String(x.status || "").toLowerCase().includes(q) ||
+      String(x.itemReleaseFlag || "").toLowerCase().includes(q)
+    );
+  });
+}, [items, search]);
+
 
   const onToggle = (row) => {
-    // hard block inactive (best UX)
-    if (row.status === "INACTIVE") {
+    const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
+
+    if (isInactive) {
       setShowInactiveWarning(true);
       return;
     }
+
     setShowInactiveWarning(false);
     dispatch(toggleProducedItem(row.id));
   };
 
-  // responsive grid columns
   const gridCols =
-    width < 600
-      ? "40px 1fr 1fr"               // hide desc/status in mobile? we’ll show status under item
-      : "50px 1fr 2fr 1fr";
+    width < 700
+      ? "44px 1.2fr 1fr 1fr"
+      : "44px 1.2fr 2fr 1fr 1.2fr";
 
   return (
-    <div style={styles.container}>
-      <div style={styles.back} onClick={() => navigate(-1)}>
-        ← BACK
-      </div>
-
-      <h2>Step 1: Produced Item(s)</h2>
-      <p>Select one or more items to produce</p>
-
-      <input
-        type="text"
-        placeholder="Search Item Number"
-        style={styles.search}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      {/* Loading / Error */}
-      {loading && <div style={styles.info}>Loading items...</div>}
-      {error && <div style={styles.error}>Error: {String(error)}</div>}
-
-      {/* Table */}
-      <div style={styles.table}>
-        {/* Header */}
-        <div style={{ ...styles.rowHeader, gridTemplateColumns: gridCols }}>
-          <div></div>
-          <div>Item</div>
-          {width >= 600 && <div>Item Description</div>}
-          {width >= 600 && <div>Item Status</div>}
+    <div style={styles.page}>
+      <div style={styles.inner}>
+        <div style={styles.back} onClick={() => navigate(-1)}>
+          ← BACK
         </div>
 
-        {filteredItems.map((row) => {
-          const isInactive = row.status === "INACTIVE";
-          const checked = selectedIds.includes(row.id);
+        <h1 style={styles.title}>Step 1: Produced Item(s)</h1>
+        <div style={styles.subTitle}>Select one or more items to produce</div>
 
-          return (
-            <div
-              key={row.id}
-              style={{
-                ...styles.row,
-                gridTemplateColumns: gridCols,
-                backgroundColor: isInactive ? "rgb(245, 218, 218)" : "white",
-                opacity: isInactive ? 0.9 : 1,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={isInactive}
-                onChange={() => onToggle(row)}
-              />
+        <input
+          type="text"
+          placeholder="Search Item Number"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={styles.search}
+        />
 
-              <div style={{ fontWeight: 500 }}>
-                {row.item}
-                {width < 600 && (
-                  <div
-                    style={{
-                      marginTop: 4,
-                      color: isInactive ? "red" : "green",
-                      fontWeight: "bold",
-                      fontSize: 12,
-                    }}
-                  >
-                    {isInactive ? "Inactive" : "Active"}
-                  </div>
-                )}
-              </div>
+        {loading && <div style={styles.info}>Loading items...</div>}
+        {error && <div style={styles.error}>Error: {String(error)}</div>}
 
-              {width >= 600 && <div>{row.desc}</div>}
+        <div style={styles.table}>
+          <div
+            style={{
+              ...styles.headerRow,
+              gridTemplateColumns: gridCols,
+            }}
+          >
+            <div style={styles.checkboxCell}>
+              <input type="checkbox" disabled />
+            </div>
+            <div>Item</div>
+            {width >= 700 && <div>Item Description</div>}
+            <div>Item Status</div>
+            <div>Item Release Flag</div>
+          </div>
 
-              {width >= 600 && (
+          {filteredItems.map((row) => {
+            const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
+            const checked = selectedIds.includes(row.id);
+
+            return (
+              <div
+                key={row.id}
+                style={{
+                  ...styles.dataRow,
+                  gridTemplateColumns: gridCols,
+                  backgroundColor: isInactive ? "#f9eded" : "#ffffff",
+                }}
+              >
+                <div style={styles.checkboxCell}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={isInactive}
+                    onChange={() => onToggle(row)}
+                    style={{ cursor: isInactive ? "not-allowed" : "pointer" }}
+                  />
+                </div>
+
+                <div style={styles.itemCell}>
+                  <div>{row.item}</div>
+                  {width < 700 && (
+                    <div style={styles.mobileDesc}>{row.desc || "-"}</div>
+                  )}
+                </div>
+
+                {width >= 700 && <div>{row.desc || "-"}</div>}
+
                 <div
                   style={{
-                    color: isInactive ? "red" : "green",
-                    fontWeight: "bold",
+                    color: isInactive ? "#ff0000" : "#0a9f32",
+                    fontWeight: 500,
                   }}
                 >
                   {isInactive ? "Inactive" : "Active"}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
 
-      {/* warning */}
-      {(showInactiveWarning || hasInactiveSelected) && (
-        <div style={styles.warningBox}>
-          <span style={{ marginRight: "8px" }}>⚠️</span>
-          Warning: Inactive items cannot be selected. Please select only Active items.
+                <div
+                  style={{
+                    color: isInactive ? "#ff0000" : "#111827",
+                    fontWeight: isInactive ? 500 : 400,
+                  }}
+                >
+                  {row.itemReleaseFlag || "-"}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      )}
 
-      {/* Bottom */}
-      <div style={styles.bottom}>
-        <span>{selectedIds.length} item(s) selected</span>
+        {(showInactiveWarning || hasInactiveSelected) && (
+          <div style={styles.warningBox}>
+            Warning: Inactive items cannot be selected. Please select only active items.
+          </div>
+        )}
 
-        <button
-          style={{
-            ...styles.nextBtn,
-            backgroundColor:
-              selectedIds.length === 0 || hasInactiveSelected ? "#d1d5db" : "rgb(37, 99, 235)",
-            color:
-              selectedIds.length === 0 || hasInactiveSelected ? "rgb(102, 102, 102)" : "white",
-            cursor:
-              selectedIds.length === 0 || hasInactiveSelected ? "not-allowed" : "pointer",
-          }}
-          disabled={selectedIds.length === 0 || hasInactiveSelected}
-          onClick={() => navigate("/select-location")}
-        >
-          NEXT: SELECT LOCATIONS →
-        </button>
+        <div style={styles.bottomBar}>
+          <div style={styles.selectedCount}>
+            {selectedIds.length} item(s) selected
+          </div>
+
+          <button
+            style={{
+              ...styles.nextBtn,
+              ...(selectedIds.length === 0
+                ? styles.nextBtnDisabled
+                : styles.nextBtnEnabled),
+            }}
+            disabled={selectedIds.length === 0}
+            onClick={() => navigate("/select-location")}
+          >
+            NEXT: SELECT LOCATIONS →
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -186,72 +200,136 @@ const ProducedItems = () => {
 export default ProducedItems;
 
 const styles = {
-  container: {
-    padding: "30px",
-    maxWidth: "900px",
-    margin: "auto",
+  page: {
+    minHeight: "100vh",
+    backgroundColor: "#f5f6f8",
+    padding: "24px",
+    boxSizing: "border-box",
+  },
+  inner: {
+    maxWidth: "980px",
+    margin: "0 auto",
   },
   back: {
-    color: "blue",
+    color: "#2563eb",
+    fontSize: "14px",
     cursor: "pointer",
-    marginBottom: "10px",
+    marginBottom: "8px",
+    userSelect: "none",
+    width: "fit-content",
+  },
+  title: {
+    margin: "0 0 6px 0",
+    fontSize: "38px",
+    fontWeight: 600,
+    color: "#111827",
+  },
+  subTitle: {
+    color: "#4b5563",
+    fontSize: "15px",
+    marginBottom: "24px",
   },
   search: {
     width: "100%",
-    padding: "10px",
-    margin: "20px 0",
-    borderRadius: "6px",
-    border: "1px solid rgb(204,204,204)",
+    padding: "12px 14px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    fontSize: "14px",
+    outline: "none",
+    marginBottom: "18px",
+    boxSizing: "border-box",
+    backgroundColor: "#ffffff",
+  },
+  info: {
+    marginBottom: "12px",
+    color: "#374151",
+    fontSize: "14px",
+  },
+  error: {
+    marginBottom: "12px",
+    color: "#b91c1c",
+    fontSize: "14px",
+    fontWeight: 600,
   },
   table: {
-    border: "1px solid rgb(221,221,221)",
-    borderRadius: "6px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
     overflow: "hidden",
+    backgroundColor: "#ffffff",
   },
-  rowHeader: {
+  headerRow: {
     display: "grid",
-    background: "rgb(243, 244, 246)",
-    padding: "10px",
-    fontWeight: "bold",
     alignItems: "center",
+    backgroundColor: "#f3f4f6",
+    borderBottom: "1px solid #d1d5db",
+    minHeight: "44px",
+    padding: "0 10px",
+    columnGap: "14px",
+    fontSize: "14px",
+    fontWeight: 500,
+    color: "#111827",
   },
-  row: {
+  dataRow: {
     display: "grid",
-    padding: "10px",
-    borderTop: "1px solid rgb(238,238,238)",
     alignItems: "center",
-    gap: "10px",
+    minHeight: "48px",
+    padding: "0 10px",
+    columnGap: "14px",
+    borderBottom: "1px solid #e5e7eb",
+    fontSize: "14px",
+    color: "#111827",
   },
-  bottom: {
-    marginTop: "20px",
+  checkboxCell: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  itemCell: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  mobileDesc: {
+    fontSize: "12px",
+    color: "#6b7280",
+  },
+  warningBox: {
+    marginTop: "16px",
+    padding: "12px 14px",
+    borderRadius: "4px",
+    border: "1px solid #f5c2c7",
+    backgroundColor: "#fdecef",
+    color: "#b42318",
+    fontSize: "14px",
+  },
+  bottomBar: {
+    marginTop: "18px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: "12px",
     flexWrap: "wrap",
-    gap: "10px",
+  },
+  selectedCount: {
+    fontSize: "14px",
+    color: "#374151",
   },
   nextBtn: {
-    padding: "10px 20px",
+    padding: "10px 18px",
+    borderRadius: "4px",
     border: "none",
-    borderRadius: "6px",
+    fontSize: "13px",
+    fontWeight: 500,
+    letterSpacing: "0.2px",
+    cursor: "pointer",
   },
-  warningBox: {
-    marginTop: "20px",
-    padding: "12px",
-    backgroundColor: "rgb(254, 226, 226)",
-    border: "1px solid rgb(252, 165, 165)",
-    borderRadius: "6px",
-    color: "rgb(185, 28, 28)",
-    display: "flex",
-    alignItems: "center",
+  nextBtnDisabled: {
+    backgroundColor: "#e5e7eb",
+    color: "#9ca3af",
+    cursor: "not-allowed",
   },
-  info: {
-    marginBottom: "10px",
-    color: "rgb(75, 85, 99)",
-  },
-  error: {
-    marginBottom: "10px",
-    color: "rgb(185, 28, 28)",
-    fontWeight: "bold",
+  nextBtnEnabled: {
+    backgroundColor: "#d1d5db",
+    color: "#374151",
   },
 };

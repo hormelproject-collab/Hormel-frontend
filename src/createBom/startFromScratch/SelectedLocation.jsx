@@ -1,17 +1,25 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 
 import {
-  fetchLocationMaster,
+  fetchLocationsByItems,
   toggleLocation,
+  clearLocations,
   selectAllLocations,
   selectSelectedLocationIds,
   selectHasInactiveLocationsSelected,
   selectLocationsLoading,
   selectLocationsError,
+  selectSelectedProducedItems,
 } from "../../redux/bomSlice";
+
+const normalizeStatus = (value) => String(value ?? "").trim().toUpperCase();
+
+const isActiveLocation = (value) => {
+  const s = normalizeStatus(value);
+  return s === "A" || s === "ACTIVE" || s === "1" || s === "Y" || s === "TRUE";
+};
 
 const SelectedLocation = () => {
   const navigate = useNavigate();
@@ -20,131 +28,167 @@ const SelectedLocation = () => {
   const [search, setSearch] = useState("");
   const [showInactiveWarning, setShowInactiveWarning] = useState(false);
 
-  // ✅ redux state
+  // ✅ retain integration with selected produced items from step 1
+  const selectedProducedItems = useSelector(selectSelectedProducedItems);
+
+  // ✅ retain integration with redux locations state
   const locations = useSelector(selectAllLocations);
   const selectedIds = useSelector(selectSelectedLocationIds);
   const hasInactiveSelected = useSelector(selectHasInactiveLocationsSelected);
   const loading = useSelector(selectLocationsLoading);
   const error = useSelector(selectLocationsError);
 
-  // ✅ fetch on mount
+  // ✅ retain API integration: fetch locations based on produced items
   useEffect(() => {
-    dispatch(fetchLocationMaster(10));
-  }, [dispatch]);
+    const itemNumbers = selectedProducedItems
+      .map((x) => x.item)
+      .filter(Boolean);
 
-  // ✅ filter
+    dispatch(clearLocations());
+
+    if (itemNumbers.length > 0) {
+      dispatch(fetchLocationsByItems(itemNumbers));
+    }
+  }, [dispatch, selectedProducedItems]);
+
+  // ✅ retain search behavior
   const filteredLocations = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return locations;
-    return locations.filter(
-      (x) =>
-        String(x.location || "").toLowerCase().includes(q) ||
-        String(x.name || "").toLowerCase().includes(q)
-    );
+
+    return locations.filter((x) => {
+      return (
+        String(x.location ?? "").toLowerCase().includes(q) ||
+        String(x.name ?? "").toLowerCase().includes(q) ||
+        String(x.status ?? "").toLowerCase().includes(q) ||
+        String(x.country ?? "").toLowerCase().includes(q) ||
+        String(x.region ?? "").toLowerCase().includes(q)
+      );
+    });
   }, [locations, search]);
 
   const onToggle = (row) => {
-    // ✅ hard block inactive (Active is "A")
-    if (row.status !== "A") {
+    const active = isActiveLocation(row.status);
+
+    if (!active) {
       setShowInactiveWarning(true);
       return;
     }
+
     setShowInactiveWarning(false);
     dispatch(toggleLocation(row.id));
   };
 
+  const producedItemCount = selectedProducedItems.length;
+
   return (
-    <div style={styles.container}>
-      <div style={styles.back} onClick={() => navigate(-1)}>
-        ← BACK
-      </div>
-
-      <h2>Step 2: Location(s)</h2>
-      <p>Select one or more locations for the produced items</p>
-
-      <input
-        type="text"
-        placeholder="Search Location"
-        style={styles.search}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      {loading && <div style={styles.info}>Loading locations...</div>}
-      {error && <div style={styles.error}>Error: {String(error)}</div>}
-
-      <div style={styles.table}>
-        <div style={styles.rowHeader}>
-          <div></div>
-          <div>Location ID</div>
-          <div>Name</div>
-          <div>Location Status</div>
+    <div style={styles.page}>
+      <div style={styles.inner}>
+        <div style={styles.back} onClick={() => navigate(-1)}>
+          ← BACK
         </div>
 
-        {filteredLocations.map((row) => {
-          const isInactive = row.status !== "A";
-          const checked = selectedIds.includes(row.id);
+        <h1 style={styles.title}>Step 2: Location(s)</h1>
+        <p style={styles.subTitle}>
+          Select one or more locations for the produced items
+        </p>
 
-          return (
-            <div
-              key={row.id}
-              style={{
-                ...styles.row,
-                backgroundColor: isInactive ? "#fdeaea" : "white",
-                opacity: isInactive ? 0.9 : 1,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={isInactive}
-                onChange={() => onToggle(row)}
-              />
+        <input
+          type="text"
+          placeholder="Search Location"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={styles.search}
+        />
 
-              <div>{row.location}</div>
-              <div>{row.name}</div>
+        {loading && <div style={styles.info}>Loading locations...</div>}
+        {error && <div style={styles.error}>Error: {String(error)}</div>}
 
+        {!loading && !error && producedItemCount === 0 && (
+          <div style={styles.warningBox}>
+            Please go back and select at least one produced item.
+          </div>
+        )}
+
+        <div style={styles.table}>
+          <div style={styles.headerRow}>
+            <div style={styles.checkboxCell}>
+              <input type="checkbox" disabled />
+            </div>
+            <div>Location ID</div>
+            <div>Name</div>
+            <div>Location Status</div>
+          </div>
+
+          {filteredLocations.map((row) => {
+            const active = isActiveLocation(row.status);
+            const checked = selectedIds.includes(row.id);
+
+            return (
               <div
+                key={row.id}
                 style={{
-                  color: isInactive ? "red" : "green",
-                  fontWeight: "bold",
+                  ...styles.dataRow,
+                  backgroundColor: active ? "#ffffff" : "#f8ecec",
                 }}
               >
-                {isInactive ? "Inactive" : "Active"}
+                <div style={styles.checkboxCell}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={!active}
+                    onChange={() => onToggle(row)}
+                    style={{ cursor: active ? "pointer" : "not-allowed" }}
+                  />
+                </div>
+
+                <div style={styles.cellText}>{row.location || "-"}</div>
+                <div style={styles.cellText}>{row.name || "-"}</div>
+
+                <div
+                  style={{
+                    ...styles.statusText,
+                    color: active ? "#16a34a" : "#dc2626",
+                  }}
+                >
+                  {active ? "Active" : "Inactive"}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {(showInactiveWarning || hasInactiveSelected) && (
-        <div style={styles.warningBox}>
-          ⚠️ Warning: Inactive locations cannot be selected. Please select only Active locations.
+            );
+          })}
         </div>
-      )}
 
-      <div style={styles.bottom}>
-        <span>{selectedIds.length} location(s) selected</span>
+        {(showInactiveWarning || hasInactiveSelected) && (
+          <div style={styles.warningBox}>
+            Warning: Inactive locations cannot be selected. Please select only active locations.
+          </div>
+        )}
 
-        <button
-          style={{
-            ...styles.nextBtn,
-            backgroundColor:
-              selectedIds.length === 0 || hasInactiveSelected
-                ? "#d1d5db"
-                : "#2563eb",
-            color:
-              selectedIds.length === 0 || hasInactiveSelected ? "#666" : "white",
-            cursor:
-              selectedIds.length === 0 || hasInactiveSelected
-                ? "not-allowed"
-                : "pointer",
-          }}
-          disabled={selectedIds.length === 0 || hasInactiveSelected}
-          onClick={() => navigate("/resource-component")}   
-        >
-          NEXT: RESOURCE & COMPONENT INFO →
-        </button>
+        <div style={styles.bottomBar}>
+          <div style={styles.selectedCount}>
+            {selectedIds.length} location(s) selected
+          </div>
+
+          <button
+            type="button"
+            disabled={
+              selectedIds.length === 0 ||
+              hasInactiveSelected ||
+              producedItemCount === 0
+            }
+            onClick={() => navigate("/resource-component")}
+            style={{
+              ...styles.nextBtn,
+              ...(selectedIds.length === 0 ||
+              hasInactiveSelected ||
+              producedItemCount === 0
+                ? styles.nextBtnDisabled
+                : styles.nextBtnEnabled),
+            }}
+          >
+            NEXT: RESOURCE &amp; COMPONENT INFO →
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -153,48 +197,143 @@ const SelectedLocation = () => {
 export default SelectedLocation;
 
 const styles = {
-  container: { padding: "30px", maxWidth: "900px", margin: "auto" },
-  back: { color: "#2563eb", cursor: "pointer", marginBottom: "10px" },
+  page: {
+    minHeight: "100vh",
+    backgroundColor: "#f5f6f8",
+    padding: "22px 26px 40px",
+    boxSizing: "border-box",
+  },
+  inner: {
+    maxWidth: "1120px",
+    margin: "0 auto",
+  },
+  back: {
+    color: "#2563eb",
+    fontSize: "14px",
+    cursor: "pointer",
+    marginBottom: "10px",
+    userSelect: "none",
+    width: "fit-content",
+  },
+  title: {
+    margin: "0 0 6px 0",
+    fontSize: "42px",
+    lineHeight: 1.15,
+    fontWeight: 600,
+    color: "#111827",
+  },
+  subTitle: {
+    margin: "0 0 18px 0",
+    color: "#4b5563",
+    fontSize: "15px",
+  },
   search: {
     width: "100%",
-    padding: "10px",
-    margin: "20px 0",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
+    height: "42px",
+    padding: "0 14px",
+    borderRadius: "4px",
+    border: "1px solid #cfd4dc",
+    backgroundColor: "#ffffff",
+    fontSize: "14px",
+    outline: "none",
+    boxSizing: "border-box",
+    marginBottom: "18px",
   },
-  table: { border: "1px solid #ddd", borderRadius: "6px", overflow: "hidden" },
-  rowHeader: {
+  info: {
+    marginBottom: "12px",
+    color: "#4b5563",
+    fontSize: "14px",
+  },
+  error: {
+    marginBottom: "12px",
+    color: "#b91c1c",
+    fontSize: "14px",
+    fontWeight: 600,
+    whiteSpace: "pre-wrap",
+  },
+  table: {
+    border: "1px solid #d5d9df",
+    borderRadius: "4px",
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+  },
+  headerRow: {
     display: "grid",
-    gridTemplateColumns: "50px 1fr 2fr 1fr",
-    background: "#f3f4f6",
-    padding: "10px",
-    fontWeight: "bold",
+    gridTemplateColumns: "48px 1.3fr 1.2fr 1fr",
     alignItems: "center",
+    minHeight: "42px",
+    padding: "0 16px",
+    backgroundColor: "#f1f3f5",
+    borderBottom: "1px solid #d9dde3",
+    fontSize: "14px",
+    fontWeight: 500,
+    color: "#111827",
+    columnGap: "10px",
   },
-  row: {
+  dataRow: {
     display: "grid",
-    gridTemplateColumns: "50px 1fr 2fr 1fr",
-    padding: "10px",
-    borderTop: "1px solid #eee",
+    gridTemplateColumns: "48px 1.3fr 1.2fr 1fr",
     alignItems: "center",
+    minHeight: "40px",
+    padding: "0 16px",
+    borderBottom: "1px solid #e5e7eb",
+    fontSize: "14px",
+    color: "#111827",
+    columnGap: "10px",
   },
-  bottom: {
-    marginTop: "20px",
+  checkboxCell: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cellText: {
+    color: "#111827",
+    fontSize: "14px",
+  },
+  statusText: {
+    fontSize: "14px",
+    fontWeight: 500,
+  },
+  warningBox: {
+    marginTop: "14px",
+    padding: "12px 14px",
+    borderRadius: "4px",
+    border: "1px solid #f5c2c7",
+    backgroundColor: "#fdecef",
+    color: "#b42318",
+    fontSize: "14px",
+  },
+  bottomBar: {
+    marginTop: "12px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: "12px",
     flexWrap: "wrap",
-    gap: "10px",
   },
-  nextBtn: { padding: "10px 20px", border: "none", borderRadius: "6px" },
-  warningBox: {
-    marginTop: "20px",
-    padding: "12px",
-    backgroundColor: "#fee2e2",
-    border: "1px solid #fca5a5",
-    borderRadius: "6px",
-    color: "#b91c1c",
+  selectedCount: {
+    fontSize: "14px",
+    color: "#374151",
   },
-  info: { marginBottom: "10px", color: "rgb(75, 85, 99)" },
-  error: { marginBottom: "10px", color: "rgb(185, 28, 28)", fontWeight: "bold" },
+  nextBtn: {
+    minWidth: "236px",
+    height: "40px",
+    padding: "0 18px",
+    borderRadius: "4px",
+    border: "none",
+    fontSize: "13px",
+    fontWeight: 500,
+    letterSpacing: "0.2px",
+  },
+  nextBtnDisabled: {
+    backgroundColor: "#e5e7eb",
+    color: "#9ca3af",
+    cursor: "not-allowed",
+  },
+  nextBtnEnabled: {
+    backgroundColor: "#d1d5db",
+    color: "#6b7280",
+    cursor: "pointer",
+  },
 };
