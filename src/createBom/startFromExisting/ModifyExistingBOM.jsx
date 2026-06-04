@@ -120,6 +120,7 @@ const MultiSelectDropdown = ({
   placeholder = "Select resource(s)",
 }) => {
   const [open, setOpen] = useState(false);
+  const [filterText, setFilterText] = useState("");
   const ref = useRef(null);
 
   useEffect(() => {
@@ -134,6 +135,17 @@ const MultiSelectDropdown = ({
   }, []);
 
   const selectedSet = new Set(selectedValues.map((v) => String(v)));
+
+  const filteredOptions = useMemo(() => {
+    const text = String(filterText ?? "").trim().toLowerCase();
+    if (!text) return options;
+
+    return options.filter((opt) =>
+      String(opt.resource ?? "")
+        .toLowerCase()
+        .includes(text)
+    );
+  }, [options, filterText]);
 
   const toggleValue = (value) => {
     const strValue = String(value);
@@ -151,40 +163,54 @@ const MultiSelectDropdown = ({
 
   return (
     <div style={styles.multiWrap} ref={ref}>
-      <div
-        style={styles.multiControl}
-        onClick={() => setOpen((prev) => !prev)}
-      >
+      <div style={styles.multiControl} onClick={() => setOpen(true)}>
         <div style={styles.chipWrap}>
-          {selectedValues.length === 0 ? (
-            <span style={styles.placeholderText}>{placeholder}</span>
-          ) : (
-            selectedValues.map((value) => (
-              <span key={value} style={styles.chip}>
-                <span>{value}</span>
-                <button
-                  type="button"
-                  style={styles.chipClose}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeValue(value);
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            ))
-          )}
+          {selectedValues.map((value) => (
+            <span key={value} style={styles.chip}>
+              <span>{value}</span>
+              <button
+                type="button"
+                style={styles.chipClose}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeValue(value);
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+
+          <input
+            value={filterText}
+            onChange={(e) => {
+              setFilterText(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder={selectedValues.length === 0 ? placeholder : "Search resource"}
+            style={styles.multiSearchInput}
+          />
         </div>
-        <div style={styles.dropdownArrow}>▾</div>
+
+        <button
+          type="button"
+          style={styles.dropdownToggleBtn}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((prev) => !prev);
+          }}
+        >
+          ▾
+        </button>
       </div>
 
       {open ? (
         <div style={styles.multiMenu}>
-          {options.length === 0 ? (
+          {filteredOptions.length === 0 ? (
             <div style={styles.multiMenuEmpty}>No resources found.</div>
           ) : (
-            options.map((opt) => {
+            filteredOptions.map((opt) => {
               const checked = selectedSet.has(String(opt.resource));
               return (
                 <label key={opt.resource} style={styles.multiMenuRow}>
@@ -224,6 +250,7 @@ const ModifyExistingBOM = () => {
   const [allItemOptions, setAllItemOptions] = useState([]);
   const [itemMasterMap, setItemMasterMap] = useState(new Map());
   const [resourceMasterMap, setResourceMasterMap] = useState(new Map());
+  const [validationWarning, setValidationWarning] = useState("");
 
   useEffect(() => {
     const loadPage = async () => {
@@ -447,14 +474,17 @@ const ModifyExistingBOM = () => {
       : "";
 
   const addComponent = () => {
+    setValidationWarning("");
     setComponentItems((prev) => [...prev, makeComponentRow()]);
   };
 
   const removeComponent = (rowId) => {
+    setValidationWarning("");
     setComponentItems((prev) => prev.filter((row) => row.id !== rowId));
   };
 
   const updateComponent = (rowId, field, value) => {
+    setValidationWarning("");
     setComponentItems((prev) =>
       prev.map((row) => {
         if (row.id !== rowId) return row;
@@ -474,15 +504,18 @@ const ModifyExistingBOM = () => {
   };
 
   const addCoProduct = () => {
+    setValidationWarning("");
     setProducedCoProduct(true);
     setCoProducts((prev) => [...prev, makeCoProductRow()]);
   };
 
   const removeCoProduct = (rowId) => {
+    setValidationWarning("");
     setCoProducts((prev) => prev.filter((row) => row.id !== rowId));
   };
 
   const updateCoProduct = (rowId, field, value) => {
+    setValidationWarning("");
     setCoProducts((prev) =>
       prev.map((row) => {
         if (row.id !== rowId) return row;
@@ -504,6 +537,30 @@ const ModifyExistingBOM = () => {
   const handleNext = () => {
     if (!selectedBom) return;
     if (!bomVersion || bomVersion === originalBomVersion) return;
+
+    setValidationWarning("");
+
+    const hasMissingStandardUsage = componentItems.some(
+      (row) => String(row.standardUsage ?? "").trim() === ""
+    );
+
+    if (componentItems.length > 0 && hasMissingStandardUsage) {
+      setValidationWarning(
+        "Please enter Standard Usage for all added component items before reviewing summary."
+      );
+      return;
+    }
+
+    const hasMissingQtyProduced =
+      producedCoProduct &&
+      coProducts.some((row) => String(row.qtyProduced ?? "").trim() === "");
+
+    if (producedCoProduct && coProducts.length > 0 && hasMissingQtyProduced) {
+      setValidationWarning(
+        "Please enter Qty Produced Per for all added co-product items before reviewing summary."
+      );
+      return;
+    }
 
     navigate(NEXT_ROUTE, {
       state: {
@@ -614,11 +671,15 @@ const ModifyExistingBOM = () => {
               <MultiSelectDropdown
                 options={allResourceOptions}
                 selectedValues={selectedResources}
-                onChange={setSelectedResources}
-                placeholder="Select resource(s)"
+                onChange={(values) => {
+                  setValidationWarning("");
+                  setSelectedResources(values);
+                }}
+                placeholder="Type to filter and select resource(s)"
               />
               <div style={styles.helperText}>
-                If desired resource is not found, please check Oracle work definitions.
+                Type inside the box to filter the checklist dropdown. If desired
+                resource is not found, please check Oracle work definitions.
               </div>
             </div>
 
@@ -633,28 +694,26 @@ const ModifyExistingBOM = () => {
             </div>
           </div>
 
-          <div style={{ marginTop: 18 }}>
-            <div style={styles.sectionTitleSmall}>Generated Routing IDs</div>
-            <div style={styles.innerTableWrap}>
-              <div style={styles.innerTableHeader}>
-                <div>Resource</div>
-                <div>Resource Relevancy</div>
-                <div>Routing ID</div>
-              </div>
+          {selectedResources.length > 0 ? (
+            <div style={{ marginTop: 18 }}>
+              <div style={styles.sectionTitleSmall}>Generated Routing IDs</div>
+              <div style={styles.innerTableWrap}>
+                <div style={styles.innerTableHeader}>
+                  <div>Resource</div>
+                  <div>Resource Relevancy</div>
+                  <div>Routing ID</div>
+                </div>
 
-              {routingRows.length === 0 ? (
-                <div style={styles.innerEmptyState}>No resources selected.</div>
-              ) : (
-                routingRows.map((row, index) => (
+                {routingRows.map((row, index) => (
                   <div key={`${row.resource}-${index}`} style={styles.innerTableRow}>
                     <div>{row.resource ?? "-"}</div>
                     <div>{row.resourceRelevancy ?? "-"}</div>
                     <div>{row.routingId ?? "-"}</div>
                   </div>
-                ))
-              )}
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         <div style={{ ...styles.card, marginTop: 14 }}>
@@ -732,6 +791,7 @@ const ModifyExistingBOM = () => {
               checked={producedCoProduct}
               onChange={(e) => {
                 const checked = e.target.checked;
+                setValidationWarning("");
                 setProducedCoProduct(checked);
                 if (!checked) {
                   setCoProducts([]);
@@ -810,6 +870,10 @@ const ModifyExistingBOM = () => {
               </div>
             )}
           </div>
+        ) : null}
+
+        {validationWarning ? (
+          <div style={styles.validationWarningBox}>{validationWarning}</div>
         ) : null}
 
         <div style={styles.bottom}>
@@ -945,12 +1009,6 @@ const styles = {
     color: "#111827",
     borderTop: "1px solid #eceff3",
   },
-  innerEmptyState: {
-    padding: "14px 12px",
-    fontSize: 13,
-    color: "#6b7280",
-    background: "#ffffff",
-  },
   sectionHeaderRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -1082,8 +1140,8 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "4px 10px",
-    cursor: "pointer",
+    padding: "4px 8px",
+    cursor: "text",
     boxSizing: "border-box",
   },
   chipWrap: {
@@ -1113,14 +1171,24 @@ const styles = {
     padding: 0,
     color: "#6b7280",
   },
-  placeholderText: {
+  multiSearchInput: {
+    border: "none",
+    outline: "none",
     fontSize: 14,
-    color: "#9ca3af",
+    minWidth: 140,
+    flex: 1,
+    padding: "4px 2px",
+    background: "transparent",
+    color: "#111827",
   },
-  dropdownArrow: {
-    marginLeft: 10,
+  dropdownToggleBtn: {
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
     color: "#6b7280",
     fontSize: 12,
+    padding: "4px 6px",
+    marginLeft: 8,
   },
   multiMenu: {
     position: "absolute",
@@ -1149,5 +1217,15 @@ const styles = {
     padding: "12px",
     fontSize: 13,
     color: "#6b7280",
+  },
+  validationWarningBox: {
+    marginTop: 14,
+    padding: "12px 14px",
+    borderRadius: 4,
+    border: "1px solid #fca5a5",
+    background: "#fef2f2",
+    color: "#b91c1c",
+    fontSize: 13,
+    fontWeight: 500,
   },
 };

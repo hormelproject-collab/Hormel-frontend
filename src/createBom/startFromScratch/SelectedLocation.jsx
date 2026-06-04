@@ -326,14 +326,15 @@ const styles = {
     fontWeight: 500,
     letterSpacing: "0.2px",
   },
-  nextBtnDisabled: {
-    backgroundColor: "#e5e7eb",
-    color: "#9ca3af",
-    cursor: "not-allowed",
-  },
-  nextBtnEnabled: {
-    backgroundColor: "#d1d5db",
-    color: "#6b7280",
-    cursor: "pointer",
-  },
+ nextBtnEnabled: {
+  backgroundColor: "#2563eb",
+  color: "#ffffff",
+  cursor: "pointer",
+},
+
+nextBtnDisabled: {
+  backgroundColor: "#e5e7eb",
+  color: "#9ca3af",
+  cursor: "not-allowed",
+}
 };
