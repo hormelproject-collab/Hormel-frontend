@@ -1,252 +1,1041 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import ResponseModal from "./ResponseModal";
-import { useScreen } from "../styles/useDevice";
-import { layout } from "../styles/layout";
 import axios from "axios";
+import { layout } from "../styles/layout";
+
+const VALIDATE_URL = "http://localhost:3000/bom-explosion";
+
+const buildConfigKey = (item, location) => `${item}__${location}`;
+const buildBomId = (bomVersion, item, location) =>
+  `${bomVersion}_${item}_${location}`;
+const buildRoutingId = (item, location, resource) =>
+  `ROUTING_${item}_${location}_${resource}`;
+
+const toNumberOrNull = (value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const getProducedDescription = (producedItem) =>
+  producedItem?.description ??
+  producedItem?.desc ??
+  producedItem?.item_description ??
+  "";
+
+const normalizeValidationEntries = (validationResult) => {
+  if (!validationResult) return [];
+
+  const output = [];
+
+  const pushEntry = (entry, index = 0, parent = {}) => {
+    if (!entry) return;
+
+    const code = String(
+      entry.validationSequence ??
+        entry.validation_sequence ??
+        entry.seq ??
+        entry.sequence ??
+        entry.code ??
+        parent.validationSequence ??
+        parent.validation_sequence ??
+        parent.seq ??
+        parent.sequence ??
+        parent.code ??
+        index + 1
+    );
+
+    const desc =
+      entry.validation ??
+      entry.desc ??
+      entry.description ??
+      entry.validation_description ??
+      entry.validationDescription ??
+      parent.validation ??
+      parent.desc ??
+      parent.description ??
+      parent.validation_description ??
+      parent.validationDescription ??
+      "";
+
+    const error =
+      entry.errorDetails ??
+      entry.error ??
+      entry.validation_error_detail ??
+      entry.validationErrorDetail ??
+      entry.message ??
+      entry.detail ??
+      parent.errorDetails ??
+      parent.error ??
+      parent.validation_error_detail ??
+      parent.validationErrorDetail ??
+      "";
+
+    const rm =
+      entry.remediationMessage ??
+      entry.rm ??
+      entry.remediation_message ??
+      entry.remediation ??
+      parent.remediationMessage ??
+      parent.rm ??
+      parent.remediation_message ??
+      parent.remediation ??
+      "";
+
+    output.push({
+      code,
+      desc,
+      error,
+      rm,
+    });
+  };
+
+  const manualErrorList = Array.isArray(validationResult?.errorList)
+    ? validationResult.errorList
+    : Array.isArray(validationResult?.data?.errorList)
+    ? validationResult.data.errorList
+    : [];
+
+  if (manualErrorList.length > 0) {
+    manualErrorList.forEach((row, rowIndex) => {
+      const messages = Array.isArray(row?.messages) ? row.messages : [];
+      messages.forEach((msg, msgIndex) => {
+        pushEntry(msg, `${rowIndex}-${msgIndex}`, row);
+      });
+    });
+  }
+
+  const fallbackArray =
+    validationResult?.validationErrors ??
+    validationResult?.errors ??
+    validationResult?.data?.validationErrors ??
+    validationResult?.data?.errors;
+
+  if (Array.isArray(fallbackArray)) {
+    fallbackArray.forEach((entry, index) => pushEntry(entry, index));
+  }
+
+  if (
+    fallbackArray &&
+    !Array.isArray(fallbackArray) &&
+    typeof fallbackArray === "object"
+  ) {
+    Object.entries(fallbackArray).forEach(([code, entry], index) => {
+      pushEntry(
+        {
+          code,
+          ...entry,
+        },
+        index
+      );
+    });
+  }
+
+  const seen = new Set();
+  return output.filter((entry) => {
+    const sig = JSON.stringify(entry);
+    if (seen.has(sig)) return false;
+    seen.add(sig);
+    return true;
+  });
+};
+
+const normalizeNonEmptyComponentItems = (rows) =>
+  (Array.isArray(rows) ? rows : []).filter(
+    (row) => String(row?.componentItem ?? "").trim() !== ""
+  );
+
+const normalizeNonEmptyCoProducts = (rows) =>
+  (Array.isArray(rows) ? rows : []).filter(
+    (row) => String(row?.coProductItem ?? "").trim() !== ""
+  );
 
 export default function SummaryPage() {
-  const screen = useScreen();
   const routerLocation = useLocation();
   const navigate = useNavigate();
 
-  const [response, setResponse] = useState(null);
-  const [showModal, setShowModal] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [priorityMap, setPriorityMap] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
 
-  const producedItems = routerLocation?.state?.producedItems || null;
+  const flow = routerLocation?.state?.flow ?? "";
+  const producedItems = routerLocation?.state?.producedItems ?? [];
+  const locations = routerLocation?.state?.locations ?? [];
+  const resourceComponentConfigs =
+    routerLocation?.state?.resourceComponentConfigs ?? {};
+  const resourceOptionsByKey = routerLocation?.state?.resourceOptionsByKey ?? {};
+  const summaryConfigSnapshot = routerLocation?.state?.summaryConfigSnapshot ?? [];
+  const previousState = routerLocation?.state?.previousState ?? {};
+  const selectedBom = routerLocation?.state?.selectedBom ?? null;
+  const modifiedBomData = routerLocation?.state?.modifiedBomData ?? null;
 
-  const summaryRows = useMemo(() => {
-    if (producedItems?.length) {
-      return producedItems.map((p, idx) => ({
-        producedItem: p.id || "-",
-        description: p.description || "Item Desc",
-        location: p.location || "-",
-        bomId: p.bomId || `BOM_${idx + 1}`,
-        routingId: p.routingId || `ROUTING_${idx + 1}`,
+  const summaryGroups = useMemo(() => {
+    if (flow === "modify-existing-bom" && modifiedBomData) {
+      const generatedRoutingRows = Array.isArray(
+        modifiedBomData.generatedRoutingRows
+      )
+        ? modifiedBomData.generatedRoutingRows
+        : [];
+
+      const components = Array.isArray(modifiedBomData.componentItems)
+        ? modifiedBomData.componentItems
+        : [];
+
+      const coproducts = Array.isArray(modifiedBomData.coProducts)
+        ? modifiedBomData.coProducts
+        : [];
+
+      const routingRows = generatedRoutingRows.map((row, index) => ({
+        key: `${
+          modifiedBomData.newBomId ?? modifiedBomData.originalBomId ?? "bom"
+        }__${row.routingId ?? index}`,
+        resource: row.resource ?? "",
+        resourceRelevancy: row.resourceRelevancy ?? "",
+        routingId:
+          row.routingId ??
+          buildRoutingId(
+            modifiedBomData.producedItem ?? "",
+            modifiedBomData.location ?? "",
+            row.resource ?? ""
+          ),
+        defaultPriority: index + 1,
+      }));
+
+      return [
+        {
+          key:
+            modifiedBomData.newBomId ??
+            modifiedBomData.originalBomId ??
+            `${modifiedBomData.producedItem ?? ""}__${
+              modifiedBomData.location ?? ""
+            }`,
+          producedItem:
+            modifiedBomData.producedItem ?? selectedBom?.produced_item ?? "-",
+          description:
+            modifiedBomData.producedItemDescription ??
+            selectedBom?.produced_item_desc ??
+            "",
+          location: modifiedBomData.location ?? selectedBom?.location ?? "-",
+          locationId: modifiedBomData.location ?? selectedBom?.location ?? "",
+          locationStatus:
+            selectedBom?.raw?.location_status ?? selectedBom?.raw?.status ?? "",
+          bomVersion: modifiedBomData.bomVersion ?? "PRIMARY",
+          bomId:
+            modifiedBomData.newBomId ??
+            buildBomId(
+              modifiedBomData.bomVersion ?? "PRIMARY",
+              modifiedBomData.producedItem ?? selectedBom?.produced_item ?? "",
+              modifiedBomData.location ?? selectedBom?.location ?? ""
+            ),
+          originalBomId: modifiedBomData.originalBomId ?? selectedBom?.bom_id ?? "",
+          producedItemData: {
+            item: modifiedBomData.producedItem ?? selectedBom?.produced_item ?? "",
+            description:
+              modifiedBomData.producedItemDescription ??
+              selectedBom?.produced_item_desc ??
+              "",
+            releaseFlag:
+              modifiedBomData.itemReleaseFlag ??
+              selectedBom?.item_release_flag ??
+              "",
+            status:
+              selectedBom?.raw?.item_status ?? selectedBom?.raw?.status ?? "",
+          },
+          locationData: {
+            location: modifiedBomData.location ?? selectedBom?.location ?? "",
+            name: modifiedBomData.location ?? selectedBom?.location ?? "",
+            status:
+              selectedBom?.raw?.location_status ?? selectedBom?.raw?.status ?? "",
+          },
+          config: {
+            resources: Array.isArray(modifiedBomData.selectedResources)
+              ? modifiedBomData.selectedResources
+              : [],
+            components,
+            coproducts,
+            producedCoProduct: !!modifiedBomData.producedCoProduct,
+            noComponentItems:
+              normalizeNonEmptyComponentItems(components).length === 0,
+            replicateToAll: false,
+          },
+          routingRows,
+          isModifyFlow: true,
+        },
+      ];
+    }
+
+    if (Array.isArray(summaryConfigSnapshot) && summaryConfigSnapshot.length > 0) {
+      return summaryConfigSnapshot.map((entry) => ({
+        key: entry.key,
+        producedItem: entry.producedItem ?? "-",
+        description: entry.producedItemDescription ?? "",
+        location: entry.locationName ?? entry.location ?? "-",
+        locationId: entry.location ?? "",
+        locationStatus: "",
+        bomVersion: entry.bomVersion ?? "PRIMARY",
+        bomId: entry.bomId ?? "",
+        originalBomId: "",
+        producedItemData: {
+          item: entry.producedItem ?? "",
+          description: entry.producedItemDescription ?? "",
+          releaseFlag: "",
+          status: "",
+        },
+        locationData: {
+          location: entry.location ?? "",
+          name: entry.locationName ?? entry.location ?? "",
+          status: "",
+        },
+        config: {
+          resources: Array.isArray(entry.selectedResources)
+            ? entry.selectedResources
+            : [],
+          components: Array.isArray(entry.components) ? entry.components : [],
+          coproducts: Array.isArray(entry.coproducts) ? entry.coproducts : [],
+          producedCoProduct: !!entry.producedCoProduct,
+          noComponentItems: !!entry.noComponentItems,
+          replicateToAll: !!entry.replicateToAll,
+        },
+        routingRows: Array.isArray(entry.generatedRoutingRows)
+          ? entry.generatedRoutingRows.map((row, index) => ({
+              key: `${entry.key}__${row.routingId ?? index}`,
+              resource: row.resource ?? "",
+              resourceRelevancy: row.resourceRelevancy ?? "",
+              routingId:
+                row.routingId ??
+                buildRoutingId(
+                  entry.producedItem ?? "",
+                  entry.location ?? "",
+                  row.resource ?? ""
+                ),
+              defaultPriority: index + 1,
+            }))
+          : [],
+        isModifyFlow: false,
       }));
     }
 
-    return [
-      {
-        producedItem: "Item123",
-        description: "Item Desc 1",
-        location: "Location 1",
-        bomId: "BOM1_Item123_Location1",
-        routingId: "ROUTING_Item123_Location1_Resource1",
-      },
-    ];
-  }, [producedItems]);
+    const groups = [];
 
-  // ✅ UNCHANGED (as you asked)
-  const postbomtable = async () => {
-    const mockRequest = [
-      {
-        bomId: "BOM1_Item001_Location 8",
+    producedItems.forEach((item) => {
+      locations.forEach((loc) => {
+        const key = buildConfigKey(item.item, loc.location);
+        const config = resourceComponentConfigs[key];
+        if (!config) return;
+
+        const selectedResources = Array.isArray(config.resources)
+          ? config.resources
+          : [];
+        const resourceOptions = resourceOptionsByKey[key] ?? [];
+        const resourceMap = new Map(
+          resourceOptions.map((row) => [String(row.resource), row])
+        );
+
+        const bomVersion = config.bomVersion ?? "PRIMARY";
+        const bomId = buildBomId(bomVersion, item.item, loc.location);
+
+        const routingRows = selectedResources.map((resource, index) => {
+          const option = resourceMap.get(String(resource)) ?? {};
+          return {
+            key: `${key}__${resource}`,
+            resource,
+            resourceRelevancy:
+              option.resourceRelevancy ?? option.resource_relevancy ?? "",
+            routingId: buildRoutingId(item.item, loc.location, resource),
+            defaultPriority: index + 1,
+          };
+        });
+
+        groups.push({
+          key,
+          producedItem: item.item ?? item.id ?? "-",
+          description: getProducedDescription(item),
+          location:
+            loc.name ?? loc.location_description ?? loc.location ?? "-",
+          locationId: loc.location ?? "",
+          locationStatus: loc.status ?? loc.location_status ?? "",
+          bomVersion,
+          bomId,
+          originalBomId: "",
+          producedItemData: item,
+          locationData: loc,
+          config,
+          routingRows,
+          isModifyFlow: false,
+        });
+      });
+    });
+
+    return groups;
+  }, [
+    flow,
+    modifiedBomData,
+    selectedBom,
+    producedItems,
+    locations,
+    resourceComponentConfigs,
+    resourceOptionsByKey,
+    summaryConfigSnapshot,
+  ]);
+
+  useEffect(() => {
+    const nextPriorityMap = {};
+    summaryGroups.forEach((group) => {
+      group.routingRows.forEach((row) => {
+        nextPriorityMap[row.routingId] = row.defaultPriority;
+      });
+    });
+    setPriorityMap(nextPriorityMap);
+  }, [summaryGroups]);
+
+  const actualPayload = useMemo(() => {
+    return summaryGroups.map((group) => {
+      const config = group.config ?? {};
+      const components = Array.isArray(config.components) ? config.components : [];
+      const coproducts = Array.isArray(config.coproducts) ? config.coproducts : [];
+
+      return {
+        bomId: group.bomId,
         engineeringChange: {
-          ecNumber: "EC747159",
-          creationDate: "2026-05-15",
+          ecNumber:
+            previousState?.engineeringChange?.ecNumber ??
+            previousState?.ecNumber ??
+            previousState?.engChangeId ??
+            "",
+          creationDate:
+            previousState?.engineeringChange?.creationDate ??
+            previousState?.creationDate ??
+            new Date().toISOString().slice(0, 10),
         },
         producedItem: {
-          item: "Item001",
-          description: "",
-          status: "Active",
-          releaseFlag: "",
+          item:
+            group.producedItemData?.item ??
+            group.producedItemData?.id ??
+            group.producedItem,
+          description:
+            group.producedItemData?.description ??
+            getProducedDescription(group.producedItemData),
+          status:
+            group.producedItemData?.status ??
+            group.producedItemData?.item_status ??
+            "",
+          releaseFlag:
+            group.producedItemData?.releaseFlag ??
+            group.producedItemData?.item_releaseflag ??
+            group.producedItemData?.item_release_flag ??
+            "",
         },
         locations: [
           {
-            locationId: "",
-            locationName: "Location 8",
-            locationStatus: "Active",
-            resourceInfo: {
-              resource: "Resource1",
-              resourceRelevancy: "MPS",
-              bomVersion: "PRIMARY",
-              routingId: "ROUTING_Item001_Location 8_Resource1",
-              priority: 10,
-              coProductAssociation: 1,
-            },
-            componentItems: [
-              {
-                componentItem: "Item1289",
-                description: "",
-                standardUsage: 1.1378,
-              },
-            ],
-            coProducts: [
-              {
-                coProductItem: "Item2000",
-                description: "",
-                qtyProducedPer: 0.25,
-              },
-            ],
+            locationId: group.locationId,
+            locationName:
+              group.locationData?.name ??
+              group.locationData?.location_description ??
+              group.location,
+            locationStatus:
+              group.locationData?.status ??
+              group.locationData?.location_status ??
+              "",
+            resourceInfo: group.routingRows.map((row) => ({
+              resource: row.resource,
+              resourceRelevancy: row.resourceRelevancy ?? "",
+              bomVersion: group.bomVersion,
+              routingId: row.routingId,
+              priority: Number(
+                priorityMap[row.routingId] ?? row.defaultPriority ?? 1
+              ),
+              coProductAssociation:
+                config.producedCoProduct === false ? 0 : 1,
+            })),
+            componentItems: config.noComponentItems
+              ? []
+              : normalizeNonEmptyComponentItems(components).map((row) => ({
+                  componentItem: row.componentItem,
+                  description: row.description ?? "",
+                  standardUsage: toNumberOrNull(row.standardUsage),
+                })),
+            coProducts: normalizeNonEmptyCoProducts(coproducts).map((row) => ({
+              coProductItem: row.coProductItem,
+              description: row.description ?? "",
+              qtyProducedPer: toNumberOrNull(row.qtyProduced),
+            })),
             flags: {
-              isCoProduct: true,
-              noComponentItems: false,
-              replicateForAllLocations: false,
+              isCoProduct: !!config.producedCoProduct,
+              noComponentItems: !!config.noComponentItems,
+              replicateForAllLocations: !!config.replicateToAll,
             },
           },
         ],
-      },
-    ];
+        notes: notes ?? "",
+      };
+    });
+  }, [summaryGroups, priorityMap, previousState, notes]);
 
-    const response = await axios.post(
-      "http://localhost:3000/bom-explosion",
-      mockRequest
-    );
+  const validationEntries = useMemo(() => {
+    return normalizeValidationEntries(validationResult);
+  }, [validationResult]);
 
-    return response.data;
+  const topLevelError =
+    validationResult?.error ?? validationResult?.data?.error ?? "";
+
+  const isSuccess =
+    !!validationResult && !topLevelError && validationEntries.length === 0;
+
+  const handlePriorityChange = (routingId, value) => {
+    const safeValue = value === "" ? "" : Math.max(1, Number(value) || 1);
+    setPriorityMap((prev) => ({
+      ...prev,
+      [routingId]: safeValue,
+    }));
   };
 
   const submitBOMs = async () => {
+    if (actualPayload.length === 0) {
+      setValidationResult({
+        error: "No summary rows available to validate.",
+      });
+      return;
+    }
+
     setSubmitting(true);
+    setValidationResult(null);
+
     try {
-      const data = await postbomtable();
-      setResponse(data);
-      setShowModal(true);
+      const response = await axios.post(VALIDATE_URL, {
+        entryMode: "manual",
+        records: actualPayload,
+      });
+      setValidationResult(response.data);
     } catch (err) {
-      setResponse({ error: String(err) });
-      setShowModal(true);
+      const serverData = err?.response?.data;
+      setValidationResult(
+        serverData ?? {
+          error: err?.message ?? "Failed to validate BOM payload.",
+        }
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <>
-      <div style={{ ...layout.page, background: "#f5f6f8" }}>
-        <div style={{ maxWidth: 1200, margin: "auto", padding: 24 }}>
-          
-          {/* BACK */}
-          <div
-            onClick={() => navigate(-1)}
-            style={{
-              color: "#2563eb",
-              cursor: "pointer",
-              fontWeight: 500,
-              marginBottom: 20,
-            }}
-          >
-            ← BACK
-          </div>
+    <div style={styles.pageBg}>
+      <div style={styles.page}>
+        <div style={styles.back} onClick={() => navigate(-1)}>
+          ← BACK
+        </div>
 
-          {/* TITLE */}
-          <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 6 }}>
-            Step 4: New BOM Summary & Routing Priority
-          </h1>
+        <h1 style={styles.h1}>Step 4: Summary</h1>
+        <p style={styles.sub}>Review the BOM records to be created</p>
 
-          <div style={{ color: "#6b7280", marginBottom: 28 }}>
-            Review the BOM records to be created
-          </div>
+        <div style={styles.card}>
+          <div style={styles.sectionHeading}>Main Summary Table</div>
 
-          {/* SECTION TITLE */}
-          <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 14 }}>
-            Main Summary Table
-          </h2>
-
-          {/* TABLE CARD */}
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 8,
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                
-                <thead style={{ background: "#f3f4f6" }}>
+          <div style={styles.tableWrap}>
+            <table style={styles.table}>
+              <thead>
+                <tr style={styles.tableHeaderRow}>
+                  <th style={styles.th}>Produced Item</th>
+                  <th style={styles.th}>Item Description</th>
+                  <th style={styles.th}>Location</th>
+                  <th style={styles.th}>BOM ID</th>
+                  <th style={styles.th}>Routing ID</th>
+                  <th style={styles.th}>Item BOM Routing Priority</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summaryGroups.length === 0 ? (
                   <tr>
-                    <th style={th}>Produced Item</th>
-                    <th style={th}>Item Description</th>
-                    <th style={th}>Location</th>
-                    <th style={th}>BOM ID</th>
-                    <th style={th}>Routing ID</th>
+                    <td style={styles.emptyTd} colSpan={6}>
+                      No summary data found. Please complete previous steps first.
+                    </td>
+                  </tr>
+                ) : (
+                  summaryGroups.map((group) =>
+                    (group.routingRows.length > 0
+                      ? group.routingRows
+                      : [
+                          {
+                            key: `${group.key}__NOROUTING`,
+                            routingId: "-",
+                            defaultPriority: 1,
+                          },
+                        ]
+                    ).map((row, index) => (
+                      <tr key={row.key} style={styles.tableBodyRow}>
+                        {index === 0 ? (
+                          <>
+                            <td style={styles.td}>{group.producedItem || "-"}</td>
+                            <td style={styles.td}>{group.description || "-"}</td>
+                            <td style={styles.td}>{group.location || "-"}</td>
+                            <td style={styles.td}>{group.bomId || "-"}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={styles.td}></td>
+                            <td style={styles.td}></td>
+                            <td style={styles.td}></td>
+                            <td style={styles.td}></td>
+                          </>
+                        )}
+                        <td style={styles.td}>{row.routingId || "-"}</td>
+                        <td style={styles.td}>
+                          {row.routingId === "-" ? (
+                            <span style={styles.mutedText}>-</span>
+                          ) : (
+                            <input
+                              type="number"
+                              min="1"
+                              value={priorityMap[row.routingId] ?? row.defaultPriority}
+                              onChange={(e) =>
+                                handlePriorityChange(row.routingId, e.target.value)
+                              }
+                              style={styles.priorityInput}
+                            />
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {summaryGroups.map((group, index) => {
+          const componentRows = normalizeNonEmptyComponentItems(
+            group.config?.components
+          );
+          const coProductRows = normalizeNonEmptyCoProducts(
+            group.config?.coproducts
+          );
+
+          return (
+            <div key={`${group.key}-detail-${index}`} style={styles.card}>
+
+              <div style={styles.detailSection}>
+                <div style={styles.detailTitle}>Component Items</div>
+                <div style={styles.innerTableWrap}>
+                  <table style={styles.innerTable}>
+                    <thead>
+                      <tr style={styles.innerHeaderRow}>
+                        <th style={styles.innerTh}>Component Item</th>
+                        <th style={styles.innerTh}>Item Description</th>
+                        <th style={styles.innerTh}>Standard Usage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {componentRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} style={styles.innerEmptyTd}>
+                            No component items added.
+                          </td>
+                        </tr>
+                      ) : (
+                        componentRows.map((row) => (
+                          <tr
+                            key={row.id ?? `${group.key}-${row.componentItem}`}
+                            style={styles.innerBodyRow}
+                          >
+                            <td style={styles.innerTd}>
+                              {row.componentItem || "-"}
+                            </td>
+                            <td style={styles.innerTd}>{row.description || "-"}</td>
+                            <td style={styles.innerTd}>
+                              {row.standardUsage === "" ||
+                              row.standardUsage === null ||
+                              row.standardUsage === undefined
+                                ? "-"
+                                : row.standardUsage}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={styles.detailSection}>
+                <div style={styles.detailTitle}>Co-Product Items</div>
+                <div style={styles.innerTableWrap}>
+                  <table style={styles.innerTable}>
+                    <thead>
+                      <tr style={styles.innerHeaderRow}>
+                        <th style={styles.innerTh}>Co-Product Item</th>
+                        <th style={styles.innerTh}>Item Description</th>
+                        <th style={styles.innerTh}>Qty Produced Per</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {coProductRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} style={styles.innerEmptyTd}>
+                            No co-product items added.
+                          </td>
+                        </tr>
+                      ) : (
+                        coProductRows.map((row) => (
+                          <tr
+                            key={row.id ?? `${group.key}-${row.coProductItem}`}
+                            style={styles.innerBodyRow}
+                          >
+                            <td style={styles.innerTd}>
+                              {row.coProductItem || "-"}
+                            </td>
+                            <td style={styles.innerTd}>{row.description || "-"}</td>
+                            <td style={styles.innerTd}>
+                              {row.qtyProduced === "" ||
+                              row.qtyProduced === null ||
+                              row.qtyProduced === undefined
+                                ? "-"
+                                : row.qtyProduced}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        <div style={styles.card}>
+          <div style={styles.sectionHeading}>Notes</div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Notes (Optional)"
+            style={styles.notes}
+          />
+        </div>
+
+        {topLevelError ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Error</div>
+            <div style={styles.errorText}>{topLevelError}</div>
+          </div>
+        ) : null}
+
+        {validationEntries.length > 0 ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Errors</div>
+            <div style={styles.validationTableWrap}>
+              <table style={styles.validationTable}>
+                <thead>
+                  <tr style={styles.validationHeaderRow}>
+                    <th style={styles.validationTh}>Validation Sequence</th>
+                    <th style={styles.validationTh}>Validation Description</th>
+                    <th style={styles.validationTh}>Error Details</th>
+                    <th style={styles.validationTh}>Remediation Message</th>
                   </tr>
                 </thead>
-
                 <tbody>
-                  {summaryRows.map((row, idx) => (
-                    <tr key={idx} style={{ borderTop: "1px solid #e5e7eb" }}>
-                      <td style={td}>{row.producedItem}</td>
-                      <td style={td}>{row.description}</td>
-                      <td style={td}>{row.location}</td>
-                      <td style={td}>{row.bomId}</td>
-                      <td style={td}>{row.routingId}</td>
+                  {validationEntries.map((entry, index) => (
+                    <tr
+                      key={`${entry.code}-${index}`}
+                      style={styles.validationBodyRow}
+                    >
+                      <td style={styles.validationTd}>{entry.code}</td>
+                      <td style={styles.validationTd}>{entry.desc ?? "-"}</td>
+                      <td style={styles.validationTd}>{entry.error ?? "-"}</td>
+                      <td style={styles.validationTd}>{entry.rm ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>
-
               </table>
             </div>
           </div>
+        ) : null}
 
-          {/* NOTES */}
-          <div style={{ marginTop: 28 }}>
-            <textarea
-              placeholder="Notes (Optional)"
-              style={{
-                width: "100%",
-                height: 120,
-                borderRadius: 6,
-                border: "1px solid #d1d5db",
-                padding: 16,
-                fontSize: 14,
-              }}
-            />
+        {isSuccess ? (
+          <div style={styles.successCard}>
+            <div style={styles.resultTitle}>Validation Success</div>
+            <div style={styles.successText}>
+              Validation completed successfully. No validation errors found.
+            </div>
           </div>
+        ) : null}
 
-          {/* SUBMIT BUTTON */}
-          <div
+        <div style={styles.bottomBar}>
+          <button
+            onClick={submitBOMs}
+            disabled={submitting || summaryGroups.length === 0}
             style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              marginTop: 20,
+              ...styles.submitBtn,
+              ...(submitting || summaryGroups.length === 0
+                ? styles.submitBtnDisabled
+                : {}),
             }}
           >
-            <button
-              onClick={submitBOMs}
-              disabled={submitting}
-              style={{
-                background: "#2e7d32",
-                color: "#fff",
-                padding: "14px 26px",
-                borderRadius: 6,
-                border: "none",
-                fontSize: 16,
-                fontWeight: 600,
-                cursor: "pointer",
-                opacity: submitting ? 0.7 : 1,
-              }}
-            >
-              {submitting ? "Submitting..." : "✅ SUBMIT & CREATE BOM(S)"}
-            </button>
-          </div>
+            {submitting ? "Submitting..." : "✓ SUBMIT & CREATE BOM(S)"}
+          </button>
         </div>
       </div>
-
-      {showModal && (
-        <ResponseModal
-          response={response}
-          onClose={() => setShowModal(false)}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
-/* TABLE STYLES */
-const th = {
-  textAlign: "left",
-  padding: "16px",
-  fontSize: 14,
-  fontWeight: 600,
-  color: "#374151",
-};
-
-const td = {
-  padding: "16px",
-  fontSize: 14,
-  color: "#111827",
+const styles = {
+  pageBg: {
+    ...layout.page,
+    background: "#f5f6f8",
+    minHeight: "100vh",
+  },
+  page: {
+    maxWidth: 1120,
+    margin: "0 auto",
+    padding: 24,
+    boxSizing: "border-box",
+  },
+  back: {
+    color: "#2563eb",
+    cursor: "pointer",
+    marginBottom: 12,
+    width: "fit-content",
+    fontSize: 14,
+    fontWeight: 500,
+  },
+  h1: {
+    margin: "0 0 6px 0",
+    fontSize: 32,
+    lineHeight: "40px",
+    fontWeight: 700,
+    color: "#111827",
+  },
+  sub: {
+    margin: "0 0 20px 0",
+    color: "#6b7280",
+    fontSize: 14,
+  },
+  card: {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 6,
+    padding: 18,
+    marginBottom: 16,
+    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+  },
+  sectionHeading: {
+    fontSize: 18,
+    fontWeight: 600,
+    color: "#111827",
+    marginBottom: 12,
+  },
+  tableWrap: {
+    overflowX: "auto",
+    border: "1px solid #e5e7eb",
+    borderRadius: 4,
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+  },
+  tableHeaderRow: {
+    background: "#f3f4f6",
+  },
+  tableBodyRow: {
+    borderTop: "1px solid #e5e7eb",
+  },
+  th: {
+    textAlign: "left",
+    padding: "12px 14px",
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#111827",
+    whiteSpace: "nowrap",
+  },
+  td: {
+    padding: "12px 14px",
+    fontSize: 14,
+    color: "#111827",
+    verticalAlign: "middle",
+  },
+  emptyTd: {
+    padding: "16px 14px",
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  priorityInput: {
+    width: 110,
+    height: 32,
+    border: "1px solid #cfd4dc",
+    borderRadius: 4,
+    padding: "0 10px",
+    fontSize: 14,
+    outline: "none",
+    background: "#ffffff",
+    boxSizing: "border-box",
+  },
+  mutedText: {
+    color: "#6b7280",
+  },
+  summaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 12,
+    marginBottom: 18,
+  },
+  summaryField: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 4,
+    background: "#f9fafb",
+    padding: 12,
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginBottom: 6,
+    fontWeight: 600,
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: "#111827",
+    lineHeight: 1.4,
+    wordBreak: "break-word",
+  },
+  detailSection: {
+    marginTop: 14,
+  },
+  detailTitle: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: "#111827",
+    marginBottom: 8,
+  },
+  innerTableWrap: {
+    overflowX: "auto",
+    border: "1px solid #e5e7eb",
+    borderRadius: 4,
+  },
+  innerTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+  },
+  innerHeaderRow: {
+    background: "#f3f4f6",
+  },
+  innerBodyRow: {
+    borderTop: "1px solid #e5e7eb",
+  },
+  innerTh: {
+    textAlign: "left",
+    padding: "11px 12px",
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#111827",
+    whiteSpace: "nowrap",
+  },
+  innerTd: {
+    padding: "11px 12px",
+    fontSize: 14,
+    color: "#111827",
+    verticalAlign: "top",
+  },
+  innerEmptyTd: {
+    padding: 14,
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  notes: {
+    width: "100%",
+    minHeight: 110,
+    borderRadius: 4,
+    border: "1px solid #cfd4dc",
+    padding: 14,
+    fontSize: 14,
+    resize: "vertical",
+    outline: "none",
+    boxSizing: "border-box",
+    background: "#ffffff",
+  },
+  resultTitle: {
+    fontSize: 15,
+    fontWeight: 700,
+    marginBottom: 10,
+  },
+  errorCard: {
+    background: "#fff5f5",
+    border: "1px solid #fecaca",
+    borderRadius: 6,
+    padding: 16,
+    marginBottom: 16,
+  },
+  successCard: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: 6,
+    padding: 16,
+    marginBottom: 16,
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#991b1b",
+    whiteSpace: "pre-wrap",
+  },
+  successText: {
+    fontSize: 14,
+    color: "#166534",
+    whiteSpace: "pre-wrap",
+  },
+  validationTableWrap: {
+    overflowX: "auto",
+    border: "1px solid #f3d0d0",
+    borderRadius: 4,
+    background: "#ffffff",
+    marginTop: 12,
+  },
+  validationTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+  },
+  validationHeaderRow: {
+    background: "#fee2e2",
+  },
+  validationBodyRow: {
+    borderTop: "1px solid #f3d0d0",
+  },
+  validationTh: {
+    textAlign: "left",
+    padding: "12px 14px",
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#7f1d1d",
+    whiteSpace: "nowrap",
+    verticalAlign: "top",
+  },
+  validationTd: {
+    padding: "12px 14px",
+    fontSize: 14,
+    color: "#111827",
+    verticalAlign: "top",
+    whiteSpace: "pre-wrap",
+    lineHeight: 1.5,
+  },
+  bottomBar: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: 20,
+  },
+  submitBtn: {
+    background: "#2e7d32",
+    color: "#ffffff",
+    padding: "14px 26px",
+    borderRadius: 4,
+    border: "none",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
+    cursor: "not-allowed",
+  },
 };
