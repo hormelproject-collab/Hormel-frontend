@@ -13,6 +13,7 @@ import EngineeringChangeLog from './EngineeringChange/Engineeringlog';
 import EngineeringChangeDetail from './EngineeringChange/EngineeringChangesDetail';
 import DownloadBOM from './DownloadBom/DownloadBomData';
 import SummaryPage from './createBom/Summary';
+import CreateItemBOMRoutingRecord from './createBom/AddItemBOMRoutingRecord/CreateItemBOMRoutingRecord';
 
 function App() {
 
@@ -38,6 +39,10 @@ function App() {
         {/* Start from Existing BOM*/}
         <Route path="/select-existing-bom" element={<SelectExistingBOM />} /> {/* step 1 */}
         <Route path="/modify-existing-bom/:id" element={<ModifyExistingBOM />} /> {/* step 2 */}
+
+        {/* Add Item BOM Routing Record */}
+        <Route path="/create-item-bom-routing-record" element={<CreateItemBOMRoutingRecord />} /> {/* step 1 */}
+
 
 
       </Routes>

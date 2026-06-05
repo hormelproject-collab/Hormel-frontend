@@ -44,7 +44,7 @@ const CreateBOM = () => {
                     onMouseLeave={(e) =>
                         (e.currentTarget.style.backgroundColor = "#f9f9f9")
                     }
-                >
+                    >
 
                     <h3>Start from Existing BOM</h3>
                     <p>Copy and modify an existing BOM</p>
@@ -53,6 +53,7 @@ const CreateBOM = () => {
 
                 <div
                     style={styles.optionCard}
+                    onClick={() => navigate("/create-item-bom-routing-record")}
                     onMouseEnter={(e) =>
                         (e.currentTarget.style.backgroundColor = "#e5e7eb")
                     }
