@@ -321,73 +321,73 @@ const ResourceComponentInfo = () => {
     });
   };
 
- const validateAllConfigs = () => {
-  for (const item of producedItems) {
-    for (const loc of locations) {
-      const config = getConfig(item.item, loc.location);
+  const validateAllConfigs = () => {
+    for (const item of producedItems) {
+      for (const loc of locations) {
+        const config = getConfig(item.item, loc.location);
 
-      if (!config.bomVersion) {
-        return "BOM Version is required for every item and location.";
-      }
-
-      if (!Array.isArray(config.resources) || config.resources.length === 0) {
-        return `Please select at least one resource for every Item`;
-      }
-
-      // ✅ Either Component Item must be entered OR No Component Items must be checked
-      if (!config.noComponentItems) {
-        const componentRows = Array.isArray(config.components)
-          ? config.components
-          : [];
-
-        const hasAtLeastOneComponent = componentRows.some(
-          (row) => String(row.componentItem ?? "").trim() !== ""
-        );
-
-        if (!hasAtLeastOneComponent) {
-          return `Please add at least one component item or select "No Component Items" for ${item.item} / ${loc.location}.`;
+        if (!config.bomVersion) {
+          return "BOM Version is required for every item and location.";
         }
 
-        for (const row of componentRows) {
-          const componentItem = String(row.componentItem ?? "").trim();
-          const usageText = String(row.standardUsage ?? "").trim();
+        if (!Array.isArray(config.resources) || config.resources.length === 0) {
+          return `Please select at least one resource for every Item`;
+        }
+
+        // ✅ Either Component Item must be entered OR No Component Items must be checked
+        if (!config.noComponentItems) {
+          const componentRows = Array.isArray(config.components)
+            ? config.components
+            : [];
+
+          const hasAtLeastOneComponent = componentRows.some(
+            (row) => String(row.componentItem ?? "").trim() !== ""
+          );
+
+          if (!hasAtLeastOneComponent) {
+            return `Please add at least one component item or select "No Component Items" for ${item.item} / ${loc.location}.`;
+          }
+
+          for (const row of componentRows) {
+            const componentItem = String(row.componentItem ?? "").trim();
+            const usageText = String(row.standardUsage ?? "").trim();
+
+            // Ignore fully empty placeholder rows
+            if (!componentItem && !usageText) continue;
+
+            if (!componentItem) {
+              return `Please select a component item for ${item.item} / ${loc.location}.`;
+            }
+
+            const usageValue = Number(usageText);
+            if (!(usageValue > 0)) {
+              return `Standard Usage must be greater than 0 for component ${componentItem} in ${item.item} / ${loc.location}.`;
+            }
+          }
+        }
+
+        const coRows = Array.isArray(config.coproducts) ? config.coproducts : [];
+        for (const row of coRows) {
+          const coProductItem = String(row.coProductItem ?? "").trim();
+          const qtyText = String(row.qtyProduced ?? "").trim();
 
           // Ignore fully empty placeholder rows
-          if (!componentItem && !usageText) continue;
+          if (!coProductItem && !qtyText) continue;
 
-          if (!componentItem) {
-            return `Please select a component item for ${item.item} / ${loc.location}.`;
+          if (!coProductItem) {
+            return `Please select a co-product item for ${item.item} / ${loc.location}.`;
           }
 
-          const usageValue = Number(usageText);
-          if (!(usageValue > 0)) {
-            return `Standard Usage must be greater than 0 for component ${componentItem} in ${item.item} / ${loc.location}.`;
+          const qtyValue = Number(qtyText);
+          if (!(qtyValue < 1)) {
+            return `Qty Produced must be less than 1 for co-product ${coProductItem} in ${item.item} / ${loc.location}.`;
           }
-        }
-      }
-
-      const coRows = Array.isArray(config.coproducts) ? config.coproducts : [];
-      for (const row of coRows) {
-        const coProductItem = String(row.coProductItem ?? "").trim();
-        const qtyText = String(row.qtyProduced ?? "").trim();
-
-        // Ignore fully empty placeholder rows
-        if (!coProductItem && !qtyText) continue;
-
-        if (!coProductItem) {
-          return `Please select a co-product item for ${item.item} / ${loc.location}.`;
-        }
-
-        const qtyValue = Number(qtyText);
-        if (!(qtyValue < 1)) {
-          return `Qty Produced must be less than 1 for co-product ${coProductItem} in ${item.item} / ${loc.location}.`;
         }
       }
     }
-  }
 
-  return "";
-};
+    return "";
+  };
 
   const handleNext = () => {
     const validationMessage = validateAllConfigs();
@@ -662,11 +662,6 @@ const ResourceComponentInfo = () => {
                                     </div>
                                   )}
                                 </div>
-
-                                <div style={styles.helperText}>
-                                  If desired resource is not found, please check
-                                  Oracle work definitions
-                                </div>
                               </div>
 
                               <div>
@@ -685,12 +680,12 @@ const ResourceComponentInfo = () => {
                                   {(bomVersions.length > 0
                                     ? bomVersions
                                     : [
-                                        "PRIMARY",
-                                        ...Array.from(
-                                          { length: 20 },
-                                          (_, index) => `BOM${index + 1}`
-                                        ),
-                                      ]
+                                      "PRIMARY",
+                                      ...Array.from(
+                                        { length: 20 },
+                                        (_, index) => `BOM${index + 1}`
+                                      ),
+                                    ]
                                   ).map((version) => (
                                     <option key={version} value={version}>
                                       {version}
@@ -707,7 +702,6 @@ const ResourceComponentInfo = () => {
                                 readOnly
                                 style={styles.inputDisabled}
                               />
-                              <div style={styles.helperText}>Auto-populated</div>
                             </div>
 
                             {selectedResourceRows.length > 0 && (

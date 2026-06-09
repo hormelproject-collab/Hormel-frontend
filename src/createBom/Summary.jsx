@@ -6,8 +6,10 @@ import { layout } from "../styles/layout";
 const VALIDATE_URL = "http://localhost:3000/bom-explosion";
 
 const buildConfigKey = (item, location) => `${item}__${location}`;
+
 const buildBomId = (bomVersion, item, location) =>
   `${bomVersion}_${item}_${location}`;
+
 const buildRoutingId = (item, location, resource) =>
   `ROUTING_${item}_${location}_${resource}`;
 
@@ -159,6 +161,63 @@ const calculateAggregateStandardUsage = (rows) => {
   return total.toFixed(4);
 };
 
+const getSuccessEcNumber = (validationResult, previousState) => {
+  return (
+    validationResult?.engineeringChangeId ??
+    validationResult?.engineering_change_id ??
+    validationResult?.ecNumber ??
+    validationResult?.ec_number ??
+    validationResult?.data?.engineeringChangeId ??
+    validationResult?.data?.engineering_change_id ??
+    validationResult?.data?.ecNumber ??
+    validationResult?.data?.ec_number ??
+    validationResult?.result?.engineeringChangeId ??
+    validationResult?.result?.ecNumber ??
+    previousState?.engineeringChange?.ecNumber ??
+    previousState?.ecNumber ??
+    previousState?.engChangeId ??
+    ""
+  );
+};
+
+const buildDuplicatePriorityValidationEntries = (summaryGroups, priorityMap) => {
+  const errors = [];
+
+  summaryGroups.forEach((group) => {
+    const routingRows = Array.isArray(group.routingRows) ? group.routingRows : [];
+    const normalized = routingRows
+      .filter((row) => row.routingId && row.routingId !== "-")
+      .map((row) => ({
+        routingId: row.routingId,
+        resource: row.resource ?? "",
+        priority: Number(priorityMap[row.routingId] ?? row.defaultPriority ?? 1),
+      }))
+      .filter((row) => Number.isFinite(row.priority));
+
+    const byPriority = new Map();
+
+    normalized.forEach((row) => {
+      if (!byPriority.has(row.priority)) {
+        byPriority.set(row.priority, []);
+      }
+      byPriority.get(row.priority).push(row);
+    });
+
+    for (const [priority, rows] of byPriority.entries()) {
+      if (rows.length > 1) {
+        errors.push({
+          code: "1020",
+          desc: "Check duplicate priority",
+          error: `Duplicate priority ${priority} found for Item "${group.producedItem}" at Location "${group.location}". `,
+          rm: "Assign different routing priorities for each resource within the same item and location.",
+        });
+      }
+    }
+  });
+
+  return errors;
+};
+
 export default function SummaryPage() {
   const routerLocation = useLocation();
   const navigate = useNavigate();
@@ -182,9 +241,7 @@ export default function SummaryPage() {
 
   const summaryGroups = useMemo(() => {
     if (flow === "modify-existing-bom" && modifiedBomData) {
-      const generatedRoutingRows = Array.isArray(
-        modifiedBomData.generatedRoutingRows
-      )
+      const generatedRoutingRows = Array.isArray(modifiedBomData.generatedRoutingRows)
         ? modifiedBomData.generatedRoutingRows
         : [];
 
@@ -249,8 +306,7 @@ export default function SummaryPage() {
               modifiedBomData.itemReleaseFlag ??
               selectedBom?.item_release_flag ??
               "",
-            status:
-              selectedBom?.raw?.item_status ?? selectedBom?.raw?.status ?? "",
+            status: selectedBom?.raw?.item_status ?? selectedBom?.raw?.status ?? "",
           },
           locationData: {
             location: modifiedBomData.location ?? selectedBom?.location ?? "",
@@ -361,8 +417,7 @@ export default function SummaryPage() {
           key,
           producedItem: item.item ?? item.id ?? "-",
           description: getProducedDescription(item),
-          location:
-            loc.name ?? loc.location_description ?? loc.location ?? "-",
+          location: loc.name ?? loc.location_description ?? loc.location ?? "-",
           locationId: loc.location ?? "",
           locationStatus: loc.status ?? loc.location_status ?? "",
           bomVersion,
@@ -399,47 +454,25 @@ export default function SummaryPage() {
     setPriorityMap(nextPriorityMap);
   }, [summaryGroups]);
 
-  const summaryCards = useMemo(() => {
-    return summaryGroups.flatMap((group) => {
-      const routingRows =
-        group.routingRows.length > 0
-          ? group.routingRows
-          : [
-              {
-                key: `${group.key}__NOROUTING`,
-                routingId: "-",
-                defaultPriority: 1,
-                resource: "",
-                resourceRelevancy: "",
-              },
-            ];
-
-      return routingRows.map((row) => ({
-        cardKey: row.key,
-        group,
-        row,
-      }));
-    });
-  }, [summaryGroups]);
-
   useEffect(() => {
     setExpandedMap((prev) => {
       const next = { ...prev };
-      summaryCards.forEach((card) => {
-        if (typeof next[card.cardKey] === "undefined") {
-          next[card.cardKey] = false;
+
+      summaryGroups.forEach((group) => {
+        if (typeof next[group.key] === "undefined") {
+          next[group.key] = true; // auto expand by default
         }
       });
 
       Object.keys(next).forEach((key) => {
-        if (!summaryCards.some((card) => card.cardKey === key)) {
+        if (!summaryGroups.some((group) => group.key === key)) {
           delete next[key];
         }
       });
 
       return next;
     });
-  }, [summaryCards]);
+  }, [summaryGroups]);
 
   const actualPayload = useMemo(() => {
     return summaryGroups.map((group) => {
@@ -497,8 +530,7 @@ export default function SummaryPage() {
               priority: Number(
                 priorityMap[row.routingId] ?? row.defaultPriority ?? 1
               ),
-              coProductAssociation:
-                config.producedCoProduct === false ? 0 : 1,
+              coProductAssociation: config.producedCoProduct === false ? 0 : 1,
             })),
             componentItems: config.noComponentItems
               ? []
@@ -510,7 +542,9 @@ export default function SummaryPage() {
             coProducts: normalizeNonEmptyCoProducts(coproducts).map((row) => ({
               coProductItem: row.coProductItem,
               description: row.description ?? "",
-              qtyProducedPer: toNumberOrNull(row.qtyProduced),
+              qtyProducedPer: toNumberOrNull(
+                row.qtyProduced ?? row.qtyProducedPer
+              ),
             })),
             flags: {
               isCoProduct: !!config.producedCoProduct,
@@ -534,6 +568,10 @@ export default function SummaryPage() {
   const isSuccess =
     !!validationResult && !topLevelError && validationEntries.length === 0;
 
+  const successEcNumber = useMemo(() => {
+    return getSuccessEcNumber(validationResult, previousState);
+  }, [validationResult, previousState]);
+
   const handlePriorityChange = (routingId, value) => {
     const safeValue = value === "" ? "" : Math.max(1, Number(value) || 1);
     setPriorityMap((prev) => ({
@@ -542,10 +580,10 @@ export default function SummaryPage() {
     }));
   };
 
-  const toggleExpanded = (cardKey) => {
+  const toggleExpanded = (groupKey) => {
     setExpandedMap((prev) => ({
       ...prev,
-      [cardKey]: !prev[cardKey],
+      [groupKey]: !prev[groupKey],
     }));
   };
 
@@ -553,6 +591,18 @@ export default function SummaryPage() {
     if (actualPayload.length === 0) {
       setValidationResult({
         error: "No summary rows available to validate.",
+      });
+      return;
+    }
+
+    const duplicatePriorityErrors = buildDuplicatePriorityValidationEntries(
+      summaryGroups,
+      priorityMap
+    );
+
+    if (duplicatePriorityErrors.length > 0) {
+      setValidationResult({
+        validationErrors: duplicatePriorityErrors,
       });
       return;
     }
@@ -585,215 +635,266 @@ export default function SummaryPage() {
           ← BACK
         </div>
 
-        <h1 style={styles.h1}>Step 4: New BOM Summary &amp; Routing Priority</h1>
+        <h1 style={styles.h1}>Step 4: New BOM Summary & Routing Priority</h1>
         <p style={styles.sub}>Review the BOM records to be created</p>
 
         <div style={styles.card}>
           <div style={styles.sectionHeading}>Main Summary Table</div>
 
-          {summaryCards.length === 0 ? (
+          {summaryGroups.length === 0 ? (
             <div style={styles.emptyState}>
               No summary data found. Please complete previous steps first.
             </div>
           ) : (
-            summaryCards.map((card) => {
-              const { group, row, cardKey } = card;
-              const componentRows = normalizeNonEmptyComponentItems(
-                group.config?.components
-              );
-              const coProductRows = normalizeNonEmptyCoProducts(
-                group.config?.coproducts
-              );
-              const aggregateStandardUsage =
-                calculateAggregateStandardUsage(componentRows);
-              const isExpanded = !!expandedMap[cardKey];
+            <>
+              <div style={styles.mainTableHeader}>
+                <div />
+                <div style={styles.tableHeaderCell}>Produced Item</div>
+                <div style={styles.tableHeaderCell}>Item Description</div>
+                <div style={styles.tableHeaderCell}>Location</div>
+                <div style={styles.tableHeaderCell}>BOM ID</div>
+                <div style={styles.tableHeaderCell}>Routing ID / Resource</div>
+                <div style={styles.tableHeaderCell}>Item BOM Routing Priority</div>
+              </div>
 
-              return (
-                <div key={cardKey} style={styles.summaryCard}>
-                  <div style={styles.summaryHeaderRow}>
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(cardKey)}
-                      style={styles.chevronBtn}
-                      aria-label={isExpanded ? "Collapse details" : "Expand details"}
-                    >
-                      <span
-                        style={{
-                          ...styles.chevron,
-                          transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
+              {summaryGroups.map((group) => {
+                const componentRows = normalizeNonEmptyComponentItems(
+                  group.config?.components
+                );
+                const coProductRows = normalizeNonEmptyCoProducts(
+                  group.config?.coproducts
+                );
+                const aggregateStandardUsage =
+                  calculateAggregateStandardUsage(componentRows);
+                const isExpanded = !!expandedMap[group.key];
+                const routingRows =
+                  group.routingRows.length > 0
+                    ? group.routingRows
+                    : [
+                        {
+                          key: `${group.key}__NOROUTING`,
+                          routingId: "-",
+                          defaultPriority: 1,
+                          resource: "",
+                          resourceRelevancy: "",
+                        },
+                      ];
+
+                return (
+                  <div key={group.key} style={styles.summaryCard}>
+                    <div style={styles.summaryHeaderRow}>
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(group.key)}
+                        style={styles.chevronBtn}
+                        aria-label={
+                          isExpanded ? "Collapse details" : "Expand details"
+                        }
                       >
-                        ▾
-                      </span>
-                    </button>
+                        <span
+                          style={{
+                            ...styles.chevron,
+                            transform: isExpanded
+                              ? "rotate(180deg)"
+                              : "rotate(0deg)",
+                          }}
+                        >
+                          ▾
+                        </span>
+                      </button>
 
-                    <div style={styles.headerCellProduced}>
-                      <div style={styles.headerValue}>
-                        {group.producedItem || "-"}
+                      <div style={styles.headerCellProduced}>
+                        <div style={styles.headerValue}>
+                          {group.producedItem || "-"}
+                        </div>
+                      </div>
+
+                      <div style={styles.headerCellDescription}>
+                        <div style={styles.headerValue}>
+                          {group.description || "-"}
+                        </div>
+                      </div>
+
+                      <div style={styles.headerCellLocation}>
+                        <div style={styles.headerValue}>{group.location || "-"}</div>
+                      </div>
+
+                      <div style={styles.headerCellBom}>
+                        <div style={styles.headerValue}>{group.bomId || "-"}</div>
+                      </div>
+
+                      <div style={styles.headerCellRouting}>
+                        <div style={styles.routingListWrap}>
+                          {routingRows.map((row) => (
+                            <div key={row.key} style={styles.routingLine}>
+                              <div style={styles.headerValue}>
+                                {row.routingId || "-"}
+                              </div>
+                            
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={styles.headerCellPriority}>
+                        <div style={styles.priorityListWrap}>
+                          {routingRows.map((row) =>
+                            row.routingId === "-" ? (
+                              <div key={row.key} style={styles.priorityLine}>
+                                <span style={styles.mutedText}>-</span>
+                              </div>
+                            ) : (
+                              <div key={row.key} style={styles.priorityLine}>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={
+                                    priorityMap[row.routingId] ?? row.defaultPriority
+                                  }
+                                  onChange={(e) =>
+                                    handlePriorityChange(
+                                      row.routingId,
+                                      e.target.value
+                                    )
+                                  }
+                                  style={styles.priorityInput}
+                                />
+                              </div>
+                            )
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div style={styles.headerCellDescription}>
-                      <div style={styles.headerValue}>
-                        {group.description || "-"}
+                    {isExpanded ? (
+                      <div style={styles.expandArea}>
+                        <div style={styles.detailSection}>
+                          <div style={styles.detailLabel}>Component Items:</div>
+                          <div style={styles.innerTableWrap}>
+                            <table style={styles.innerTable}>
+                              <thead>
+                                <tr style={styles.componentHeaderRow}>
+                                  <th style={styles.innerTh}>Component Item</th>
+                                  <th style={styles.innerTh}>Item Description</th>
+                                  <th style={styles.innerTh}>Standard Usage</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {componentRows.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={3} style={styles.innerEmptyTd}>
+                                      No component items added.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  componentRows.map((componentRow) => (
+                                    <tr
+                                      key={
+                                        componentRow.id ??
+                                        `${group.key}-${componentRow.componentItem}`
+                                      }
+                                      style={styles.innerBodyRow}
+                                    >
+                                      <td style={styles.innerTd}>
+                                        {componentRow.componentItem || "-"}
+                                      </td>
+                                      <td style={styles.innerTd}>
+                                        {componentRow.description || "-"}
+                                      </td>
+                                      <td style={styles.innerTd}>
+                                        {componentRow.standardUsage === "" ||
+                                        componentRow.standardUsage === null ||
+                                        componentRow.standardUsage === undefined
+                                          ? "-"
+                                          : componentRow.standardUsage}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                                <tr style={styles.aggregateRow}>
+                                  <td
+                                    style={{
+                                      ...styles.innerTd,
+                                      ...styles.aggregateLabelCell,
+                                    }}
+                                    colSpan={2}
+                                  >
+                                    Aggregate Standard Usage
+                                  </td>
+                                  <td
+                                    style={{
+                                      ...styles.innerTd,
+                                      ...styles.aggregateValueCell,
+                                    }}
+                                  >
+                                    {aggregateStandardUsage}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        <div style={styles.detailSection}>
+                          <div style={styles.detailLabel}>Co-Products:</div>
+                          <div style={styles.innerTableWrap}>
+                            <table style={styles.innerTable}>
+                              <thead>
+                                <tr style={styles.coProductHeaderRow}>
+                                  <th style={styles.innerTh}>Co-Product Item</th>
+                                  <th style={styles.innerTh}>Item Description</th>
+                                  <th style={styles.innerTh}>
+                                    Co-Product Quantity Produced Per
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {coProductRows.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={3} style={styles.innerEmptyTd}>
+                                      No co-product items added.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  coProductRows.map((coProductRow) => (
+                                    <tr
+                                      key={
+                                        coProductRow.id ??
+                                        `${group.key}-${coProductRow.coProductItem}`
+                                      }
+                                      style={styles.innerBodyRow}
+                                    >
+                                      <td style={styles.innerTd}>
+                                        {coProductRow.coProductItem || "-"}
+                                      </td>
+                                      <td style={styles.innerTd}>
+                                        {coProductRow.description || "-"}
+                                      </td>
+                                      <td style={styles.innerTd}>
+                                        {coProductRow.qtyProduced === "" ||
+                                        coProductRow.qtyProduced === null ||
+                                        coProductRow.qtyProduced === undefined
+                                          ? coProductRow.qtyProducedPer === "" ||
+                                            coProductRow.qtyProducedPer === null ||
+                                            coProductRow.qtyProducedPer ===
+                                              undefined
+                                            ? "-"
+                                            : coProductRow.qtyProducedPer
+                                          : coProductRow.qtyProduced}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-
-                    <div style={styles.headerCellLocation}>
-                      <div style={styles.headerValue}>{group.location || "-"}</div>
-                    </div>
-
-                    <div style={styles.headerCellBom}>
-                      <div style={styles.headerValue}>{group.bomId || "-"}</div>
-                    </div>
-
-                    <div style={styles.headerCellRouting}>
-                      <div style={styles.headerValue}>{row.routingId || "-"}</div>
-                    </div>
-
-                    <div style={styles.headerCellPriority}>
-                      {row.routingId === "-" ? (
-                        <span style={styles.mutedText}>-</span>
-                      ) : (
-                        <input
-                          type="number"
-                          min="1"
-                          value={priorityMap[row.routingId] ?? row.defaultPriority}
-                          onChange={(e) =>
-                            handlePriorityChange(row.routingId, e.target.value)
-                          }
-                          style={styles.priorityInput}
-                        />
-                      )}
-                    </div>
+                    ) : null}
                   </div>
-
-                  {isExpanded ? (
-                    <div style={styles.expandArea}>
-                      <div style={styles.detailSection}>
-                        <div style={styles.detailLabel}>Component Items:</div>
-
-                        <div style={styles.innerTableWrap}>
-                          <table style={styles.innerTable}>
-                            <thead>
-                              <tr style={styles.componentHeaderRow}>
-                                <th style={styles.innerTh}>Component Item</th>
-                                <th style={styles.innerTh}>Item Description</th>
-                                <th style={styles.innerTh}>Standard Usage</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {componentRows.length === 0 ? (
-                                <tr>
-                                  <td colSpan={3} style={styles.innerEmptyTd}>
-                                    No component items added.
-                                  </td>
-                                </tr>
-                              ) : (
-                                componentRows.map((componentRow) => (
-                                  <tr
-                                    key={
-                                      componentRow.id ??
-                                      `${group.key}-${row.routingId}-${componentRow.componentItem}`
-                                    }
-                                    style={styles.innerBodyRow}
-                                  >
-                                    <td style={styles.innerTd}>
-                                      {componentRow.componentItem || "-"}
-                                    </td>
-                                    <td style={styles.innerTd}>
-                                      {componentRow.description || "-"}
-                                    </td>
-                                    <td style={styles.innerTd}>
-                                      {componentRow.standardUsage === "" ||
-                                      componentRow.standardUsage === null ||
-                                      componentRow.standardUsage === undefined
-                                        ? "-"
-                                        : componentRow.standardUsage}
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-
-                              <tr style={styles.aggregateRow}>
-                                <td
-                                  style={{
-                                    ...styles.innerTd,
-                                    ...styles.aggregateLabelCell,
-                                  }}
-                                  colSpan={2}
-                                >
-                                  Aggregate Standard Usage
-                                </td>
-                                <td
-                                  style={{
-                                    ...styles.innerTd,
-                                    ...styles.aggregateValueCell,
-                                  }}
-                                >
-                                  {aggregateStandardUsage}
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                      <div style={styles.detailSection}>
-                        <div style={styles.detailLabel}>Co-Products:</div>
-
-                        <div style={styles.innerTableWrap}>
-                          <table style={styles.innerTable}>
-                            <thead>
-                              <tr style={styles.coProductHeaderRow}>
-                                <th style={styles.innerTh}>Co-Product Item</th>
-                                <th style={styles.innerTh}>Item Description</th>
-                                <th style={styles.innerTh}>
-                                  Co-Product Quantity Produced Per
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {coProductRows.length === 0 ? (
-                                <tr>
-                                  <td colSpan={3} style={styles.innerEmptyTd}>
-                                    No co-product items added.
-                                  </td>
-                                </tr>
-                              ) : (
-                                coProductRows.map((coProductRow) => (
-                                  <tr
-                                    key={
-                                      coProductRow.id ??
-                                      `${group.key}-${row.routingId}-${coProductRow.coProductItem}`
-                                    }
-                                    style={styles.innerBodyRow}
-                                  >
-                                    <td style={styles.innerTd}>
-                                      {coProductRow.coProductItem || "-"}
-                                    </td>
-                                    <td style={styles.innerTd}>
-                                      {coProductRow.description || "-"}
-                                    </td>
-                                    <td style={styles.innerTd}>
-                                      {coProductRow.qtyProduced === "" ||
-                                      coProductRow.qtyProduced === null ||
-                                      coProductRow.qtyProduced === undefined
-                                        ? "-"
-                                        : coProductRow.qtyProduced}
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })
+                );
+              })}
+            </>
           )}
         </div>
 
@@ -849,7 +950,9 @@ export default function SummaryPage() {
           <div style={styles.successCard}>
             <div style={styles.resultTitle}>Validation Success</div>
             <div style={styles.successText}>
-              Validation completed successfully. No validation errors found.
+              {`Validation was successful and the records are saved successfully${
+                successEcNumber ? ` with ${successEcNumber}.` : "."
+              }`}
             </div>
           </div>
         ) : null}
@@ -925,7 +1028,23 @@ const styles = {
     fontSize: 14,
     color: "#6b7280",
   },
-
+  mainTableHeader: {
+    display: "grid",
+    gridTemplateColumns: "34px 1.1fr 1.1fr 0.9fr 1.35fr 1.9fr 170px",
+    alignItems: "center",
+    columnGap: 12,
+    padding: "12px 16px",
+    minHeight: 44,
+    background: "#f3f4f6",
+    borderTop: "1px solid #e5e7eb",
+    borderBottom: "1px solid #e5e7eb",
+  },
+  tableHeaderCell: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#374151",
+    lineHeight: 1.4,
+  },
   summaryCard: {
     borderTop: "1px solid #e5e7eb",
     background: "#ffffff",
@@ -933,7 +1052,7 @@ const styles = {
   summaryHeaderRow: {
     display: "grid",
     gridTemplateColumns: "34px 1.1fr 1.1fr 0.9fr 1.35fr 1.9fr 170px",
-    alignItems: "center",
+    alignItems: "stretch",
     columnGap: 12,
     padding: "14px 16px",
     minHeight: 58,
@@ -948,6 +1067,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     padding: 0,
+    marginTop: 6,
   },
   chevron: {
     fontSize: 15,
@@ -958,23 +1078,33 @@ const styles = {
   },
   headerCellProduced: {
     minWidth: 0,
+    display: "flex",
+    alignItems: "flex-start",
+    paddingTop: 4,
   },
   headerCellDescription: {
     minWidth: 0,
+    display: "flex",
+    alignItems: "flex-start",
+    paddingTop: 4,
   },
   headerCellLocation: {
     minWidth: 0,
+    display: "flex",
+    alignItems: "flex-start",
+    paddingTop: 4,
   },
   headerCellBom: {
     minWidth: 0,
+    display: "flex",
+    alignItems: "flex-start",
+    paddingTop: 4,
   },
   headerCellRouting: {
     minWidth: 0,
   },
   headerCellPriority: {
     minWidth: 0,
-    display: "flex",
-    justifyContent: "flex-start",
   },
   headerValue: {
     fontSize: 14,
@@ -982,7 +1112,31 @@ const styles = {
     lineHeight: 1.4,
     wordBreak: "break-word",
   },
-
+  routingListWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  routingLine: {
+    padding: "2px 0",
+  },
+  routingMetaText: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+    lineHeight: 1.4,
+    wordBreak: "break-word",
+  },
+  priorityListWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
+  priorityLine: {
+    minHeight: 36,
+    display: "flex",
+    alignItems: "center",
+  },
   expandArea: {
     padding: "0 16px 16px 52px",
     background: "#fafafa",
@@ -997,7 +1151,6 @@ const styles = {
     color: "#111827",
     marginBottom: 8,
   },
-
   innerTableWrap: {
     overflowX: "auto",
     border: "1px solid #e5e7eb",
@@ -1047,7 +1200,6 @@ const styles = {
   aggregateValueCell: {
     fontWeight: 700,
   },
-
   priorityInput: {
     width: 132,
     height: 32,
@@ -1062,7 +1214,6 @@ const styles = {
   mutedText: {
     color: "#6b7280",
   },
-
   notes: {
     width: "calc(100% - 36px)",
     minHeight: 110,
@@ -1076,7 +1227,6 @@ const styles = {
     background: "#ffffff",
     margin: "0 18px 18px 18px",
   },
-
   resultTitle: {
     fontSize: 15,
     fontWeight: 700,
@@ -1106,7 +1256,6 @@ const styles = {
     color: "#166534",
     whiteSpace: "pre-wrap",
   },
-
   validationTableWrap: {
     overflowX: "auto",
     border: "1px solid #f3d0d0",
@@ -1141,7 +1290,6 @@ const styles = {
     whiteSpace: "pre-wrap",
     lineHeight: 1.5,
   },
-
   bottomBar: {
     display: "flex",
     justifyContent: "flex-end",

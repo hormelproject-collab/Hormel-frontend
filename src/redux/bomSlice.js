@@ -43,7 +43,7 @@ export const fetchItemMaster = createAsyncThunk(
   "bom/fetchItemMaster",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch("/api/bigquery/table/item-master-with-releaseflag");
+      const res = await fetch("http://localhost:3000/api/bigquery/table/item-master-with-releaseflag");
 
       if (!res.ok) {
         return rejectWithValue(await res.text());
@@ -97,7 +97,7 @@ export const fetchResourceComponentMetadata = createAsyncThunk(
             .filter(Boolean)
         : [];
 
-      const res = await fetch("/api/bigquery/table/resource-component-metadata", {
+      const res = await fetch("http://localhost:3000/api/bigquery/table/resource-component-metadata", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -190,7 +190,7 @@ export const fetchLocationsByItems = createAsyncThunk(
             .filter(Boolean)
         : [];
 
-      const res = await fetch("/api/bigquery/table/locations-by-items", {
+      const res = await fetch("http://localhost:3000/api/bigquery/table/locations-by-items", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -238,7 +238,7 @@ export const fetchLocationMaster = createAsyncThunk(
   "bom/fetchLocationMaster",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch("/api/tables/location_master");
+      const res = await fetch("http://localhost:3000/api/tables/location_master");
 
       if (!res.ok) {
         return rejectWithValue(await res.text());

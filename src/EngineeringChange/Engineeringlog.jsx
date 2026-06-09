@@ -1,500 +1,1248 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
+import { useNavigate } from "react-router-dom"
 
-export default function EngineeringChangeLog() {
-  const navigate = useNavigate();
+const API_BASE_URL = "http://localhost:3000";
 
-  const [rawData, setRawData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+/* ----------------------------- Helper Functions ----------------------------- */
 
-  const [userFilter, setUserFilter] = useState("ALL");
-  const [showMineOnly, setShowMineOnly] = useState(false);
+const safeArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (value == null) return [];
+  return [value];
+};
 
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-
-  const [criteria1, setCriteria1] = useState("None");
-  const [criteria2, setCriteria2] = useState("None");
-
-  const [searchValues, setSearchValues] = useState({});
-
-  useEffect(() => {
-    async function load() {
-      try {
-        setLoading(true);
-        setError("");
-
-        const payload = {
-          fromDate,
-          toDate,
-          userFilter,
-          showMineOnly,
-          criteria1,
-          criteria2,
-          search: {
-            criteria1Value: searchValues[criteria1] || "",
-            criteria2Value: searchValues[criteria2] || ""
-          }
-        };
-
-        const res = await fetch("http://localhost:3000/api/engineering-change-log", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-          throw new Error("Failed to fetch engineering change log");
+const toDisplayString = (value) => {
+  if (value == null) return "";
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => {
+        if (typeof v === "object" && v !== null) {
+          return (
+            v.name ||
+            v.value ||
+            v.id ||
+            v.location ||
+            v.bom_id ||
+            v.resource ||
+            JSON.stringify(v)
+          );
         }
+        return String(v);
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+};
 
-        const data = await res.json();
-        setRawData(data.items || []);
-      } catch (e) {
-        console.error("Engineering change log load error:", e);
-        setError("Failed to load data");
-      } finally {
-        setLoading(false);
+const formatDateForInput = (date) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const formatDateForUI = (date) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return toDisplayString(date);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const fileDateStamp = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}${mm}${dd}`;
+};
+
+const normalizeDetailList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") return [value];
+  return [{ value: String(value) }];
+};
+
+const normalizeModifiedComparison = (value) => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (typeof item === "object" && item !== null) {
+        return {
+          section:
+            item.section ||
+            item.entity ||
+            item.level ||
+            item.category ||
+            "",
+          field: item.field || item.column || item.name || "",
+          old_value:
+            item.old_value ??
+            item.oldValue ??
+            item.previous_value ??
+            item.previousValue ??
+            "",
+          new_value:
+            item.new_value ??
+            item.newValue ??
+            item.updated_value ??
+            item.updatedValue ??
+            "",
+        };
+      }
+
+      return {
+        section: "",
+        field: "",
+        old_value: "",
+        new_value: String(item),
+      };
+    });
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value).map(([field, diff]) => {
+      if (typeof diff === "object" && diff !== null) {
+        return {
+          section:
+            diff.section ||
+            diff.entity ||
+            diff.level ||
+            diff.category ||
+            "",
+          field,
+          old_value:
+            diff.old_value ??
+            diff.oldValue ??
+            diff.previous_value ??
+            diff.previousValue ??
+            "",
+          new_value:
+            diff.new_value ??
+            diff.newValue ??
+            diff.updated_value ??
+            diff.updatedValue ??
+            "",
+        };
+      }
+      return {
+        section: "",
+        field,
+        old_value: "",
+        new_value: String(diff),
+      };
+    });
+  }
+
+  return [
+    {
+      section: "",
+      field: "",
+      old_value: "",
+      new_value: String(value),
+    },
+  ];
+};
+
+const splitCsvish = (value) => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.map(String).map((v) => v.trim()).filter(Boolean);
+  }
+
+  const str = String(value).trim();
+  if (!str) return [];
+
+  // Handle JSON-string arrays like: ["1013","1003"]
+  if (
+    (str.startsWith("[") && str.endsWith("]")) ||
+    (str.startsWith("{") && str.endsWith("}"))
+  ) {
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) {
+        return parsed.map(String).map((v) => v.trim()).filter(Boolean);
+      }
+      if (parsed && typeof parsed === "object") {
+        return Object.values(parsed)
+          .map(String)
+          .map((v) => v.trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // fall back to comma split
+    }
+  }
+
+  return str
+    .split(",")
+    .map((v) => v.replace(/^\[|\]$/g, "").replace(/^"|"$/g, "").trim())
+    .filter(Boolean);
+};
+
+const uniqueSorted = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+
+const getCurrentUser = () => {
+  try {
+    const possibleKeys = [
+      "username",
+      "user",
+      "userName",
+      "loginUser",
+      "loggedInUser",
+      "currentUser",
+      "mail",
+      "email",
+    ];
+
+    for (const key of possibleKeys) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === "string") return parsed;
+        if (parsed?.username) return parsed.username;
+        if (parsed?.userName) return parsed.userName;
+        if (parsed?.name) return parsed.name;
+        if (parsed?.email) return parsed.email;
+        if (parsed?.mail) return parsed.mail;
+      } catch {
+        return raw;
       }
     }
+  } catch {
+    // ignore localStorage errors
+  }
+  return "";
+};
 
-    load();
-  }, [fromDate, toDate, userFilter, showMineOnly, criteria1, criteria2, searchValues]);
+const normalizeLogRecord = (item, index) => {
+  const engineeringChangeNumber =
+    item.engineering_change_id ||
+    item.engineering_change_number ||
+    item.engineeringChangeId ||
+    item.engineeringChangeNumber ||
+    item.ec_number ||
+    item.ecNumber ||
+    item.change_number ||
+    item.changeNumber ||
+    item.id ||
+    `EC-${index + 1}`;
 
-  const users = useMemo(() => {
-    return ["ALL", ...new Set(rawData.map((r) => r.changedBy).filter(Boolean))];
-  }, [rawData]);
+  const changeDate =
+    item.change_date ||
+    item.changeDate ||
+    item.created_at ||
+    item.createdAt ||
+    item.updated_at ||
+    item.updatedAt ||
+    "";
 
-  const criteriaOptions = [
-    "None",
-    "Location",
-    "BOM ID",
-    "Resource",
-    "Produced Item",
-    "Component Item",
-    "Co-Product Item"
-  ];
+  const changeType =
+    item.change_type ||
+    item.changeType ||
+    item.action ||
+    item.operation ||
+    item.status ||
+    "";
 
-  const getPlaceholder = (criteria) => {
-    if (criteria === "None") return "";
-    return `Search ${criteria}`;
+  const locationsRaw =
+    item.locations ??
+    item.location ??
+    item.location_list ??
+    item.locationList ??
+    item.location_name ??
+    "";
+
+  const resourcesRaw =
+    item.resources ??
+    item.resource ??
+    item.resource_list ??
+    item.resourceList ??
+    "";
+
+  const bomIdsRaw =
+    item.bom_ids ||
+    item.bom_id ||
+    item.bomIds ||
+    item.bomId ||
+    "";
+
+  const changedBy =
+    item.user_name ||
+    item.user ||
+    item.changed_by ||
+    item.changedBy ||
+    item.created_by ||
+    item.createdBy ||
+    item.modified_by ||
+    item.modifiedBy ||
+    "";
+  ``
+
+  const changeSummary =
+
+    item.change_summary ||
+    item.summarynotes ||
+    item.notes ||
+    item.changeSummary ||
+    item.summary ||
+    item.description ||
+    "";
+
+
+  const mainBomDetails =
+    item.main_bom_details ||
+    item.mainBomDetails ||
+    item.main_bom ||
+    item.mainBom ||
+    item.bom_details ||
+    item.bomDetails ||
+    [];
+
+  const componentDetails =
+    item.component_details ||
+    item.componentDetails ||
+    item.components ||
+    [];
+
+  const coProductDetails =
+    item.co_product_details ||
+    item.coProductDetails ||
+    item.coproduct_details ||
+    item.coProducts ||
+    [];
+
+  const modifiedFieldComparison =
+    item.modified_field_comparison ||
+    item.modifiedFieldComparison ||
+    item.modified_fields ||
+    item.modifiedFields ||
+    item.changed_fields ||
+    item.changedFields ||
+    [];
+
+  const producedItem =
+    item.produced_item ||
+    item.producedItem ||
+    item.item ||
+    item.parent_item ||
+    item.parentItem ||
+    "";
+
+  const normalizedComponentDetails = normalizeDetailList(componentDetails);
+  const normalizedCoProductDetails = normalizeDetailList(coProductDetails);
+
+  const componentItems = normalizedComponentDetails
+    .map(
+      (detail) =>
+        detail.component_item ||
+        detail.componentItem ||
+        detail.item ||
+        detail.component ||
+        ""
+    )
+    .filter(Boolean);
+
+  const coProductItems = normalizedCoProductDetails
+    .map(
+      (detail) =>
+        detail.co_product_item ||
+        detail.coProductItem ||
+        detail.item ||
+        detail.co_product ||
+        ""
+    )
+    .filter(Boolean);
+
+  const locations = splitCsvish(locationsRaw);
+  const bomIds = splitCsvish(bomIdsRaw);
+  const resources = splitCsvish(resourcesRaw);
+
+  return {
+    raw: item,
+    engineeringChangeNumber: toDisplayString(engineeringChangeNumber),
+    changeDate,
+    changeDateDisplay: formatDateForUI(changeDate),
+    changeDateInput: formatDateForInput(changeDate),
+    changeType: toDisplayString(changeType),
+
+    locations,
+    locationsDisplay: locations.join(", "),
+
+    bomIds,
+    bomIdsDisplay: bomIds.join(", "),
+
+    resources,
+    resourcesDisplay: resources.join(", "),
+
+    user: toDisplayString(changedBy),
+    changeSummary: toDisplayString(changeSummary),
+
+    producedItem: toDisplayString(producedItem),
+
+    componentItems,
+    componentItemsDisplay: componentItems.join(", "),
+
+    coProductItems,
+    coProductItemsDisplay: coProductItems.join(", "),
+
+    mainBomDetails: normalizeDetailList(mainBomDetails),
+    componentDetails: normalizedComponentDetails,
+    coProductDetails: normalizedCoProductDetails,
+    modifiedFieldComparison: normalizeModifiedComparison(modifiedFieldComparison),
   };
+};
 
-  const handleRowClick = (engineeringChangeId) => {
-    navigate("/change-log-details", {
-      state: { engineeringChangeId }
+const buildCriteriaOptions = (rows) => {
+  const options = [];
+
+  const pushOptions = (fieldKey, label, extractor) => {
+    const values = uniqueSorted(
+      rows.flatMap((row) => safeArray(extractor(row)).map((v) => toDisplayString(v)))
+    );
+
+    values.forEach((value) => {
+      options.push({
+        key: `${fieldKey}::${value}`,
+        field: fieldKey,
+        label: `${label}: ${value}`,
+        value,
+      });
     });
   };
 
-  const changeTypePill = (type) => {
-    const base = {
-      display: "inline-block",
-      padding: "4px 10px",
-      borderRadius: 999,
-      fontSize: 12,
-      fontWeight: 600,
-      color: "#fff",
-      lineHeight: 1.2
+  pushOptions("engineeringChangeNumber", "Engineering Change #", (row) => row.engineeringChangeNumber);
+  pushOptions("changeType", "Change Type", (row) => row.changeType);
+  pushOptions("location", "Location", (row) => row.locations);
+  pushOptions("bomId", "BOM ID", (row) => row.bomIds);
+  pushOptions("resource", "Resource", (row) => row.resources);
+  pushOptions("changeSummary", "Change Summary", (row) => row.changeSummary);
+
+  return options;
+};
+
+const recordMatchesCriterion = (row, criterionKey) => {
+  if (!criterionKey) return true;
+  const [field, value] = criterionKey.split("::");
+  if (!field || value == null) return true;
+
+  switch (field) {
+    case "engineeringChangeNumber":
+      return row.engineeringChangeNumber === value;
+    case "changeType":
+      return row.changeType === value;
+    case "location":
+      return row.locations.includes(value);
+    case "bomId":
+      return row.bomIds.includes(value);
+    case "resource":
+      return row.resources.includes(value);
+    case "changeSummary":
+      return row.changeSummary === value;
+    default:
+      return true;
+  }
+};
+
+const getTagStyle = (type) => {
+  const normalized = String(type || "").toLowerCase();
+  if (normalized.includes("add")) {
+    return {
+      backgroundColor: "#2f8f3a",
+      color: "#ffffff",
+    };
+  }
+  if (normalized.includes("delete")) {
+    return {
+      backgroundColor: "#d93025",
+      color: "#ffffff",
+    };
+  }
+  if (normalized.includes("modify")) {
+    return {
+      backgroundColor: "#f29900",
+      color: "#ffffff",
+    };
+  }
+  return {
+    backgroundColor: "#6b7280",
+    color: "#ffffff",
+  };
+};
+
+const autoFitColumns = (worksheet, rows) => {
+  if (!rows.length) return;
+  const keys = Object.keys(rows[0]);
+  worksheet["!cols"] = keys.map((key) => {
+    const maxLength = Math.max(
+      key.length,
+      ...rows.map((row) => String(row[key] ?? "").length)
+    );
+    return { wch: Math.min(Math.max(maxLength + 2, 14), 40) };
+  });
+};
+
+const createRowIfEmpty = (rows, placeholder) => {
+  return rows.length ? rows : [placeholder];
+};
+
+const buildExportSheets = (rows) => {
+  const highLevelSummary = createRowIfEmpty(
+    rows.map((row) => ({
+      "Engineering Change #": row.engineeringChangeNumber,
+      "Change Date": row.changeDateDisplay,
+      "Change Type": row.changeType,
+      "Location(s)": row.locationsDisplay,
+      "BOM ID(s)": row.bomIdsDisplay,
+      "Resource(s)": row.resourcesDisplay,
+      User: row.user,
+      "Change Summary": row.changeSummary,
+    })),
+    {
+      "Engineering Change #": "",
+      "Change Date": "",
+      "Change Type": "",
+      "Location(s)": "",
+      "BOM ID(s)": "",
+      "Resource(s)": "",
+      User: "",
+      "Change Summary": "No filtered data available",
+    }
+  );
+
+  const mainBomDetails = createRowIfEmpty(
+    rows.flatMap((row) => {
+      if (!row.mainBomDetails.length) {
+        return [
+          {
+            "Engineering Change #": row.engineeringChangeNumber,
+            "Change Type": row.changeType,
+            "Change Date": row.changeDateDisplay,
+            "BOM ID": row.bomIdsDisplay,
+            Location: row.locationsDisplay,
+            Resource: row.resourcesDisplay,
+            User: row.user,
+            Detail: "",
+          },
+        ];
+      }
+
+      return row.mainBomDetails.map((detail) => ({
+        "Engineering Change #": row.engineeringChangeNumber,
+        "Change Type": row.changeType,
+        "Change Date": row.changeDateDisplay,
+        "BOM ID":
+          detail.bom_id ||
+          detail.bomId ||
+          detail.main_bom_id ||
+          detail.mainBomId ||
+          row.bomIdsDisplay,
+        Location:
+          detail.location ||
+          detail.location_name ||
+          row.locationsDisplay,
+        Resource:
+          detail.resource ||
+          detail.resource_name ||
+          row.resourcesDisplay,
+        User: row.user,
+        Detail: typeof detail === "object" ? JSON.stringify(detail) : String(detail),
+      }));
+    }),
+    {
+      "Engineering Change #": "",
+      "Change Type": "",
+      "Change Date": "",
+      "BOM ID": "",
+      Location: "",
+      Resource: "",
+      User: "",
+      Detail: "No filtered data available",
+    }
+  );
+
+  const componentDetails = createRowIfEmpty(
+    rows.flatMap((row) => {
+      if (!row.componentDetails.length) {
+        return [
+          {
+            "Engineering Change #": row.engineeringChangeNumber,
+            "Parent BOM ID": row.bomIdsDisplay,
+            Location: row.locationsDisplay,
+            "Component Item": "",
+            Resource: row.resourcesDisplay,
+            User: row.user,
+            Detail: "",
+          },
+        ];
+      }
+
+      return row.componentDetails.map((detail) => ({
+        "Engineering Change #": row.engineeringChangeNumber,
+        "Parent BOM ID":
+          detail.parent_bom_id ||
+          detail.parentBomId ||
+          detail.bom_id ||
+          detail.bomId ||
+          row.bomIdsDisplay,
+        Location:
+          detail.location ||
+          detail.location_name ||
+          row.locationsDisplay,
+        "Component Item":
+          detail.component_item ||
+          detail.componentItem ||
+          detail.item ||
+          detail.component ||
+          "",
+        Resource:
+          detail.resource ||
+          detail.resource_name ||
+          row.resourcesDisplay,
+        User: row.user,
+        Detail: typeof detail === "object" ? JSON.stringify(detail) : String(detail),
+      }));
+    }),
+    {
+      "Engineering Change #": "",
+      "Parent BOM ID": "",
+      Location: "",
+      "Component Item": "",
+      Resource: "",
+      User: "",
+      Detail: "No filtered data available",
+    }
+  );
+
+  const coProductDetails = createRowIfEmpty(
+    rows.flatMap((row) => {
+      if (!row.coProductDetails.length) {
+        return [
+          {
+            "Engineering Change #": row.engineeringChangeNumber,
+            "Parent BOM ID": row.bomIdsDisplay,
+            Location: row.locationsDisplay,
+            "Co-Product Item": "",
+            Resource: row.resourcesDisplay,
+            User: row.user,
+            Detail: "",
+          },
+        ];
+      }
+
+      return row.coProductDetails.map((detail) => ({
+        "Engineering Change #": row.engineeringChangeNumber,
+        "Parent BOM ID":
+          detail.parent_bom_id ||
+          detail.parentBomId ||
+          detail.bom_id ||
+          detail.bomId ||
+          row.bomIdsDisplay,
+        Location:
+          detail.location ||
+          detail.location_name ||
+          row.locationsDisplay,
+        "Co-Product Item":
+          detail.co_product_item ||
+          detail.coProductItem ||
+          detail.item ||
+          detail.co_product ||
+          "",
+        Resource:
+          detail.resource ||
+          detail.resource_name ||
+          row.resourcesDisplay,
+        User: row.user,
+        Detail: typeof detail === "object" ? JSON.stringify(detail) : String(detail),
+      }));
+    }),
+    {
+      "Engineering Change #": "",
+      "Parent BOM ID": "",
+      Location: "",
+      "Co-Product Item": "",
+      Resource: "",
+      User: "",
+      Detail: "No filtered data available",
+    }
+  );
+
+  const modifiedFieldComparison = createRowIfEmpty(
+    rows.flatMap((row) => {
+      if (!row.modifiedFieldComparison.length) {
+        return [
+          {
+            "Engineering Change #": row.engineeringChangeNumber,
+            Section: "",
+            Field: "",
+            "Old Value": "",
+            "New Value": "",
+            User: row.user,
+            "Change Date": row.changeDateDisplay,
+          },
+        ];
+      }
+
+      return row.modifiedFieldComparison.map((detail) => ({
+        "Engineering Change #": row.engineeringChangeNumber,
+        Section: detail.section || "",
+        Field: detail.field || "",
+        "Old Value": detail.old_value ?? "",
+        "New Value": detail.new_value ?? "",
+        User: row.user,
+        "Change Date": row.changeDateDisplay,
+      }));
+    }),
+    {
+      "Engineering Change #": "",
+      Section: "",
+      Field: "",
+      "Old Value": "",
+      "New Value": "",
+      User: "",
+      "Change Date": "",
+    }
+  );
+
+  return {
+    highLevelSummary,
+    mainBomDetails,
+    componentDetails,
+    coProductDetails,
+    modifiedFieldComparison,
+  };
+};
+
+/* -------------------------------- Component -------------------------------- */
+
+export default function Engineeringlog() {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState("");
+
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState(formatDateForInput(new Date()));
+  const [selectedUser, setSelectedUser] = useState("");
+  const [showMyChangesOnly, setShowMyChangesOnly] = useState(false);
+  const [criteria1, setCriteria1] = useState("");
+  const [criteria2, setCriteria2] = useState("");
+
+  const currentUser = useMemo(() => getCurrentUser(), []);
+
+
+  const handleRowNavigation = (row) => {
+    const changeType = String(row.changeType || "").trim().toLowerCase();
+
+    const statePayload = {
+      engineeringChangeId: row.engineeringChangeNumber,
+      engineeringChangeNumber: row.engineeringChangeNumber,
+      changeDateDisplay: row.changeDateDisplay,
+      changeDate: row.changeDate,
+      user: row.user,
+      changeType: row.changeType,
+
+      bomId: row.bomIds?.[0] || "",
+      location: row.locations?.[0] || "",
+      producedItem: row.producedItem || "",
+      resource: row.resources?.[0] || "",
+
+      bomIds: row.bomIds || [],
+      locations: row.locations || [],
+      resources: row.resources || [],
+
+      componentItems: row.componentItems || [],
+      coProductItems: row.coProductItems || [],
+      changeSummary: row.changeSummary || "",
+      raw: row.raw || {},
     };
 
-    if (type === "Added") return { ...base, background: "#2e7d32" };
-    if (type === "Modified") return { ...base, background: "#f97316" };
-    if (type === "Deleted") return { ...base, background: "#dc2626" };
+    if (changeType.includes("add")) {
 
-    return { ...base, background: "#6b7280" };
+      navigate("/change-log/engineering-change-detail-add", {
+        state: {
+          engineeringChangeId: row.engineeringChangeNumber || "",
+          bomId: row.bomIds?.[0] || "",
+          resource: row.resources?.[0] || "",
+          producedItem: row.producedItem || "",
+        },
+      });
+
+      return;
+    }
+
+    if (changeType.includes("modify")) {
+      navigate("/change-log/engineering-change-detail-modify", { state: statePayload });
+      return;
+    }
+
+    if (changeType.includes("delete")) {
+      navigate("/change-log/engineering-change-detail-delete", { state: statePayload });
+      return;
+    }
+  };
+  ``
+
+  useEffect(() => {
+    const fetchEngineeringLog = async () => {
+      setLoading(true);
+      setApiError("");
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/tables/engineering-change-log`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || `Failed to fetch engineering change log (${response.status})`);
+        }
+
+        const data = await response.json();
+
+        const rawList = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data?.rows)
+              ? data.rows
+              : Array.isArray(data?.result)
+                ? data.result
+                : [];
+        console.log("engineering-change-log raw response:", rawList);
+        const normalized = rawList.map(normalizeLogRecord);
+        setRows(normalized);
+      } catch (error) {
+        console.error("Engineering change log fetch error:", error);
+        setApiError(error.message || "Failed to fetch engineering change log");
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEngineeringLog();
+  }, []);
+
+  const userOptions = useMemo(() => uniqueSorted(rows.map((r) => r.user)), [rows]);
+
+  const criteriaOptions = useMemo(() => buildCriteriaOptions(rows), [rows]);
+
+  const filteredRows = useMemo(() => {
+    return rows.filter((row) => {
+      const rowDate = row.changeDateInput;
+
+      if (fromDate && rowDate && rowDate < fromDate) return false;
+      if (toDate && rowDate && rowDate > toDate) return false;
+
+      if (selectedUser && row.user !== selectedUser) return false;
+
+      if (showMyChangesOnly && currentUser) {
+        const rowUser = String(row.user || "").trim().toLowerCase();
+        const me = String(currentUser || "").trim().toLowerCase();
+        if (rowUser !== me) return false;
+      }
+
+      if (!recordMatchesCriterion(row, criteria1)) return false;
+      if (!recordMatchesCriterion(row, criteria2)) return false;
+
+      return true;
+    });
+  }, [rows, fromDate, toDate, selectedUser, showMyChangesOnly, currentUser, criteria1, criteria2]);
+
+  const handleExport = () => {
+    const sheets = buildExportSheets(filteredRows);
+
+    const workbook = XLSX.utils.book_new();
+
+    const ws1 = XLSX.utils.json_to_sheet(sheets.highLevelSummary);
+    const ws2 = XLSX.utils.json_to_sheet(sheets.mainBomDetails);
+    const ws3 = XLSX.utils.json_to_sheet(sheets.componentDetails);
+    const ws4 = XLSX.utils.json_to_sheet(sheets.coProductDetails);
+    const ws5 = XLSX.utils.json_to_sheet(sheets.modifiedFieldComparison);
+
+    autoFitColumns(ws1, sheets.highLevelSummary);
+    autoFitColumns(ws2, sheets.mainBomDetails);
+    autoFitColumns(ws3, sheets.componentDetails);
+    autoFitColumns(ws4, sheets.coProductDetails);
+    autoFitColumns(ws5, sheets.modifiedFieldComparison);
+
+    XLSX.utils.book_append_sheet(workbook, ws1, "High-Level Summary");
+    XLSX.utils.book_append_sheet(workbook, ws2, "Main BOM Details");
+    XLSX.utils.book_append_sheet(workbook, ws3, "Component Details");
+    XLSX.utils.book_append_sheet(workbook, ws4, "Co-Product Details");
+    XLSX.utils.book_append_sheet(workbook, ws5, "Modified Field Comparison");
+
+    XLSX.writeFile(workbook, `EngineeringChangeLogFile${fileDateStamp()}.xlsx`);
   };
 
-  const renderMultiLineValue = (value) => {
-    if (!value) return "-";
-
-    return String(value)
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((item, index) => (
-        <div key={index} style={{ lineHeight: 1.35 }}>
-          {item}
-        </div>
-      ));
-  };
-
-  const renderDate = (dateValue) => {
-    if (!dateValue) return "-";
-
-    const parts = String(dateValue).split("-");
-    if (parts.length !== 3) return dateValue;
-
-    return (
-      <>
-        {parts[0]}-{parts[1]}-
-        <br />
-        {parts[2]}
-      </>
-    );
+  const styles = {
+    page: {
+      background: "#f5f5f7",
+      minHeight: "100vh",
+      padding: "24px 36px 40px 36px",
+      fontFamily: "Segoe UI, Arial, sans-serif",
+      color: "#1f2937",
+    },
+    backButton: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "8px",
+      background: "transparent",
+      border: "none",
+      color: "#2563eb",
+      fontSize: "14px",
+      cursor: "pointer",
+      padding: 0,
+      marginBottom: "8px",
+    },
+    title: {
+      fontSize: "22px",
+      fontWeight: 700,
+      color: "#111827",
+      marginBottom: "20px",
+    },
+    card: {
+      background: "#f7f7f8",
+      border: "1px solid #e5e7eb",
+      borderRadius: "4px",
+      padding: "18px 18px 16px 18px",
+      marginBottom: "16px",
+    },
+    sectionTitle: {
+      fontSize: "16px",
+      fontWeight: 700,
+      marginBottom: "14px",
+      color: "#111827",
+    },
+    filtersRow: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr auto",
+      gap: "12px",
+      alignItems: "end",
+      marginBottom: "14px",
+    },
+    secondRow: {
+      display: "grid",
+      gridTemplateColumns: "1fr",
+      gap: "12px",
+      maxWidth: "490px",
+    },
+    fieldWrap: {
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px",
+    },
+    label: {
+      fontSize: "12px",
+      color: "#4b5563",
+      fontWeight: 500,
+    },
+    input: {
+      border: "1px solid #cfd4dc",
+      borderRadius: "3px",
+      background: "#fff",
+      height: "42px",
+      padding: "0 12px",
+      fontSize: "14px",
+      outline: "none",
+      width: "100%",
+      boxSizing: "border-box",
+    },
+    select: {
+      border: "1px solid #cfd4dc",
+      borderRadius: "3px",
+      background: "#fff",
+      height: "42px",
+      padding: "0 12px",
+      fontSize: "14px",
+      outline: "none",
+      width: "100%",
+      boxSizing: "border-box",
+      appearance: "auto",
+    },
+    checkboxWrap: {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      height: "42px",
+      whiteSpace: "nowrap",
+      marginTop: "18px",
+    },
+    exportInfoRow: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: "16px",
+      marginBottom: "14px",
+      flexWrap: "wrap",
+    },
+    exportInfo: {
+      fontSize: "13px",
+      color: "#374151",
+    },
+    exportButton: {
+      backgroundColor: "#1f78d1",
+      color: "#ffffff",
+      border: "none",
+      borderRadius: "3px",
+      height: "38px",
+      padding: "0 18px",
+      fontSize: "13px",
+      fontWeight: 700,
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "8px",
+      boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
+    },
+    tableWrap: {
+      background: "#fff",
+      border: "1px solid #e5e7eb",
+      borderRadius: "4px",
+      overflow: "hidden",
+    },
+    table: {
+      width: "100%",
+      borderCollapse: "collapse",
+      tableLayout: "fixed",
+    },
+    theadTh: {
+      background: "#f3f4f6",
+      color: "#111827",
+      fontSize: "13px",
+      fontWeight: 700,
+      textAlign: "left",
+      padding: "14px 12px",
+      borderBottom: "1px solid #d1d5db",
+      verticalAlign: "top",
+    },
+    tbodyTd: {
+      fontSize: "13px",
+      color: "#111827",
+      padding: "12px",
+      borderBottom: "1px solid #e5e7eb",
+      verticalAlign: "top",
+      wordBreak: "break-word",
+      lineHeight: 1.45,
+    },
+    pill: {
+      display: "inline-block",
+      fontSize: "11px",
+      fontWeight: 700,
+      borderRadius: "999px",
+      padding: "4px 8px",
+      lineHeight: 1,
+    },
+    statusText: {
+      fontSize: "14px",
+      marginTop: "16px",
+      color: "#374151",
+    },
+    errorText: {
+      fontSize: "14px",
+      color: "#d93025",
+      marginTop: "10px",
+    },
   };
 
   return (
-    <div style={page}>
-      {/* BACK */}
-      <div onClick={() => navigate(-1)} style={backLink}>
-        ← BACK TO MAIN MENU
-      </div>
+    <div style={styles.page}>
+      <button type="button" style={styles.backButton} onClick={() => window.history.back()}>
+        <span style={{ fontSize: "16px" }}>←</span>
+        <span>BACK TO MAIN MENU</span>
+      </button>
 
-      {/* TITLE */}
-      <h1 style={title}>Engineering Change Summary</h1>
+      <div style={styles.title}>Engineering Change Summary</div>
 
-      {/* FILTER CARD */}
-      <div style={filterCard}>
-        <div style={filterHeading}>Filters & Search</div>
+      <div style={styles.card}>
+        <div style={styles.sectionTitle}>Filters & Search</div>
 
-        {/* TOP FILTER ROW */}
-        <div style={topGrid}>
-          {/* FROM DATE */}
-          <div>
-            <div style={label}>From Date</div>
+        <div style={styles.filtersRow}>
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>From Date</label>
             <input
               type="date"
-              style={input}
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
+              style={styles.input}
             />
           </div>
 
-          {/* TO DATE */}
-          <div>
-            <div style={label}>To Date</div>
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>To Date</label>
             <input
               type="date"
-              style={input}
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
+              style={styles.input}
             />
           </div>
 
-          {/* USER FILTER */}
-          <div>
-            <div style={label}>User Filter</div>
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>User Filter</label>
             <select
-              style={input}
-              value={userFilter}
-              onChange={(e) => setUserFilter(e.target.value)}
+              value={selectedUser}
+              onChange={(e) => setSelectedUser(e.target.value)}
+              style={styles.select}
             >
-              <option value="ALL">User Filter</option>
-              {users.map((u) => (
-                <option key={u} value={u}>
-                  {u}
+              <option value="">All Users</option>
+              {userOptions.map((user) => (
+                <option key={user} value={user}>
+                  {user}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* CHECKBOX */}
-          <div style={checkboxWrap}>
+          <label style={styles.checkboxWrap}>
             <input
               type="checkbox"
-              checked={showMineOnly}
-              onChange={(e) => setShowMineOnly(e.target.checked)}
+              checked={showMyChangesOnly}
+              onChange={(e) => setShowMyChangesOnly(e.target.checked)}
             />
-            <span style={checkboxText}>Show My Changes Only</span>
-          </div>
+            <span>Show My Changes Only</span>
+          </label>
         </div>
 
-        {/* CRITERIA 1 */}
-        <div style={criteriaGrid}>
-          <div>
-            <div style={label}>Search By (Criteria 1)</div>
+        <div style={styles.secondRow}>
+          <div style={styles.fieldWrap}>
             <select
-              style={input}
               value={criteria1}
               onChange={(e) => setCriteria1(e.target.value)}
+              style={styles.select}
             >
+              <option value="">Search By (Criteria 1)</option>
               {criteriaOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+                <option key={`c1-${option.key}`} value={option.key}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </div>
 
-          <div>
-            <div style={label}>&nbsp;</div>
-            {criteria1 !== "None" ? (
-              <input
-                style={input}
-                placeholder={getPlaceholder(criteria1)}
-                value={searchValues[criteria1] || ""}
-                onChange={(e) =>
-                  setSearchValues((prev) => ({
-                    ...prev,
-                    [criteria1]: e.target.value
-                  }))
-                }
-              />
-            ) : (
-              <div style={emptyCriteriaSpace} />
-            )}
-          </div>
-        </div>
-
-        {/* CRITERIA 2 */}
-        <div style={criteriaGridSecond}>
-          <div>
-            <div style={label}>Search By (Criteria 2)</div>
+          <div style={styles.fieldWrap}>
             <select
-              style={input}
               value={criteria2}
               onChange={(e) => setCriteria2(e.target.value)}
+              style={styles.select}
             >
+              <option value="">Search By (Criteria 2)</option>
               {criteriaOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+                <option key={`c2-${option.key}`} value={option.key}>
+                  {option.label}
                 </option>
               ))}
             </select>
-          </div>
-
-          <div>
-            <div style={label}>&nbsp;</div>
-            {criteria2 !== "None" ? (
-              <input
-                style={input}
-                placeholder={getPlaceholder(criteria2)}
-                value={searchValues[criteria2] || ""}
-                onChange={(e) =>
-                  setSearchValues((prev) => ({
-                    ...prev,
-                    [criteria2]: e.target.value
-                  }))
-                }
-              />
-            ) : (
-              <div style={emptyCriteriaSpace} />
-            )}
           </div>
         </div>
       </div>
 
-      {/* EXPORT ROW */}
-      <div style={exportRow}>
-        <div style={exportText}>
-          Export generates a detailed Excel file with 5 tabs: High-Level Summary,
-          Main BOM Details, Component Details, Co-Product Details, and Modified Field Comparison
-        </div>
+      <div style={styles.exportInfoRow}>
 
-        <button style={exportButton}>
-          ⬇ EXPORT FILTERED CHANGE LOG
+        <button
+          type="button"
+          style={styles.exportButton}
+          onClick={handleExport}
+          disabled={loading}
+        >
+          <span style={{ fontSize: "14px" }}>⬇</span>
+          <span>EXPORT FILTERED CHANGE LOG</span>
         </button>
       </div>
 
-      {/* TABLE */}
-      {loading && <p style={{ marginTop: 16 }}>Loading...</p>}
-      {error && <p style={{ color: "red", marginTop: 16 }}>{error}</p>}
-
-      <div style={tableWrapper}>
-        <table style={table}>
-          <thead style={thead}>
+      <div style={styles.tableWrap}>
+        <table style={styles.table}>
+          <thead>
             <tr>
-              <th style={th}>Engineering Change #</th>
-              <th style={th}>Change Date</th>
-              <th style={th}>Change Type</th>
-              <th style={th}>Location(s)</th>
-              <th style={th}>BOM ID(s)</th>
-              <th style={th}>Resource(s)</th>
-              <th style={th}>User</th>
-              <th style={th}>Change Summary</th>
+              <th style={{ ...styles.theadTh, width: "12%" }}>Engineering Change #</th>
+              <th style={{ ...styles.theadTh, width: "9%" }}>Change Date</th>
+              <th style={{ ...styles.theadTh, width: "9%" }}>Change Type</th>
+              <th style={{ ...styles.theadTh, width: "12%" }}>Location(s)</th>
+              <th style={{ ...styles.theadTh, width: "18%" }}>BOM ID(s)</th>
+              <th style={{ ...styles.theadTh, width: "12%" }}>Resource(s)</th>
+              <th style={{ ...styles.theadTh, width: "8%" }}>User</th>
+              <th style={{ ...styles.theadTh, width: "20%" }}>Change Summary</th>
             </tr>
           </thead>
 
           <tbody>
-            {rawData.map((r) => (
-              <tr
-                key={r.engineeringChangeId}
-                onClick={() => handleRowClick(r.engineeringChangeId)}
-                style={row}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#f9fafb";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#ffffff";
-                }}
-              >
-                <td style={td}>{r.engineeringChangeId}</td>
-                <td style={td}>{renderDate(r.changeDate)}</td>
-                <td style={td}>
-                  <span style={changeTypePill(r.changeType)}>
-                    {r.changeType}
-                  </span>
+            {loading ? (
+              <tr>
+                <td colSpan={8} style={styles.tbodyTd}>
+                  Loading engineering change log...
                 </td>
-                <td style={td}>{renderMultiLineValue(r.locationId)}</td>
-                <td style={td}>{renderMultiLineValue(r.bomId)}</td>
-                <td style={td}>{renderMultiLineValue(r.resource)}</td>
-                <td style={td}>{r.changedBy || "-"}</td>
-                <td style={td}>{r.changeSummary || "-"}</td>
               </tr>
-            ))}
+            ) : apiError ? (
+              <tr>
+                <td colSpan={8} style={{ ...styles.tbodyTd, color: "#d93025" }}>
+                  {apiError}
+                </td>
+              </tr>
+            ) : filteredRows.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={styles.tbodyTd}>
+                  No records found for the selected filters.
+                </td>
+              </tr>
+            ) : (
+              filteredRows.map((row, index) => (
+                <tr
+                  key={`${row.engineeringChangeNumber}-${index}`}
+                  onClick={() => handleRowNavigation(row)}
+                  style={{ cursor: "pointer" }}>
+                  <td style={styles.tbodyTd}>{row.engineeringChangeNumber}</td>
+                  <td style={styles.tbodyTd}>{row.changeDateDisplay}</td>
+                  <td style={styles.tbodyTd}>
+                    <span style={{ ...styles.pill, ...getTagStyle(row.changeType) }}>
+                      {row.changeType || "-"}
+                    </span>
+                  </td>
+                  <td style={styles.tbodyTd}>{row.locationsDisplay || "-"}</td>
+                  <td style={styles.tbodyTd}>{row.bomIdsDisplay || "-"}</td>
+                  <td style={styles.tbodyTd}>{row.resourcesDisplay || "-"}</td>
+                  <td style={styles.tbodyTd}>{row.user || "-"}</td>
+                  <td style={styles.tbodyTd}>{row.changeSummary || "-"}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
+
+      {!loading && !apiError && (
+        <div style={styles.statusText}>
+          Showing <strong>{filteredRows.length}</strong> of <strong>{rows.length}</strong> log record(s)
+          {showMyChangesOnly && currentUser ? (
+            <>
+              {" "}
+              for <strong>{currentUser}</strong>
+            </>
+          ) : null}
+          .
+        </div>
+      )}
+
+      {apiError ? <div style={styles.errorText}>Please check backend API response and route mapping.</div> : null}
     </div>
   );
 }
-
-/* STYLES */
-const page = {
-  padding: 24,
-  background: "#ffffff",
-  minHeight: "100vh"
-};
-
-const backLink = {
-  color: "#2563eb",
-  cursor: "pointer",
-  marginBottom: 12,
-  fontWeight: 500,
-  fontSize: 14
-};
-
-const title = {
-  fontSize: 24,
-  fontWeight: 700,
-  marginBottom: 18,
-  color: "#111827"
-};
-
-const filterCard = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 10,
-  padding: 20,
-  marginBottom: 18,
-  background: "#fff"
-};
-
-const filterHeading = {
-  fontWeight: 700,
-  fontSize: 16,
-  marginBottom: 14
-};
-
-const topGrid = {
-  display: "grid",
-  gridTemplateColumns: "220px 220px 260px auto",
-  gap: 20,
-  alignItems: "end",
-  marginBottom: 18
-};
-
-const criteriaGrid = {
-  display: "grid",
-  gridTemplateColumns: "260px 1fr",
-  gap: 16,
-  alignItems: "end",
-  marginBottom: 14
-};
-
-const criteriaGridSecond = {
-  display: "grid",
-  gridTemplateColumns: "260px 1fr",
-  gap: 16,
-  alignItems: "end"
-};
-
-const input = {
-  width: "100%",
-  height: 42,
-  padding: "8px 12px",
-  borderRadius: 6,
-  border: "1px solid #d1d5db",
-  fontSize: 14,
-  outline: "none",
-  boxSizing: "border-box"
-};
-
-const label = {
-  fontSize: 12,
-  color: "#6b7280",
-  marginBottom: 6,
-  fontWeight: 500
-};
-
-const checkboxWrap = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  height: 42,
-  paddingBottom: 2
-};
-
-const checkboxText = {
-  fontSize: 14,
-  color: "#111827",
-  whiteSpace: "nowrap"
-};
-
-const emptyCriteriaSpace = {
-  height: 42
-};
-
-const exportRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: 14,
-  gap: 16
-};
-
-const exportText = {
-  fontSize: 12,
-  color: "#6b7280",
-  lineHeight: 1.4
-};
-
-const exportButton = {
-  background: "#2563eb",
-  color: "#fff",
-  padding: "10px 16px",
-  borderRadius: 6,
-  border: "none",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap"
-};
-
-const tableWrapper = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 8,
-  overflow: "hidden"
-};
-
-const table = {
-  width: "100%",
-  borderCollapse: "collapse"
-};
-
-const thead = {
-  background: "#f3f4f6"
-};
-
-const th = {
-  textAlign: "left",
-  padding: "14px 12px",
-  fontSize: 12,
-  fontWeight: 600,
-  color: "#374151",
-  borderBottom: "1px solid #e5e7eb",
-  verticalAlign: "top"
-};
-
-const td = {
-  padding: "12px",
-  fontSize: 13,
-  color: "#111827",
-  verticalAlign: "top"
-};
-
-const row = {
-  borderTop: "1px solid #e5e7eb",
-  cursor: "pointer",
-  background: "#ffffff"
-};
