@@ -26,6 +26,9 @@ const useWindowWidth = () => {
 const getNormalizedStatus = (status) =>
   String(status ?? "").trim().toUpperCase();
 
+const getNormalizedReleaseFlag = (flag) =>
+  String(flag ?? "").trim().toUpperCase().replace(/\s+/g, "");
+
 const ProducedItems = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -41,24 +44,23 @@ const ProducedItems = () => {
   const error = useSelector(selectItemsError);
 
   useEffect(() => {
-    // ✅ fetch ALL records
+    // fetch ALL records
     dispatch(fetchItemMaster());
   }, [dispatch]);
 
- const filteredItems = useMemo(() => {
-  const q = search.trim().toLowerCase();
-  if (!q) return items;
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
 
-  return items.filter((x) => {
-    return (
-      String(x.item || "").toLowerCase().includes(q) ||
-      String(x.desc || "").toLowerCase().includes(q) ||
-      String(x.status || "").toLowerCase().includes(q) ||
-      String(x.itemReleaseFlag || "").toLowerCase().includes(q)
-    );
-  });
-}, [items, search]);
-
+    return items.filter((x) => {
+      return (
+        String(x.item || "").toLowerCase().includes(q) ||
+        String(x.desc || "").toLowerCase().includes(q) ||
+        String(x.status || "").toLowerCase().includes(q) ||
+        String(x.itemReleaseFlag || "").toLowerCase().includes(q)
+      );
+    });
+  }, [items, search]);
 
   const onToggle = (row) => {
     const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
@@ -118,6 +120,11 @@ const ProducedItems = () => {
             const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
             const checked = selectedIds.includes(row.id);
 
+            const normalizedReleaseFlag = getNormalizedReleaseFlag(
+              row.itemReleaseFlag
+            );
+            const isRelease3 = normalizedReleaseFlag === "RELEASE3";
+
             return (
               <div
                 key={row.id}
@@ -157,11 +164,19 @@ const ProducedItems = () => {
 
                 <div
                   style={{
-                    color: isInactive ? "#ff0000" : "#111827",
-                    fontWeight: isInactive ? 500 : 400,
+                    color: isRelease3 ? "#ff0000" : "#111827",
+                    fontWeight: isRelease3 ? 500 : 400,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
                   }}
                 >
-                  {row.itemReleaseFlag || "-"}
+                  <span>{row.itemReleaseFlag || "-"}</span>
+                  {isRelease3 && (
+                    <span style={styles.warningIcon} title="Release3 warning">
+                      ⚠
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -179,6 +194,7 @@ const ProducedItems = () => {
             {selectedIds.length} item(s) selected
           </div>
 
+
           <button
             style={{
               ...styles.nextBtn,
@@ -191,6 +207,7 @@ const ProducedItems = () => {
           >
             NEXT: SELECT LOCATIONS →
           </button>
+
         </div>
       </div>
     </div>
@@ -293,6 +310,13 @@ const styles = {
     fontSize: "12px",
     color: "#6b7280",
   },
+  warningIcon: {
+    color: "#ff0000",
+    fontSize: "14px",
+    lineHeight: 1,
+    display: "inline-flex",
+    alignItems: "center",
+  },
   warningBox: {
     marginTop: "16px",
     padding: "12px 14px",
@@ -323,13 +347,17 @@ const styles = {
     letterSpacing: "0.2px",
     cursor: "pointer",
   },
-  nextBtnDisabled: {
-    backgroundColor: "#e5e7eb",
-    color: "#9ca3af",
-    cursor: "not-allowed",
-  },
-  nextBtnEnabled: {
-    backgroundColor: "#d1d5db",
-    color: "#374151",
-  },
+ 
+nextBtnEnabled: {
+  backgroundColor: "#2563eb",
+  color: "#ffffff",
+  cursor: "pointer",
+},
+
+nextBtnDisabled: {
+  backgroundColor: "#e5e7eb",
+  color: "#9ca3af",
+  cursor: "not-allowed",
+},
+
 };

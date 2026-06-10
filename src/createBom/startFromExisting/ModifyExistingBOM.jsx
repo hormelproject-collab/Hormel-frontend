@@ -617,9 +617,7 @@ const ModifyExistingBOM = () => {
                 onChange={setSelectedResources}
                 placeholder="Select resource(s)"
               />
-              <div style={styles.helperText}>
-                If desired resource is not found, please check Oracle work definitions.
-              </div>
+           
             </div>
 
             <div style={styles.field}>
@@ -629,7 +627,7 @@ const ModifyExistingBOM = () => {
                 style={styles.inputDisabled}
                 disabled
               />
-              <div style={styles.helperText}>Auto-populated from produced item</div>
+          
             </div>
           </div>
 

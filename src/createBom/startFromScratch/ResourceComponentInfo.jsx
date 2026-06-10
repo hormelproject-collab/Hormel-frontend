@@ -26,7 +26,6 @@ import {
   selectResourceComponentConfigs,
   ensureResourceComponentConfig,
   setResourceComponentConfig,
-  replicateResourceComponentInfoToLocations,
 } from "../../redux/bomSlice";
 
 const buildConfigKey = (item, location) => `${item}__${location}`;
@@ -34,6 +33,25 @@ const buildBomId = (bomVersion, item, location) =>
   `${bomVersion}_${item}_${location}`;
 const buildRoutingId = (item, location, resource) =>
   `ROUTING_${item}_${location}_${resource}`;
+
+const makeUniqueId = (prefix) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const cloneComponentRows = (rows = []) =>
+  rows.map((row) => ({
+    id: makeUniqueId("component"),
+    componentItem: row.componentItem ?? "",
+    description: row.description ?? "",
+    standardUsage: row.standardUsage ?? "",
+  }));
+
+const cloneCoProductRows = (rows = []) =>
+  rows.map((row) => ({
+    id: makeUniqueId("coproduct"),
+    coProductItem: row.coProductItem ?? "",
+    description: row.description ?? "",
+    qtyProduced: row.qtyProduced ?? "",
+  }));
 
 const ResourceComponentInfo = () => {
   const navigate = useNavigate();
@@ -62,6 +80,7 @@ const ResourceComponentInfo = () => {
   const [openItem, setOpenItem] = useState(null);
   const [openLocationKey, setOpenLocationKey] = useState(null);
   const [resourceDropdownKey, setResourceDropdownKey] = useState(null);
+  const [resourceSearchByKey, setResourceSearchByKey] = useState({});
   const [pageError, setPageError] = useState("");
 
   useEffect(() => {
@@ -169,6 +188,14 @@ const ResourceComponentInfo = () => {
     updateConfig(item, location, { bomVersion: value });
   };
 
+  const handleResourceSearchChange = (key, value) => {
+    setResourceSearchByKey((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+    setResourceDropdownKey(key);
+  };
+
   const handleResourceToggle = (item, location, resource) => {
     const config = getConfig(item, location);
     const resources = Array.isArray(config.resources) ? config.resources : [];
@@ -197,7 +224,7 @@ const ResourceComponentInfo = () => {
     const config = getConfig(item, location);
     const nextRows = [...(config.components || [])];
     nextRows.push({
-      id: `component-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: makeUniqueId("component"),
       componentItem: "",
       description: "",
       standardUsage: "",
@@ -233,7 +260,7 @@ const ResourceComponentInfo = () => {
     const config = getConfig(item, location);
     const nextRows = [...(config.coproducts || [])];
     nextRows.push({
-      id: `coproduct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: makeUniqueId("coproduct"),
       coProductItem: "",
       description: "",
       qtyProduced: "",
@@ -266,24 +293,32 @@ const ResourceComponentInfo = () => {
   };
 
   const handleReplicate = (item, location, checked) => {
-    const sourceKey = buildConfigKey(item, location);
+    const sourceConfig = getConfig(item, location);
 
     updateConfig(item, location, {
       replicateToAll: checked,
     });
 
-    if (checked) {
-      const targetKeys = locations
-        .filter((loc) => String(loc.location) !== String(location))
-        .map((loc) => buildConfigKey(item, loc.location));
+    if (!checked) return;
 
-      dispatch(
-        replicateResourceComponentInfoToLocations({
-          sourceKey,
-          targetKeys,
-        })
-      );
-    }
+    const componentPayload = {
+      noComponentItems: !!sourceConfig.noComponentItems,
+      components: cloneComponentRows(sourceConfig.components || []),
+      producedCoProduct: !!sourceConfig.producedCoProduct,
+      coproducts: cloneCoProductRows(sourceConfig.coproducts || []),
+    };
+
+    producedItems.forEach((targetItem) => {
+      locations.forEach((targetLoc) => {
+        const isSameSource =
+          String(targetItem.item) === String(item) &&
+          String(targetLoc.location) === String(location);
+
+        if (isSameSource) return;
+
+        updateConfig(targetItem.item, targetLoc.location, componentPayload);
+      });
+    });
   };
 
   const validateAllConfigs = () => {
@@ -295,27 +330,57 @@ const ResourceComponentInfo = () => {
           return "BOM Version is required for every item and location.";
         }
 
-        // if (!Array.isArray(config.resources) || config.resources.length === 0) {
-        //   return `At least one resource is required for ${item.item} / ${loc.location}.`;
-        // }
+        if (!Array.isArray(config.resources) || config.resources.length === 0) {
+          return `Please select at least one resource for every Item`;
+        }
 
+        // ✅ Either Component Item must be entered OR No Component Items must be checked
         if (!config.noComponentItems) {
-          const componentRows = config.components || [];
+          const componentRows = Array.isArray(config.components)
+            ? config.components
+            : [];
+
+          const hasAtLeastOneComponent = componentRows.some(
+            (row) => String(row.componentItem ?? "").trim() !== ""
+          );
+
+          if (!hasAtLeastOneComponent) {
+            return `Please add at least one component item or select "No Component Items" for ${item.item} / ${loc.location}.`;
+          }
+
           for (const row of componentRows) {
-            if (!row.componentItem) continue;
-            const usageValue = Number(row.standardUsage);
+            const componentItem = String(row.componentItem ?? "").trim();
+            const usageText = String(row.standardUsage ?? "").trim();
+
+            // Ignore fully empty placeholder rows
+            if (!componentItem && !usageText) continue;
+
+            if (!componentItem) {
+              return `Please select a component item for ${item.item} / ${loc.location}.`;
+            }
+
+            const usageValue = Number(usageText);
             if (!(usageValue > 0)) {
-              return `Standard Usage must be greater than 0 for component ${row.componentItem} in ${item.item} / ${loc.location}.`;
+              return `Standard Usage must be greater than 0 for component ${componentItem} in ${item.item} / ${loc.location}.`;
             }
           }
         }
 
-        const coRows = config.coproducts || [];
+        const coRows = Array.isArray(config.coproducts) ? config.coproducts : [];
         for (const row of coRows) {
-          if (!row.coProductItem) continue;
-          const qtyValue = Number(row.qtyProduced);
+          const coProductItem = String(row.coProductItem ?? "").trim();
+          const qtyText = String(row.qtyProduced ?? "").trim();
+
+          // Ignore fully empty placeholder rows
+          if (!coProductItem && !qtyText) continue;
+
+          if (!coProductItem) {
+            return `Please select a co-product item for ${item.item} / ${loc.location}.`;
+          }
+
+          const qtyValue = Number(qtyText);
           if (!(qtyValue < 1)) {
-            return `Qty Produced must be less than 1 for co-product ${row.coProductItem} in ${item.item} / ${loc.location}.`;
+            return `Qty Produced must be less than 1 for co-product ${coProductItem} in ${item.item} / ${loc.location}.`;
           }
         }
       }
@@ -466,6 +531,14 @@ const ResourceComponentInfo = () => {
                     const selectedResources = Array.isArray(config.resources)
                       ? config.resources
                       : [];
+                    const searchValue = resourceSearchByKey[key] || "";
+
+                    const filteredResourceOptions = resourceOptions.filter((row) =>
+                      String(row.resource ?? "")
+                        .toLowerCase()
+                        .includes(searchValue.trim().toLowerCase())
+                    );
+
                     const selectedResourceRows = resourceOptions.filter((row) =>
                       selectedResources.includes(row.resource)
                     );
@@ -494,53 +567,73 @@ const ResourceComponentInfo = () => {
                                 <div style={styles.multiSelectWrap}>
                                   <div
                                     style={styles.multiSelectBox}
-                                    onClick={() =>
-                                      setResourceDropdownKey(
-                                        resourceDropdownKey === key ? null : key
-                                      )
-                                    }
+                                    onClick={() => setResourceDropdownKey(key)}
                                   >
                                     <div style={styles.chipsWrap}>
-                                      {selectedResources.length === 0 ? (
-                                        <span style={styles.placeholderText}>
-                                          Select Resource(s)
-                                        </span>
-                                      ) : (
-                                        selectedResources.map((resource) => (
+                                      {selectedResources.map((resource) => (
+                                        <span
+                                          key={resource}
+                                          style={styles.chip}
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {resource}
                                           <span
-                                            key={resource}
-                                            style={styles.chip}
-                                            onClick={(e) => e.stopPropagation()}
+                                            style={styles.chipX}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleResourceToggle(
+                                                item.item,
+                                                loc.location,
+                                                resource
+                                              );
+                                            }}
                                           >
-                                            {resource}
-                                            <span
-                                              style={styles.chipX}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleResourceToggle(
-                                                  item.item,
-                                                  loc.location,
-                                                  resource
-                                                );
-                                              }}
-                                            >
-                                              ×
-                                            </span>
+                                            ×
                                           </span>
-                                        ))
-                                      )}
+                                        </span>
+                                      ))}
+
+                                      <input
+                                        type="text"
+                                        value={searchValue}
+                                        placeholder={
+                                          selectedResources.length === 0
+                                            ? "Select Resource(s)"
+                                            : "Search Resource(s)"
+                                        }
+                                        onClick={(e) => e.stopPropagation()}
+                                        onFocus={() => setResourceDropdownKey(key)}
+                                        onChange={(e) =>
+                                          handleResourceSearchChange(
+                                            key,
+                                            e.target.value
+                                          )
+                                        }
+                                        style={styles.resourceSearchInput}
+                                      />
                                     </div>
-                                    <span style={styles.dropdownArrow}>▾</span>
+
+                                    <span
+                                      style={styles.dropdownArrow}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setResourceDropdownKey(
+                                          resourceDropdownKey === key ? null : key
+                                        );
+                                      }}
+                                    >
+                                      ▾
+                                    </span>
                                   </div>
 
                                   {resourceDropdownKey === key && (
                                     <div style={styles.dropdownMenu}>
-                                      {resourceOptions.length === 0 ? (
+                                      {filteredResourceOptions.length === 0 ? (
                                         <div style={styles.dropdownEmpty}>
                                           No resources available
                                         </div>
                                       ) : (
-                                        resourceOptions.map((row) => {
+                                        filteredResourceOptions.map((row) => {
                                           const checked = selectedResources.includes(
                                             row.resource
                                           );
@@ -569,11 +662,6 @@ const ResourceComponentInfo = () => {
                                     </div>
                                   )}
                                 </div>
-
-                                <div style={styles.helperText}>
-                                  If desired resource is not found, please check
-                                  Oracle work definitions
-                                </div>
                               </div>
 
                               <div>
@@ -592,12 +680,12 @@ const ResourceComponentInfo = () => {
                                   {(bomVersions.length > 0
                                     ? bomVersions
                                     : [
-                                        "PRIMARY",
-                                        ...Array.from(
-                                          { length: 20 },
-                                          (_, index) => `BOM${index + 1}`
-                                        ),
-                                      ]
+                                      "PRIMARY",
+                                      ...Array.from(
+                                        { length: 20 },
+                                        (_, index) => `BOM${index + 1}`
+                                      ),
+                                    ]
                                   ).map((version) => (
                                     <option key={version} value={version}>
                                       {version}
@@ -614,26 +702,21 @@ const ResourceComponentInfo = () => {
                                 readOnly
                                 style={styles.inputDisabled}
                               />
-                              <div style={styles.helperText}>Auto-populated</div>
                             </div>
 
-                            <div style={styles.generatedBox}>
-                              <div style={styles.generatedTitle}>
-                                Generated Routing IDs
-                              </div>
-                              <div style={styles.generatedTable}>
-                                <div style={styles.generatedHeader}>
-                                  <div>Resource</div>
-                                  <div>Resource Relevancy</div>
-                                  <div>Routing ID</div>
+                            {selectedResourceRows.length > 0 && (
+                              <div style={styles.generatedBox}>
+                                <div style={styles.generatedTitle}>
+                                  Generated Routing IDs
                                 </div>
-
-                                {selectedResourceRows.length === 0 ? (
-                                  <div style={styles.generatedEmpty}>
-                                    No resources selected
+                                <div style={styles.generatedTable}>
+                                  <div style={styles.generatedHeader}>
+                                    <div>Resource</div>
+                                    <div>Resource Relevancy</div>
+                                    <div>Routing ID</div>
                                   </div>
-                                ) : (
-                                  selectedResourceRows.map((row) => (
+
+                                  {selectedResourceRows.map((row) => (
                                     <div
                                       key={row.resource}
                                       style={styles.generatedRow}
@@ -648,10 +731,10 @@ const ResourceComponentInfo = () => {
                                         )}
                                       </div>
                                     </div>
-                                  ))
-                                )}
+                                  ))}
+                                </div>
                               </div>
-                            </div>
+                            )}
 
                             <div style={styles.sectionGreen}>
                               <div style={styles.sectionHeader}>
@@ -1078,13 +1161,21 @@ const styles = {
     cursor: "pointer",
     fontWeight: 600,
   },
-  placeholderText: {
-    color: "#9ca3af",
+  resourceSearchInput: {
+    flex: 1,
+    minWidth: "140px",
+    border: "none",
+    outline: "none",
     fontSize: "14px",
+    color: "#111827",
+    backgroundColor: "transparent",
+    padding: "2px 0",
   },
   dropdownArrow: {
     color: "#6b7280",
     fontSize: "12px",
+    cursor: "pointer",
+    userSelect: "none",
   },
   dropdownMenu: {
     position: "absolute",
@@ -1143,11 +1234,6 @@ const styles = {
     fontSize: "12px",
     color: "#111827",
     borderBottom: "1px solid #e5e7eb",
-  },
-  generatedEmpty: {
-    padding: "10px",
-    fontSize: "12px",
-    color: "#6b7280",
   },
   sectionGreen: {
     marginTop: "16px",
