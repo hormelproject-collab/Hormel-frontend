@@ -14,6 +14,9 @@ import EngineeringChangeDetail from './EngineeringChange/EngineeringChangesDetai
 import DownloadBOM from './DownloadBom/DownloadBomData';
 import SummaryPage from './createBom/Summary';
 import CreateItemBOMRoutingRecord from './createBom/AddItemBOMRoutingRecord/CreateItemBOMRoutingRecord';
+import ModifySelectExistingBOM from './modifyBom/ModifySelectExistingBOM';
+import ModifyExistingBOMData from './modifyBom/ModifyExistingBOMData';
+import ModifyExistingBOMSummary from './modifyBom/ModifyExistingBOMSummary';
 import ReviewSummary from './createBom/AddItemBOMRoutingRecord/ReviewSummary';
 import BomUpload from './BomUpload';
 import DeleteBomHome from './DeleteBOM/DeleteBOMDashboard';
@@ -59,6 +62,15 @@ function App() {
 
         {/* Add Item BOM Routing Record */}
         <Route path="/create-item-bom-routing-record" element={<CreateItemBOMRoutingRecord />} /> {/* step 1 */}
+
+        {/* Modify Select Existing BOM */}
+        {/* step 1 */}
+        <Route path="/modify-select-existing-bom" element={<ModifySelectExistingBOM />} /> 
+        {/* step 2 */}
+        <Route path="/modify-existing-bom-data/:id" element={<ModifyExistingBOMData />} /> 
+        {/* step 3 */}
+        <Route path="/review-changes" element={<ModifyExistingBOMSummary />} /> 
+
         <Route path="/review-summary" element={<ReviewSummary />} />
         {/* Delete BOM */}
         <Route path="/delete-bom-dashboard" element={<DeleteBomHome />} />
