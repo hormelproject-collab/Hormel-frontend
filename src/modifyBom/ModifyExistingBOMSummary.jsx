@@ -15,17 +15,17 @@ const ModifyExistingBOMSummary = () => {
   const componentChanges = componentItems.flatMap((item, index) => [
     {
       field: `Component Item ${index + 1}`,
-      original: "-",
+      original: item.original_component_item || item.component_item || "-",
       updated: item.component_item || "-",
     },
     {
       field: `Component Item Description ${index + 1}`,
-      original: "-",
+      original: item.original_component_desc || "-",
       updated: item.component_desc || "-",
     },
     {
       field: `Standard Usage ${index + 1}`,
-      original: "-",
+      original: item.original_standard_usage || "-",
       updated: item.standard_usage || "-",
     },
   ]);
@@ -33,17 +33,17 @@ const ModifyExistingBOMSummary = () => {
   const coProductChanges = coProducts.flatMap((cp, index) => [
     {
       field: `Co-Product Item ${index + 1}`,
-      original: "-",
+      original: cp.original_item || cp.item || "-",
       updated: cp.item || "-",
     },
     {
       field: `Co-Product Item Description ${index + 1}`,
-      original: "-",
+      original: cp.original_desc || "-",
       updated: cp.desc || "-",
     },
     {
       field: `Co-Product Quantity Produced ${index + 1}`,
-      original: "-",
+      original: cp.original_qty || "-",
       updated: cp.qty || "-",
     },
   ]);
@@ -184,15 +184,15 @@ const ModifyExistingBOMSummary = () => {
               </thead>
               <tbody>
                 {componentChanges.map((row, index) => (
-                  <tr
-                    key={index}
-                    // style={(index + 1) % 2 === 0 ? styles.changesRow : styles.changesAltRow}
-                    style={
-                      row.field.includes("Standard Usage")
-                        ? styles.changesAltRow
-                        : styles.changesRow
-                    }
-                  >
+<tr
+  key={index}
+  style={
+    row.field.includes("Standard Usage") &&
+    String(row.original).trim() !== String(row.updated).trim()
+      ? styles.changesAltRow
+      : styles.changesRow
+  }
+>
                     <td style={styles.changesCell}>{row.field}</td>
                     <td style={styles.changesCell}>{row.original}</td>
                     <td style={styles.changesCell}>{row.updated}</td>
@@ -218,15 +218,15 @@ const ModifyExistingBOMSummary = () => {
               </thead>
               <tbody>
                 {coProductChanges.map((row, index) => (
-                  <tr
-                    key={index}
-                    // style={index % 2 === 0 ? styles.changesRow : styles.changesAltRow}
-                    style={
-                      row.field.includes("Co-Product Quantity Produced")
-                        ? styles.changesAltRow
-                        : styles.changesRow
-                    }
-                  >
+<tr
+  key={index}
+  style={
+    row.field.includes("Co-Product Quantity Produced") &&
+    String(row.original).trim() !== String(row.updated).trim()
+      ? styles.changesAltRow
+      : styles.changesRow
+  }
+>
                     <td style={styles.changesCell}>{row.field}</td>
                     <td style={styles.changesCell}>{row.original}</td>
                     <td style={styles.changesCell}>{row.updated}</td>
