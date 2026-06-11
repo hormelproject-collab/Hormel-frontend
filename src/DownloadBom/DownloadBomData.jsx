@@ -21,40 +21,40 @@ export default function DownloadBOM() {
   };
 
   const tableLabelToDbName = {
-  "BOM Parameters": "bom_parameters",
-  "BOM Produced": "bom_produced",
-  "BOM Consumed": "bom_consumed",
-  "Item BOM Routing": "item_bom_routing",
-};
+    "BOM Parameters": "bom_parameters",
+    "BOM Produced": "bom_produced",
+    "BOM Consumed": "bom_consumed",
+    "Item BOM Routing": "item_bom_routing",
+  };
 
-async function downloadSelectedTablesCsv(selectedTablesLabels) {
-  const tables = selectedTablesLabels
-    .map((label) => tableLabelToDbName[label])
-    .filter(Boolean);
+  async function downloadSelectedTablesExcel(selectedTablesLabels) {
+    const tables = selectedTablesLabels
+      .map((label) => tableLabelToDbName[label])
+      .filter(Boolean);
 
-  const response = await fetch("/api/bom/download-csv", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tables }),
-  });
+    const response = await fetch(`http://localhost:3000/api/tables/download-bom-excel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tables }),
+    });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || "Download failed");
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || "Download failed");
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bom_tables.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(url);
   }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "bom_tables.csv";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  window.URL.revokeObjectURL(url);
-}
 
   return (
     <div style={styles.container}>
@@ -81,12 +81,6 @@ async function downloadSelectedTablesCsv(selectedTablesLabels) {
         ))}
       </div>
 
-      {/* Note Section */}
-      <div style={styles.noteBox}>
-        <strong>Note:</strong> All selected tables will be downloaded into a
-        single file. Each table will appear in a separate tab within the file.
-      </div>
-
       {/* Selected Tables Card */}
       <div style={styles.card}>
         <h2 style={styles.cardTitle}>
@@ -102,9 +96,9 @@ async function downloadSelectedTablesCsv(selectedTablesLabels) {
 
       {/* Button */}
       <div style={styles.buttonContainer}>
-        <button 
-        style={styles.button}   
-        onClick={() => downloadSelectedTablesCsv(selectedTables)}>
+        <button
+          style={styles.button}
+          onClick={() => downloadSelectedTablesExcel(selectedTables)}>
           ⬇ DOWNLOAD SELECTED TABLES
         </button>
       </div>

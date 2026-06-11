@@ -22,6 +22,8 @@ import DeleteBomSummaryStep2 from './DeleteBOM/DeleteBOMSummary';
 import DeleteExistingItemBomRoutingStep1 from './DeleteBOM/DeleteExistingIBR';
 import DeleteItemBomRoutingSummaryStep2 from './DeleteBOM/DeleteExistingIBRSummary';
 import EngineeringChangeDetailAdd from './EngineeringChange/EngineeringChangesDetail_Add';
+import EngineeringChangeDetailDeleteBOM from './EngineeringChange/EngineeringChangesDetail_Delete';
+import ViewBomData from './ViewBomData/ViewBomData';
 
 function App() {
 
@@ -32,7 +34,14 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         {/* Engineering-change log */}
         <Route path="/change-log" element={<EngineeringChangeLog />} />
-        <Route path="/change-log/engineering-change-detail-add" element={<EngineeringChangeDetailAdd />} />
+        <Route path="/change-log/engineering-change-detail-add" 
+        element={<EngineeringChangeDetailAdd />} />
+
+        <Route
+          path="/change-log/engineering-change-detail-delete-bom"
+          element={<EngineeringChangeDetailDeleteBOM />}
+        />
+
         {/* Download BOM */}
         <Route path="/download-bom" element={<DownloadBOM />} />
         {/* CreateBOM */}
@@ -58,6 +67,10 @@ function App() {
         {/* Delete IBR */}
         <Route path="/delete-bom-dashboard/delete-existing-ibr" element={<DeleteExistingItemBomRoutingStep1 />} />
         <Route path="/delete-bom-dashboard/delete-existing-ibr/summary" element={<DeleteItemBomRoutingSummaryStep2 />} />
+       {/* View Bom */}
+        <Route path="/view-bom-data" element={<ViewBomData />} />
+       
+      
       </Routes>
     </BrowserRouter>
   );

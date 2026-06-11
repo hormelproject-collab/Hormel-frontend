@@ -18,6 +18,7 @@ const ReviewSummary = () => {
     location = "",
     resource = "",
     resourceRelevancy = "",
+    routingPriority = "", // NEW FIELD
     routingId = "",
     addConnectedCoProduct = false,
     coProductItem = "",
@@ -47,6 +48,7 @@ const ReviewSummary = () => {
     !!producedItem &&
     !!location &&
     !!resource &&
+    !!routingPriority && // NEW REQUIRED FIELD
     !!routingId &&
     !submitting;
 
@@ -65,6 +67,7 @@ const ReviewSummary = () => {
         location,
         resource,
         resourceRelevancy,
+        routingPriority, // NEW FIELD SENT TO BACKEND
         routingId,
         addConnectedCoProduct,
         coProductItem: addConnectedCoProduct ? coProductItem : "",
@@ -89,9 +92,9 @@ const ReviewSummary = () => {
       if (!res.ok) {
         throw new Error(
           json?.details ||
-          json?.error ||
-          json?.message ||
-          "Failed to create item BOM routing record"
+            json?.error ||
+            json?.message ||
+            "Failed to create item BOM routing record"
         );
       }
 
@@ -118,10 +121,18 @@ const ReviewSummary = () => {
         {successData ? (
           <div style={styles.successBox}>
             <div style={styles.successTitle}>Record created successfully</div>
-            <div><strong>Engineering Change ID:</strong> {successData.engineeringChangeId}</div>
-            <div><strong>Change Log ID:</strong> {successData.changeLogId}</div>
-            <div><strong>Transaction Set ID:</strong> {successData.trxnSetId}</div>
-            <div><strong>PostgreSQL Record ID:</strong> {successData.postgresqlRecId}</div>
+            <div>
+              <strong>Engineering Change ID:</strong> {successData.engineeringChangeId}
+            </div>
+            <div>
+              <strong>Change Log ID:</strong> {successData.changeLogId}
+            </div>
+            <div>
+              <strong>Transaction Set ID:</strong> {successData.trxnSetId}
+            </div>
+            <div>
+              <strong>PostgreSQL Record ID:</strong> {successData.postgresqlRecId}
+            </div>
           </div>
         ) : null}
 
@@ -139,7 +150,12 @@ const ReviewSummary = () => {
             <strong>Resource:</strong> <span>{resource || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
-            <strong>Resource Relevancy:</strong> <span>{resourceRelevancy || "-"}</span>
+            <strong>Item BOM Routing Priority:</strong>{" "}
+            <span>{routingPriority || "-"}</span>
+          </div>
+          <div style={styles.summaryRow}>
+            <strong>Resource Relevancy:</strong>{" "}
+            <span>{resourceRelevancy || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
             <strong>Routing ID:</strong> <span>{routingId || "-"}</span>

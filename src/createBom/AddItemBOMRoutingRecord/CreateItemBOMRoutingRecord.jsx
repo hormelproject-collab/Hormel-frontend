@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { IoIosArrowBack, IoIosArrowDown, IoMdClose } from "react-icons/io";
 
+const API_BASE_URL = "http://localhost:3000";
+
 const CreateItemBOMRoutingRecord = () => {
   const navigate = useNavigate();
 
@@ -17,12 +19,15 @@ const CreateItemBOMRoutingRecord = () => {
   const [selectedResource, setSelectedResource] = useState("");
   const [resourceRelevancy, setResourceRelevancy] = useState("");
 
+  const [routingPriority, setRoutingPriority] = useState("");
+
   const [addConnectedCoProduct, setAddConnectedCoProduct] = useState(false);
   const [coProductItem, setCoProductItem] = useState("");
 
   const [loading, setLoading] = useState({
     initial: false,
     bomDetails: false,
+    itemReleaseFlag: false,
     resourceRelevancy: false,
     coProducts: false,
   });
@@ -37,7 +42,32 @@ const CreateItemBOMRoutingRecord = () => {
   const canProceed =
     !!selectedBomId &&
     !!selectedResource &&
+    !!routingPriority &&
     (!addConnectedCoProduct || !!coProductItem);
+
+  const deriveItemAndLocationFromBomId = (bomId) => {
+    const value = String(bomId || "").trim();
+    if (!value) {
+      return {
+        item: "",
+        location: "",
+      };
+    }
+
+    const parts = value.split("_").map((p) => p.trim()).filter(Boolean);
+
+    if (parts.length < 3) {
+      return {
+        item: "",
+        location: "",
+      };
+    }
+
+    return {
+      item: parts[1] || "",
+      location: parts.slice(2).join("_") || "",
+    };
+  };
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -46,8 +76,8 @@ const CreateItemBOMRoutingRecord = () => {
         setError("");
 
         const [bomRes, resourceRes] = await Promise.all([
-          fetch("http://localhost:3000/api/bigquery/table/bom-routing-step1/bom-ids"),
-          fetch("http://localhost:3000/api/bigquery/table/bom-routing-step1/resources"),
+          fetch(`${API_BASE_URL}/api/bigquery/table/bom-routing-step1/bom-ids`),
+          fetch(`${API_BASE_URL}/api/bigquery/table/bom-routing-step1/resources`),
         ]);
 
         const bomJson = await bomRes.json();
@@ -75,6 +105,77 @@ const CreateItemBOMRoutingRecord = () => {
     loadInitialData();
   }, []);
 
+  const loadItemReleaseFlag = async (item) => {
+    if (!item) {
+      setItemReleaseFlag("");
+      return "";
+    }
+
+    try {
+      setLoading((prev) => ({ ...prev, itemReleaseFlag: true }));
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/bigquery/table/bom-routing-step1/item-releaseflag/${encodeURIComponent(item)}`
+      );
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          json?.details || json?.error || "Failed to fetch item release flag"
+        );
+      }
+
+      const releaseFlag =
+        json?.data?.release ||
+        json?.data?.item_releaseflag ||
+        json?.data?.releaseFlag ||
+        "";
+
+      setItemReleaseFlag(releaseFlag || "");
+      return releaseFlag || "";
+    } catch (err) {
+      setItemReleaseFlag("");
+      setError(err.message || "Failed to fetch item release flag");
+      return "";
+    } finally {
+      setLoading((prev) => ({ ...prev, itemReleaseFlag: false }));
+    }
+  };
+
+  const loadCoProducts = async (bomId) => {
+    if (!bomId) {
+      setCoProductOptions([]);
+      setCoProductItem("");
+      return;
+    }
+
+    try {
+      setLoading((prev) => ({ ...prev, coProducts: true }));
+      setError("");
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/bigquery/table/bom-routing-step1/co-products/${encodeURIComponent(bomId)}`
+      );
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json?.details || json?.error || "Failed to fetch co-products");
+      }
+
+      setCoProductOptions(Array.isArray(json.data) ? json.data : []);
+      setCoProductItem("");
+    } catch (err) {
+      setCoProductOptions([]);
+      setCoProductItem("");
+      setError(err.message || "Failed to fetch co-products");
+    } finally {
+      setLoading((prev) => ({ ...prev, coProducts: false }));
+    }
+  };
+  ``
+
   useEffect(() => {
     const loadBomDetails = async () => {
       if (!selectedBomId) {
@@ -90,8 +191,11 @@ const CreateItemBOMRoutingRecord = () => {
         setLoading((prev) => ({ ...prev, bomDetails: true }));
         setError("");
 
+        const derived = deriveItemAndLocationFromBomId(selectedBomId);
+
+        // Get location / any additional bom detail if backend already supports it
         const res = await fetch(
-          `http://localhost:3000/api/bigquery/table/bom-routing-step1/bom-details/${encodeURIComponent(selectedBomId)}`
+          `${API_BASE_URL}/api/bigquery/table/bom-routing-step1/bom-details/${encodeURIComponent(selectedBomId)}`
         );
         const json = await res.json();
 
@@ -101,16 +205,35 @@ const CreateItemBOMRoutingRecord = () => {
 
         const data = json?.data || {};
 
-        setProducedItem(data.producedItem || "");
-        setItemReleaseFlag(data.itemReleaseFlag || "");
-        setLocation(data.location || "");
+        const finalProducedItem = data.producedItem || derived.item || "";
+        const finalLocation = data.location || derived.location || "";
 
-        if (addConnectedCoProduct && data.producedItem) {
-          await loadCoProducts(data.producedItem);
+        setProducedItem(finalProducedItem);
+        setLocation(finalLocation);
+
+        // Prefer dedicated item_releaseflag fetch from GCP table using derived item
+        if (finalProducedItem) {
+          const releaseFlag =
+            (await loadItemReleaseFlag(finalProducedItem)) ||
+            data.itemReleaseFlag ||
+            "";
+
+          if (!releaseFlag && data.itemReleaseFlag) {
+            setItemReleaseFlag(data.itemReleaseFlag);
+          }
+        } else {
+          setItemReleaseFlag(data.itemReleaseFlag || "");
+        }
+
+        // Fetch co-products for this item when checkbox is enabled
+
+        if (addConnectedCoProduct && selectedBomId) {
+          await loadCoProducts(selectedBomId);
         } else {
           setCoProductOptions([]);
           setCoProductItem("");
         }
+
       } catch (err) {
         setProducedItem("");
         setItemReleaseFlag("");
@@ -139,7 +262,7 @@ const CreateItemBOMRoutingRecord = () => {
         setError("");
 
         const res = await fetch(
-          `http://localhost:3000/api/bigquery/table/bom-routing-step1/resource-relevancy/${encodeURIComponent(
+          `${API_BASE_URL}/api/bigquery/table/bom-routing-step1/resource-relevancy/${encodeURIComponent(
             selectedResource
           )}`
         );
@@ -163,37 +286,6 @@ const CreateItemBOMRoutingRecord = () => {
     loadResourceRelevancy();
   }, [selectedResource]);
 
-  const loadCoProducts = async (item) => {
-    if (!item) {
-      setCoProductOptions([]);
-      setCoProductItem("");
-      return;
-    }
-
-    try {
-      setLoading((prev) => ({ ...prev, coProducts: true }));
-      setError("");
-
-      const res = await fetch(
-        `http://localhost:3000/api/bigquery/table/bom-routing-step1/co-products/${encodeURIComponent(item)}`
-      );
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(json?.details || json?.error || "Failed to fetch co-products");
-      }
-
-      setCoProductOptions(Array.isArray(json.data) ? json.data : []);
-      setCoProductItem("");
-    } catch (err) {
-      setCoProductOptions([]);
-      setCoProductItem("");
-      setError(err.message || "Failed to fetch co-products");
-    } finally {
-      setLoading((prev) => ({ ...prev, coProducts: false }));
-    }
-  };
-
   const handleCoProductToggle = async (checked) => {
     setAddConnectedCoProduct(checked);
 
@@ -203,9 +295,10 @@ const CreateItemBOMRoutingRecord = () => {
       return;
     }
 
-    if (producedItem) {
-      await loadCoProducts(producedItem);
+    if (selectedBomId) {
+      await loadCoProducts(selectedBomId);
     }
+
   };
 
   const handleNext = () => {
@@ -219,6 +312,7 @@ const CreateItemBOMRoutingRecord = () => {
         location,
         resource: selectedResource,
         resourceRelevancy,
+        routingPriority,
         routingId,
         addConnectedCoProduct,
         coProductItem: addConnectedCoProduct ? coProductItem : "",
@@ -275,18 +369,20 @@ const CreateItemBOMRoutingRecord = () => {
               placeholder="Produced Item"
               style={styles.inputDisabled}
             />
-           
           </div>
 
           {/* Item Release Flag */}
           <div style={styles.fieldBlock}>
             <input
-              value={loading.bomDetails ? "Loading..." : itemReleaseFlag}
+              value={
+                loading.bomDetails || loading.itemReleaseFlag
+                  ? "Loading..."
+                  : itemReleaseFlag
+              }
               readOnly
               placeholder="Item Release Flag"
               style={styles.inputDisabled}
             />
-          
           </div>
 
           {/* Resource */}
@@ -319,7 +415,22 @@ const CreateItemBOMRoutingRecord = () => {
                 <IoIosArrowDown style={styles.selectIconStatic} />
               </div>
             </div>
-       
+          </div>
+
+          {/* Item BOM Routing Priority */}
+          <div style={styles.fieldBlock}>
+            <label style={styles.label}>Item BOM Routing Priority *</label>
+            <input
+              type="number"
+              min="1"
+              value={routingPriority}
+              onChange={(e) => setRoutingPriority(e.target.value)}
+              placeholder="Enter Routing Priority"
+              style={styles.input}
+            />
+            <div style={styles.helperText}>
+              Enter routing priority for this Resource / Routing ID
+            </div>
           </div>
 
           {/* Resource Relevancy */}
@@ -330,7 +441,6 @@ const CreateItemBOMRoutingRecord = () => {
               placeholder="Resource Relevancy"
               style={styles.inputDisabled}
             />
-           
           </div>
 
           {/* Routing ID */}
@@ -341,7 +451,6 @@ const CreateItemBOMRoutingRecord = () => {
               placeholder="Routing ID"
               style={styles.inputDisabled}
             />
-            
           </div>
 
           {/* Checkbox */}
@@ -510,6 +619,18 @@ const styles = {
     padding: "0 14px",
     fontSize: "16px",
     color: "#6b7280",
+    boxSizing: "border-box",
+    outline: "none",
+  },
+  input: {
+    width: "100%",
+    height: "56px",
+    borderRadius: "4px",
+    border: "1px solid #c7c7c7",
+    backgroundColor: "#fff",
+    padding: "0 14px",
+    fontSize: "16px",
+    color: "#111827",
     boxSizing: "border-box",
     outline: "none",
   },

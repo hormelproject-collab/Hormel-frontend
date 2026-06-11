@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL = "http://localhost:3000";
 
@@ -164,7 +164,6 @@ const splitCsvish = (value) => {
   const str = String(value).trim();
   if (!str) return [];
 
-  // Handle JSON-string arrays like: ["1013","1003"]
   if (
     (str.startsWith("[") && str.endsWith("]")) ||
     (str.startsWith("{") && str.endsWith("}"))
@@ -181,7 +180,7 @@ const splitCsvish = (value) => {
           .filter(Boolean);
       }
     } catch {
-      // fall back to comma split
+      // fall back
     }
   }
 
@@ -191,7 +190,10 @@ const splitCsvish = (value) => {
     .filter(Boolean);
 };
 
-const uniqueSorted = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+const uniqueSorted = (arr) =>
+  [...new Set(arr.filter(Boolean))].sort((a, b) =>
+    String(a).localeCompare(String(b))
+  );
 
 const getCurrentUser = () => {
   try {
@@ -290,10 +292,8 @@ const normalizeLogRecord = (item, index) => {
     item.modified_by ||
     item.modifiedBy ||
     "";
-  ``
 
   const changeSummary =
-
     item.change_summary ||
     item.summarynotes ||
     item.notes ||
@@ -301,7 +301,6 @@ const normalizeLogRecord = (item, index) => {
     item.summary ||
     item.description ||
     "";
-
 
   const mainBomDetails =
     item.main_bom_details ||
@@ -404,57 +403,6 @@ const normalizeLogRecord = (item, index) => {
     coProductDetails: normalizedCoProductDetails,
     modifiedFieldComparison: normalizeModifiedComparison(modifiedFieldComparison),
   };
-};
-
-const buildCriteriaOptions = (rows) => {
-  const options = [];
-
-  const pushOptions = (fieldKey, label, extractor) => {
-    const values = uniqueSorted(
-      rows.flatMap((row) => safeArray(extractor(row)).map((v) => toDisplayString(v)))
-    );
-
-    values.forEach((value) => {
-      options.push({
-        key: `${fieldKey}::${value}`,
-        field: fieldKey,
-        label: `${label}: ${value}`,
-        value,
-      });
-    });
-  };
-
-  pushOptions("engineeringChangeNumber", "Engineering Change #", (row) => row.engineeringChangeNumber);
-  pushOptions("changeType", "Change Type", (row) => row.changeType);
-  pushOptions("location", "Location", (row) => row.locations);
-  pushOptions("bomId", "BOM ID", (row) => row.bomIds);
-  pushOptions("resource", "Resource", (row) => row.resources);
-  pushOptions("changeSummary", "Change Summary", (row) => row.changeSummary);
-
-  return options;
-};
-
-const recordMatchesCriterion = (row, criterionKey) => {
-  if (!criterionKey) return true;
-  const [field, value] = criterionKey.split("::");
-  if (!field || value == null) return true;
-
-  switch (field) {
-    case "engineeringChangeNumber":
-      return row.engineeringChangeNumber === value;
-    case "changeType":
-      return row.changeType === value;
-    case "location":
-      return row.locations.includes(value);
-    case "bomId":
-      return row.bomIds.includes(value);
-    case "resource":
-      return row.resources.includes(value);
-    case "changeSummary":
-      return row.changeSummary === value;
-    default:
-      return true;
-  }
 };
 
 const getTagStyle = (type) => {
@@ -726,6 +674,70 @@ const buildExportSheets = (rows) => {
   };
 };
 
+/* ----------------------- Dynamic Criteria Filter ----------------------- */
+
+const CRITERIA_DROPDOWN_OPTIONS = [
+  { value: "", label: "None" },
+  { value: "location", label: "Location" },
+  { value: "bomId", label: "BOM ID" },
+  { value: "resource", label: "Resource" },
+  { value: "producedItem", label: "Produced Item" },
+  { value: "componentItem", label: "Component Item" },
+  { value: "coProductItem", label: "Co-Product Item" },
+];
+
+const getSearchPlaceholder = (field) => {
+  switch (field) {
+    case "location":
+      return "Search Location";
+    case "bomId":
+      return "Search BOM ID";
+    case "resource":
+      return "Search Resource";
+    case "producedItem":
+      return "Search Produced Item";
+    case "componentItem":
+      return "Search Component Item";
+    case "coProductItem":
+      return "Search Co-Product Item";
+    default:
+      return "Search";
+  }
+};
+
+const recordMatchesTextCriterion = (row, field, inputValue) => {
+  if (!field || !inputValue.trim()) return true;
+
+  const searchValue = inputValue.trim().toLowerCase();
+
+  switch (field) {
+    case "location":
+      return row.locations.some((v) => String(v).toLowerCase().includes(searchValue));
+
+    case "bomId":
+      return row.bomIds.some((v) => String(v).toLowerCase().includes(searchValue));
+
+    case "resource":
+      return row.resources.some((v) => String(v).toLowerCase().includes(searchValue));
+
+    case "producedItem":
+      return String(row.producedItem || "").toLowerCase().includes(searchValue);
+
+    case "componentItem":
+      return row.componentItems.some((v) =>
+        String(v).toLowerCase().includes(searchValue)
+      );
+
+    case "coProductItem":
+      return row.coProductItems.some((v) =>
+        String(v).toLowerCase().includes(searchValue)
+      );
+
+    default:
+      return true;
+  }
+};
+
 /* -------------------------------- Component -------------------------------- */
 
 export default function Engineeringlog() {
@@ -738,11 +750,14 @@ export default function Engineeringlog() {
   const [toDate, setToDate] = useState(formatDateForInput(new Date()));
   const [selectedUser, setSelectedUser] = useState("");
   const [showMyChangesOnly, setShowMyChangesOnly] = useState(false);
-  const [criteria1, setCriteria1] = useState("");
-  const [criteria2, setCriteria2] = useState("");
+
+  // NEW CRITERIA STATE
+  const [criteriaField1, setCriteriaField1] = useState("");
+  const [criteriaValue1, setCriteriaValue1] = useState("");
+  const [criteriaField2, setCriteriaField2] = useState("");
+  const [criteriaValue2, setCriteriaValue2] = useState("");
 
   const currentUser = useMemo(() => getCurrentUser(), []);
-
 
   const handleRowNavigation = (row) => {
     const changeType = String(row.changeType || "").trim().toLowerCase();
@@ -771,30 +786,32 @@ export default function Engineeringlog() {
     };
 
     if (changeType.includes("add")) {
-
       navigate("/change-log/engineering-change-detail-add", {
         state: {
           engineeringChangeId: row.engineeringChangeNumber || "",
           bomId: row.bomIds?.[0] || "",
           resource: row.resources?.[0] || "",
           producedItem: row.producedItem || "",
+          location: row.locations?.[0] || "",
         },
       });
-
       return;
     }
 
     if (changeType.includes("modify")) {
-      navigate("/change-log/engineering-change-detail-modify", { state: statePayload });
+      navigate("/change-log/engineering-change-detail-modify", {
+        state: statePayload,
+      });
       return;
     }
 
     if (changeType.includes("delete")) {
-      navigate("/change-log/engineering-change-detail-delete", { state: statePayload });
+      navigate("/change-log/engineering-change-detail-delete-bom", {
+        state: statePayload,
+      });
       return;
     }
   };
-  ``
 
   useEffect(() => {
     const fetchEngineeringLog = async () => {
@@ -814,7 +831,9 @@ export default function Engineeringlog() {
 
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(errText || `Failed to fetch engineering change log (${response.status})`);
+          throw new Error(
+            errText || `Failed to fetch engineering change log (${response.status})`
+          );
         }
 
         const data = await response.json();
@@ -822,13 +841,13 @@ export default function Engineeringlog() {
         const rawList = Array.isArray(data)
           ? data
           : Array.isArray(data?.data)
-            ? data.data
-            : Array.isArray(data?.rows)
-              ? data.rows
-              : Array.isArray(data?.result)
-                ? data.result
-                : [];
-        console.log("engineering-change-log raw response:", rawList);
+          ? data.data
+          : Array.isArray(data?.rows)
+          ? data.rows
+          : Array.isArray(data?.result)
+          ? data.result
+          : [];
+
         const normalized = rawList.map(normalizeLogRecord);
         setRows(normalized);
       } catch (error) {
@@ -845,8 +864,6 @@ export default function Engineeringlog() {
 
   const userOptions = useMemo(() => uniqueSorted(rows.map((r) => r.user)), [rows]);
 
-  const criteriaOptions = useMemo(() => buildCriteriaOptions(rows), [rows]);
-
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
       const rowDate = row.changeDateInput;
@@ -862,12 +879,23 @@ export default function Engineeringlog() {
         if (rowUser !== me) return false;
       }
 
-      if (!recordMatchesCriterion(row, criteria1)) return false;
-      if (!recordMatchesCriterion(row, criteria2)) return false;
+      if (!recordMatchesTextCriterion(row, criteriaField1, criteriaValue1)) return false;
+      if (!recordMatchesTextCriterion(row, criteriaField2, criteriaValue2)) return false;
 
       return true;
     });
-  }, [rows, fromDate, toDate, selectedUser, showMyChangesOnly, currentUser, criteria1, criteria2]);
+  }, [
+    rows,
+    fromDate,
+    toDate,
+    selectedUser,
+    showMyChangesOnly,
+    currentUser,
+    criteriaField1,
+    criteriaValue1,
+    criteriaField2,
+    criteriaValue2,
+  ]);
 
   const handleExport = () => {
     const sheets = buildExportSheets(filteredRows);
@@ -943,9 +971,14 @@ export default function Engineeringlog() {
     },
     secondRow: {
       display: "grid",
-      gridTemplateColumns: "1fr",
+      gridTemplateColumns: "1fr 1fr",
       gap: "12px",
-      maxWidth: "490px",
+    },
+    criteriaGrid: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: "12px",
+      marginBottom: "12px",
     },
     fieldWrap: {
       display: "flex",
@@ -995,10 +1028,6 @@ export default function Engineeringlog() {
       gap: "16px",
       marginBottom: "14px",
       flexWrap: "wrap",
-    },
-    exportInfo: {
-      fontSize: "13px",
-      color: "#374151",
     },
     exportButton: {
       backgroundColor: "#1f78d1",
@@ -1067,7 +1096,12 @@ export default function Engineeringlog() {
 
   return (
     <div style={styles.page}>
-      <button type="button" style={styles.backButton} onClick={() => window.history.back()}>
+      {/* MAIN MENU BUTTON */}
+      <button
+        type="button"
+        style={styles.backButton}
+        onClick={() => navigate("/")}
+      >
         <span style={{ fontSize: "16px" }}>←</span>
         <span>BACK TO MAIN MENU</span>
       </button>
@@ -1077,6 +1111,7 @@ export default function Engineeringlog() {
       <div style={styles.card}>
         <div style={styles.sectionTitle}>Filters & Search</div>
 
+        {/* Top row */}
         <div style={styles.filtersRow}>
           <div style={styles.fieldWrap}>
             <label style={styles.label}>From Date</label>
@@ -1124,16 +1159,20 @@ export default function Engineeringlog() {
           </label>
         </div>
 
-        <div style={styles.secondRow}>
+        {/* Criteria row 1 */}
+        <div style={styles.criteriaGrid}>
           <div style={styles.fieldWrap}>
+            <label style={styles.label}>Search By (Criteria 1)</label>
             <select
-              value={criteria1}
-              onChange={(e) => setCriteria1(e.target.value)}
+              value={criteriaField1}
+              onChange={(e) => {
+                setCriteriaField1(e.target.value);
+                setCriteriaValue1("");
+              }}
               style={styles.select}
             >
-              <option value="">Search By (Criteria 1)</option>
-              {criteriaOptions.map((option) => (
-                <option key={`c1-${option.key}`} value={option.key}>
+              {CRITERIA_DROPDOWN_OPTIONS.map((option) => (
+                <option key={`criteria1-${option.value}`} value={option.value}>
                   {option.label}
                 </option>
               ))}
@@ -1141,24 +1180,61 @@ export default function Engineeringlog() {
           </div>
 
           <div style={styles.fieldWrap}>
+            <label style={styles.label}>
+              {criteriaField1 ? getSearchPlaceholder(criteriaField1) : "Search"}
+            </label>
+            <input
+              type="text"
+              value={criteriaValue1}
+              onChange={(e) => setCriteriaValue1(e.target.value)}
+              placeholder={
+                criteriaField1 ? getSearchPlaceholder(criteriaField1) : "Select Criteria 1 first"
+              }
+              disabled={!criteriaField1}
+              style={styles.input}
+            />
+          </div>
+        </div>
+
+        {/* Criteria row 2 */}
+        <div style={styles.criteriaGrid}>
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>Search By (Criteria 2)</label>
             <select
-              value={criteria2}
-              onChange={(e) => setCriteria2(e.target.value)}
+              value={criteriaField2}
+              onChange={(e) => {
+                setCriteriaField2(e.target.value);
+                setCriteriaValue2("");
+              }}
               style={styles.select}
             >
-              <option value="">Search By (Criteria 2)</option>
-              {criteriaOptions.map((option) => (
-                <option key={`c2-${option.key}`} value={option.key}>
+              {CRITERIA_DROPDOWN_OPTIONS.map((option) => (
+                <option key={`criteria2-${option.value}`} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
+          </div>
+
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>
+              {criteriaField2 ? getSearchPlaceholder(criteriaField2) : "Search"}
+            </label>
+            <input
+              type="text"
+              value={criteriaValue2}
+              onChange={(e) => setCriteriaValue2(e.target.value)}
+              placeholder={
+                criteriaField2 ? getSearchPlaceholder(criteriaField2) : "Select Criteria 2 first"
+              }
+              disabled={!criteriaField2}
+              style={styles.input}
+            />
           </div>
         </div>
       </div>
 
       <div style={styles.exportInfoRow}>
-
         <button
           type="button"
           style={styles.exportButton}
@@ -1209,7 +1285,8 @@ export default function Engineeringlog() {
                 <tr
                   key={`${row.engineeringChangeNumber}-${index}`}
                   onClick={() => handleRowNavigation(row)}
-                  style={{ cursor: "pointer" }}>
+                  style={{ cursor: "pointer" }}
+                >
                   <td style={styles.tbodyTd}>{row.engineeringChangeNumber}</td>
                   <td style={styles.tbodyTd}>{row.changeDateDisplay}</td>
                   <td style={styles.tbodyTd}>
@@ -1242,7 +1319,11 @@ export default function Engineeringlog() {
         </div>
       )}
 
-      {apiError ? <div style={styles.errorText}>Please check backend API response and route mapping.</div> : null}
+      {apiError ? (
+        <div style={styles.errorText}>
+          Please check backend API response and route mapping.
+        </div>
+      ) : null}
     </div>
   );
 }

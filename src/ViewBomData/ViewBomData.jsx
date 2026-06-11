@@ -1,614 +1,585 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:3000";
+
 const CRITERIA_OPTIONS = [
-  "None",
-  "Location",
-  "BOM ID",
-  "Resource",
-  "Produced Item",
-  "Component Item",
-  "Co-Product Item"
+  { value: "", label: "None" },
+  { value: "location", label: "Location" },
+  { value: "bomId", label: "BOM ID" },
+  { value: "producedItem", label: "Produced Item" },
+  { value: "resource", label: "Resource" },
+  { value: "componentItem", label: "Component Item" },
+  { value: "coProductItem", label: "Co-Product Item" },
 ];
 
-export default function ViewBOMData() {
+const getPlaceholder = (field) => {
+  switch (field) {
+    case "location":
+      return "Search Location";
+    case "bomId":
+      return "Search BOM ID";
+    case "producedItem":
+      return "Search Produced Item";
+    case "resource":
+      return "Search Resource";
+    case "componentItem":
+      return "Search Component Item";
+    case "coProductItem":
+      return "Search Co-Product Item";
+    default:
+      return "Enter value";
+  }
+};
+
+const includesText = (value, search) =>
+  String(value || "").toLowerCase().includes(String(search || "").toLowerCase());
+
+export default function ViewBomData() {
   const navigate = useNavigate();
+
+  const [criterion1, setCriterion1] = useState("");
+  const [criterionValue1, setCriterionValue1] = useState("");
+  const [criterion2, setCriterion2] = useState("");
+  const [criterionValue2, setCriterionValue2] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const [allData, setAllData] = useState({
+  const [fetchedData, setFetchedData] = useState({
     bomParameters: [],
     bomProduced: [],
     bomConsumed: [],
-    itemBomRouting: []
+    itemBomRouting: [],
   });
 
-  const [criteria1, setCriteria1] = useState("");
-  const [criteria2, setCriteria2] = useState("");
+  const invalidCombo = useMemo(() => {
+    const fields = [criterion1, criterion2].filter(Boolean);
 
-  const [value1, setValue1] = useState("");
-  const [value2, setValue2] = useState("");
+    if (fields.includes("resource") && fields.includes("componentItem")) {
+      return "Users cannot select Resource and Component Item at the same time.";
+    }
+
+    if (fields.includes("componentItem") && fields.includes("coProductItem")) {
+      return "Users cannot select Component Item and Co-Product Item at the same time.";
+    }
+
+    return "";
+  }, [criterion1, criterion2]);
 
   useEffect(() => {
-    async function loadAllData() {
+    const fetchData = async () => {
+      // clear until both dropdowns are selected
+      if (!criterion1 || !criterion2) {
+        setFetchedData({
+          bomParameters: [],
+          bomProduced: [],
+          bomConsumed: [],
+          itemBomRouting: [],
+        });
+        setError("");
+        return;
+      }
+
+      if (invalidCombo) {
+        setFetchedData({
+          bomParameters: [],
+          bomProduced: [],
+          bomConsumed: [],
+          itemBomRouting: [],
+        });
+        setError(invalidCombo);
+        return;
+      }
+
       try {
         setLoading(true);
         setError("");
 
-        const res = await fetch("http://localhost:3000/api/view-bom-data");
-        const body = await res.json();
+        const response = await fetch(`${API_BASE_URL}/api/tables/view-bom-data/search`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            criterion1: { field: criterion1 },
+            criterion2: { field: criterion2 },
+          }),
+        });
 
-        if (!res.ok) {
-          throw new Error(body?.message || "Failed to fetch BOM data");
+        const json = await response.json();
+
+        if (!response.ok) {
+          throw new Error(json?.details || json?.error || "Failed to fetch BOM data");
         }
 
-        setAllData({
-          bomParameters: body?.data?.bomParameters || [],
-          bomProduced: body?.data?.bomProduced || [],
-          bomConsumed: body?.data?.bomConsumed || [],
-          itemBomRouting: body?.data?.itemBomRouting || []
+        setFetchedData(
+          json?.data || {
+            bomParameters: [],
+            bomProduced: [],
+            bomConsumed: [],
+            itemBomRouting: [],
+          }
+        );
+      } catch (err) {
+        setError(err.message || "Failed to fetch BOM data");
+        setFetchedData({
+          bomParameters: [],
+          bomProduced: [],
+          bomConsumed: [],
+          itemBomRouting: [],
         });
-      } catch (e) {
-        console.error(e);
-        setError(e.message || "Failed to fetch BOM data");
       } finally {
         setLoading(false);
       }
-    }
-
-    loadAllData();
-  }, []);
-
-  const getResourceValue = (row) => {
-    if (row?.resource) return row.resource;
-    if (row?.routing_id) {
-      const parts = String(row.routing_id).split("_");
-      return parts[parts.length - 1] || "";
-    }
-    return "";
-  };
-
-  const getCoProductValue = (row) => {
-    return (
-      row?.co_product_item ||
-      row?.coproduct_item ||
-      row?.co_product ||
-      row?.co_product_name ||
-      ""
-    );
-  };
-
-  const getBomIdsForSelection = (criterion, value) => {
-    if (!criterion || criterion === "None" || !value) return [];
-
-    switch (criterion) {
-      case "BOM ID":
-        return [value];
-
-      case "Location": {
-        const produced = allData.bomProduced
-          .filter((r) => r.location === value)
-          .map((r) => r.bom_id);
-
-        const consumed = allData.bomConsumed
-          .filter((r) => r.location === value)
-          .map((r) => r.bom_id);
-
-        return [...new Set([...produced, ...consumed])];
-      }
-
-      case "Produced Item":
-        return [
-          ...new Set(
-            allData.bomProduced
-              .filter((r) => r.item === value)
-              .map((r) => r.bom_id)
-          )
-        ];
-
-      case "Component Item":
-        return [
-          ...new Set(
-            allData.bomConsumed
-              .filter((r) => r.item === value)
-              .map((r) => r.bom_id)
-          )
-        ];
-
-      case "Resource":
-        return [
-          ...new Set(
-            allData.itemBomRouting
-              .filter((r) => getResourceValue(r) === value)
-              .map((r) => r.bom_id)
-          )
-        ];
-
-      case "Co-Product Item":
-        return [
-          ...new Set(
-            allData.bomProduced
-              .filter((r) => getCoProductValue(r) === value)
-              .map((r) => r.bom_id)
-          )
-        ];
-
-      default:
-        return [];
-    }
-  };
-
-  const getFilteredDataByBomIds = (bomIds) => {
-    if (!bomIds?.length) {
-      return {
-        bomParameters: [],
-        bomProduced: [],
-        bomConsumed: [],
-        itemBomRouting: []
-      };
-    }
-
-    return {
-      bomParameters: allData.bomParameters.filter((r) => bomIds.includes(r.bom_id)),
-      bomProduced: allData.bomProduced.filter((r) => bomIds.includes(r.bom_id)),
-      bomConsumed: allData.bomConsumed.filter((r) => bomIds.includes(r.bom_id)),
-      itemBomRouting: allData.itemBomRouting.filter((r) => bomIds.includes(r.bom_id))
     };
-  };
 
-  const getAvailableOptions = (criterion, sourceData) => {
-    if (!criterion || criterion === "None") return [];
+    fetchData();
+  }, [criterion1, criterion2, invalidCombo]);
 
-    let values = [];
+  const matchesCriterion = (row, field, value) => {
+    if (!field || !value.trim()) return true;
 
-    switch (criterion) {
-      case "BOM ID":
-        values = sourceData.bomParameters.map((r) => r.bom_id);
-        break;
+    const search = value.trim().toLowerCase();
 
-      case "Location":
-        values = [
-          ...sourceData.bomProduced.map((r) => r.location),
-          ...sourceData.bomConsumed.map((r) => r.location)
-        ];
-        break;
+    switch (field) {
+      case "location":
+        return includesText(row.location, search);
 
-      case "Produced Item":
-        values = sourceData.bomProduced.map((r) => r.item);
-        break;
+      case "bomId":
+        return includesText(row.bom_id, search);
 
-      case "Component Item":
-        values = sourceData.bomConsumed.map((r) => r.item);
-        break;
+      case "producedItem":
+        return includesText(row.item, search);
 
-      case "Resource":
-        values = sourceData.itemBomRouting.map((r) => getResourceValue(r));
-        break;
+      case "resource":
+        return includesText(row.resource, search);
 
-      case "Co-Product Item":
-        values = sourceData.bomProduced.map((r) => getCoProductValue(r));
-        break;
+      case "componentItem":
+        return includesText(row.item, search);
+
+      case "coProductItem":
+        return includesText(row.item, search);
 
       default:
-        values = [];
+        return true;
     }
-
-    return [...new Set(values.filter(Boolean))].sort((a, b) =>
-      String(a).localeCompare(String(b))
-    );
   };
-
-  const filteredByCriteria2ForOptions1 = useMemo(() => {
-    if (!criteria2 || criteria2 === "None" || !value2) return allData;
-    const bomIds = getBomIdsForSelection(criteria2, value2);
-    return getFilteredDataByBomIds(bomIds);
-  }, [allData, criteria2, value2]);
-
-  const filteredByCriteria1ForOptions2 = useMemo(() => {
-    if (!criteria1 || criteria1 === "None" || !value1) return allData;
-    const bomIds = getBomIdsForSelection(criteria1, value1);
-    return getFilteredDataByBomIds(bomIds);
-  }, [allData, criteria1, value1]);
-
-  const options1 = useMemo(() => {
-    return getAvailableOptions(criteria1, filteredByCriteria2ForOptions1);
-  }, [criteria1, filteredByCriteria2ForOptions1]);
-
-  const options2 = useMemo(() => {
-    return getAvailableOptions(criteria2, filteredByCriteria1ForOptions2);
-  }, [criteria2, filteredByCriteria1ForOptions2]);
 
   const filteredData = useMemo(() => {
-    const ids1 =
-      criteria1 && criteria1 !== "None" && value1
-        ? getBomIdsForSelection(criteria1, value1)
-        : [];
+    const filterRows = (rows) =>
+      rows.filter(
+        (row) =>
+          matchesCriterion(row, criterion1, criterionValue1) &&
+          matchesCriterion(row, criterion2, criterionValue2)
+      );
 
-    const ids2 =
-      criteria2 && criteria2 !== "None" && value2
-        ? getBomIdsForSelection(criteria2, value2)
-        : [];
+    return {
+      bomParameters: filterRows(fetchedData.bomParameters),
+      bomProduced: filterRows(fetchedData.bomProduced),
+      bomConsumed: filterRows(fetchedData.bomConsumed),
+      itemBomRouting: filterRows(fetchedData.itemBomRouting),
+    };
+  }, [
+    fetchedData,
+    criterion1,
+    criterionValue1,
+    criterion2,
+    criterionValue2,
+  ]);
 
-    let finalBomIds = [];
-
-    if (ids1.length && ids2.length) {
-      finalBomIds = ids1.filter((id) => ids2.includes(id));
-    } else if (ids1.length) {
-      finalBomIds = ids1;
-    } else if (ids2.length) {
-      finalBomIds = ids2;
-    } else {
-      return {
-        bomParameters: [],
-        bomProduced: [],
-        bomConsumed: [],
-        itemBomRouting: []
-      };
-    }
-
-    return getFilteredDataByBomIds(finalBomIds);
-  }, [allData, criteria1, criteria2, value1, value2]);
-
-  const hasSelection = Boolean(
-    (criteria1 && criteria1 !== "None" && value1) ||
-      (criteria2 && criteria2 !== "None" && value2)
-  );
+  const styles = {
+    page: {
+      minHeight: "100vh",
+      background: "#f3f4f6",
+      padding: "24px 36px 40px 36px",
+      fontFamily: "Segoe UI, Arial, sans-serif",
+      color: "#111827",
+    },
+    backButton: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "8px",
+      background: "transparent",
+      border: "none",
+      color: "#2563eb",
+      fontSize: "14px",
+      cursor: "pointer",
+      padding: 0,
+      marginBottom: "8px",
+    },
+    title: {
+      fontSize: "22px",
+      fontWeight: 700,
+      color: "#111827",
+      marginBottom: "18px",
+    },
+    card: {
+      background: "#f7f7f8",
+      border: "1px solid #e5e7eb",
+      borderRadius: "4px",
+      padding: "18px",
+      marginBottom: "18px",
+    },
+    sectionTitle: {
+      fontSize: "16px",
+      fontWeight: 700,
+      marginBottom: "8px",
+      color: "#111827",
+    },
+    subText: {
+      fontSize: "13px",
+      color: "#4b5563",
+      marginBottom: "14px",
+    },
+    criteriaGrid: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: "12px",
+      marginBottom: "12px",
+    },
+    fieldWrap: {
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px",
+    },
+    label: {
+      fontSize: "12px",
+      color: "#4b5563",
+      fontWeight: 500,
+    },
+    select: {
+      border: "1px solid #cfd4dc",
+      borderRadius: "3px",
+      background: "#fff",
+      height: "42px",
+      padding: "0 12px",
+      fontSize: "14px",
+      outline: "none",
+      width: "100%",
+      boxSizing: "border-box",
+    },
+    input: {
+      border: "1px solid #cfd4dc",
+      borderRadius: "3px",
+      background: "#fff",
+      height: "42px",
+      padding: "0 12px",
+      fontSize: "14px",
+      outline: "none",
+      width: "100%",
+      boxSizing: "border-box",
+    },
+    errorBox: {
+      marginBottom: "14px",
+      padding: "12px 14px",
+      borderRadius: "6px",
+      backgroundColor: "#fee2e2",
+      border: "1px solid #fecaca",
+      color: "#b91c1c",
+      fontSize: "14px",
+    },
+    loadingText: {
+      fontSize: "14px",
+      color: "#374151",
+      marginBottom: "14px",
+    },
+    tableSectionTitle: {
+      fontSize: "15px",
+      fontWeight: 700,
+      margin: "18px 0 10px",
+      color: "#111827",
+    },
+    tableWrap: {
+      background: "#fff",
+      border: "1px solid #e5e7eb",
+      borderRadius: "4px",
+      overflow: "hidden",
+      marginBottom: "18px",
+    },
+    table: {
+      width: "100%",
+      borderCollapse: "collapse",
+      tableLayout: "fixed",
+    },
+    th: {
+      background: "#f3f4f6",
+      color: "#111827",
+      fontSize: "13px",
+      fontWeight: 700,
+      textAlign: "left",
+      padding: "14px 12px",
+      borderBottom: "1px solid #d1d5db",
+    },
+    td: {
+      fontSize: "13px",
+      color: "#111827",
+      padding: "12px",
+      borderBottom: "1px solid #e5e7eb",
+      verticalAlign: "top",
+      wordBreak: "break-word",
+    },
+    emptyRow: {
+      textAlign: "center",
+      color: "#6b7280",
+      padding: "18px 12px",
+      fontSize: "13px",
+    },
+  };
 
   return (
-    <div style={page}>
-      <div onClick={() => navigate(-1)} style={backLink}>
-        ← BACK TO MAIN MENU
-      </div>
+    <div style={styles.page}>
+      <button
+        type="button"
+        style={styles.backButton}
+        onClick={() => navigate("/")}
+      >
+        <span style={{ fontSize: "16px" }}>←</span>
+        <span>BACK TO MAIN MENU</span>
+      </button>
 
-      <h1 style={title}>View BOM Data</h1>
+      <div style={styles.title}>View BOM Data</div>
 
-      <div style={card}>
-        <div style={stepTitle}>Step 1: Select Search Criteria</div>
-        <div style={stepSubtitle}>
+      {error ? <div style={styles.errorBox}>{error}</div> : null}
+      {loading ? <div style={styles.loadingText}>Loading BOM data...</div> : null}
+
+      <div style={styles.card}>
+        <div style={styles.sectionTitle}>Step 1: Select Search Criteria</div>
+        <div style={styles.subText}>
           Select up to two search criteria to filter BOM data
         </div>
 
         {/* Criteria 1 */}
-        <div style={topRow}>
-          <div style={topLeft}>
-            <div style={miniLabel}>Search Criteria 1</div>
+        <div style={styles.criteriaGrid}>
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>Search Criteria 1</label>
             <select
-              style={select}
-              value={criteria1}
+              value={criterion1}
               onChange={(e) => {
-                setCriteria1(e.target.value);
-                setValue1("");
+                setCriterion1(e.target.value);
+                setCriterionValue1("");
               }}
+              style={styles.select}
             >
-              <option value="">Select Criteria 1</option>
               {CRITERIA_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+                <option key={`c1-${option.value}`} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </div>
 
-          {criteria1 && criteria1 !== "None" && (
-            <div style={topRight}>
-              <div style={miniLabel}>&nbsp;</div>
-              <select
-                style={select}
-                value={value1}
-                onChange={(e) => setValue1(e.target.value)}
-              >
-                <option value="">Select {criteria1}</option>
-                {options1.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>
+              {criterion1 ? getPlaceholder(criterion1) : "Value"}
+            </label>
+            <input
+              type="text"
+              value={criterionValue1}
+              onChange={(e) => setCriterionValue1(e.target.value)}
+              placeholder={
+                criterion1 ? getPlaceholder(criterion1) : "Select Criteria 1 first"
+              }
+              disabled={!criterion1}
+              style={styles.input}
+            />
+          </div>
         </div>
 
         {/* Criteria 2 */}
-        <div style={bottomRow}>
-          <div style={secondCriteriaWrap}>
+        <div style={styles.criteriaGrid}>
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>Search Criteria 2</label>
             <select
-              style={select}
-              value={criteria2}
+              value={criterion2}
               onChange={(e) => {
-                setCriteria2(e.target.value);
-                setValue2("");
+                setCriterion2(e.target.value);
+                setCriterionValue2("");
               }}
+              style={styles.select}
             >
-              <option value="">Search Criteria 2</option>
               {CRITERIA_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+                <option key={`c2-${option.value}`} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </div>
 
-          {criteria2 && criteria2 !== "None" && (
-            <div style={secondValueWrap}>
-              <select
-                style={select}
-                value={value2}
-                onChange={(e) => setValue2(e.target.value)}
-              >
-                <option value="">Select {criteria2}</option>
-                {options2.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div style={styles.fieldWrap}>
+            <label style={styles.label}>
+              {criterion2 ? getPlaceholder(criterion2) : "Value"}
+            </label>
+            <input
+              type="text"
+              value={criterionValue2}
+              onChange={(e) => setCriterionValue2(e.target.value)}
+              placeholder={
+                criterion2 ? getPlaceholder(criterion2) : "Select Criteria 2 first"
+              }
+              disabled={!criterion2}
+              style={styles.input}
+            />
+          </div>
         </div>
       </div>
 
-      {loading && <div style={loadingText}>Loading BOM data...</div>}
-      {error && <div style={errorText}>{error}</div>}
-
-      {!loading && !error && !hasSelection && (
-        <div style={emptyState}>
-          Select search criteria above to view BOM data
-        </div>
-      )}
-
-      {!loading && !error && hasSelection && (
+      {/* BOM Parameters */}
+      {filteredData.bomParameters.length > 0 && (
         <>
-          <DataSection
-            title="BOM Parameters"
-            rows={filteredData.bomParameters}
-            columns={[
-              { key: "bom_id", label: "BOM ID" },
-              { key: "erp_bom_start_date", label: "ERP BOM Start Date" },
-              { key: "erp_bom_end_date", label: "ERP BOM End Date" },
-              { key: "record_id", label: "Record ID" },
-              { key: "snapshot_date", label: "Snapshot Date" }
-            ]}
-          />
+          <div style={styles.tableSectionTitle}>BOM Parameters</div>
+          <div style={styles.tableWrap}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>BOM ID</th>
+                  <th style={styles.th}>ERP BOM Start Date</th>
+                  <th style={styles.th}>ERP BOM End Date</th>
+                  <th style={styles.th}>Snapshot Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.bomParameters.map((row, index) => (
+                  <tr key={`bp-${row.bom_id || index}`}>
 
-          <DataSection
-            title="BOM Produced"
-            rows={filteredData.bomProduced}
-            columns={[
-              { key: "bom_id", label: "BOM ID" },
-              { key: "item", label: "Item" },
-              { key: "location", label: "Location" },
-              { key: "bom_status", label: "BOM Status" },
-              { key: "bom_version", label: "BOM Version" },
-              { key: "prefix", label: "Prefix" },
-              { key: "bom_plan_type", label: "BOM Plan Type" }
-            ]}
-          />
+                    <td style={styles.td}>{row.bom_id || "-"}</td>
+                    <td style={styles.td}>{row.erp_bom_start_date || "-"}</td>
+                    <td style={styles.td}>{row.erp_bom_end_date || "-"}</td>
+                    <td style={styles.td}>{row.load_datetime || "-"}</td>
 
-          <DataSection
-            title="BOM Consumed"
-            rows={filteredData.bomConsumed}
-            columns={[
-              { key: "item", label: "Item" },
-              { key: "location", label: "Location" },
-              { key: "bom_id", label: "BOM ID" },
-              { key: "quantity_consumed_per", label: "Quantity Consumed Per" },
-              { key: "component_start_date", label: "Component Start Date" },
-              { key: "component_end_date", label: "Component End Date" }
-            ]}
-          />
-
-          <DataSection
-            title="Item BOM Routing"
-            rows={filteredData.itemBomRouting}
-            columns={[
-              { key: "item", label: "Item" },
-              { key: "routing_id", label: "Routing ID" },
-              { key: "bom_id", label: "BOM ID" },
-              { key: "priority", label: "Priority" },
-              { key: "min_lot_size", label: "Min Lot Size" },
-              { key: "lot_size_increment", label: "Lot Size Increment" }
-            ]}
-          />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
-    </div>
-  );
-}
 
-function DataSection({ title, rows, columns }) {
-  return (
-    <div style={sectionWrap}>
-      <h3 style={sectionTitle}>{title}</h3>
-      <div style={tableCard}>
-        <table style={table}>
-          <thead style={thead}>
-            <tr>
-              {columns.map((col) => (
-                <th key={col.key} style={th}>
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows?.length ? (
-              rows.map((row, idx) => (
-                <tr key={idx}>
-                  {columns.map((col) => (
-                    <td key={col.key} style={td}>
-                      {row?.[col.key] ?? "-"}
-                    </td>
-                  ))}
+      {/* BOM Produced */}
+      {filteredData.bomProduced.length > 0 && (
+        <>
+          <div style={styles.tableSectionTitle}>BOM Produced</div>
+          <div style={styles.tableWrap}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>BOM ID</th>
+                  <th style={styles.th}>Item</th>
+                  <th style={styles.th}>Location</th>
+                  <th style={styles.th}>BOM Status</th>
+                  <th style={styles.th}>BOM Version</th>
+                  <th style={styles.th}>Prefix</th>
+                  <th style={styles.th}>BOM Plan Type</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={columns.length} style={emptyTableCell}>
-                  No records found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {filteredData.bomProduced.map((row, index) => (
+                  <tr key={`bprod-${row.bom_id}-${row.item}-${row.location}-${index}`}>
+
+                    <td style={styles.td}>{row.bom_id || "-"}</td>
+                    <td style={styles.td}>{row.item || "-"}</td>
+                    <td style={styles.td}>{row.location || "-"}</td>
+                    <td style={styles.td}>{row.bom_status || "-"}</td>
+                    <td style={styles.td}>{row.bom_version || "-"}</td>
+                    <td style={styles.td}>{row.prefix || "-"}</td>
+                    <td style={styles.td}>{row.bom_plan_type || "-"}</td>
+
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* BOM Consumed */}
+      {filteredData.bomConsumed.length > 0 && (
+        <>
+          <div style={styles.tableSectionTitle}>BOM Consumed</div>
+          <div style={styles.tableWrap}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Item</th>
+                  <th style={styles.th}>Location</th>
+                  <th style={styles.th}>BOM ID</th>
+                  <th style={styles.th}>Quantity Consumed Per</th>
+                  <th style={styles.th}>Component Start Date</th>
+                  <th style={styles.th}>Component End Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.bomConsumed.map((row, index) => (
+                  <tr key={`bcons-${row.bom_id}-${row.item}-${row.location}-${index}`}>
+
+                    <td style={styles.td}>{row.item || "-"}</td>
+                    <td style={styles.td}>{row.location || "-"}</td>
+                    <td style={styles.td}>{row.bom_id || "-"}</td>
+                    <td style={styles.td}>{row.erp_bom_quantity_consumed_per || "-"}</td>
+                    <td style={styles.td}>{row.erp_bom_component_start_date || "-"}</td>
+                    <td style={styles.td}>{row.erp_bom_component_end_date || "-"}</td>
+
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Item BOM Routing */}
+      {filteredData.itemBomRouting.length > 0 && (
+        <>
+          <div style={styles.tableSectionTitle}>Item BOM Routing</div>
+          <div style={styles.tableWrap}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Item</th>
+                  <th style={styles.th}>Routing ID</th>
+                  <th style={styles.th}>BOM ID</th>
+                  <th style={styles.th}>Resource</th>
+                  <th style={styles.th}>Priority</th>
+                  <th style={styles.th}>Min Lot Size</th>
+                  <th style={styles.th}>Lot Size Increment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.itemBomRouting.map((row, index) => (
+                  <tr key={`ibr-${row.bom_id}-${row.routing_id}-${index}`}>
+
+                    <td style={styles.td}>{row.item || "-"}</td>
+                    <td style={styles.td}>{row.routing_id || "-"}</td>
+                    <td style={styles.td}>{row.bom_id || "-"}</td>
+                    <td style={styles.td}>{row.resource || "-"}</td>
+                    <td style={styles.td}>{row.erp_item_bom_routing_priority || "-"}</td>
+                    <td style={styles.td}>{row.erp_item_bom_routing_min_lot_size || "-"}</td>
+                    <td style={styles.td}>{row.erp_item_bom_routing_lot_size_increment || "-"}</td>
+
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {!loading &&
+        !error &&
+        criterion1 &&
+        criterion2 &&
+        filteredData.bomParameters.length === 0 &&
+        filteredData.bomProduced.length === 0 &&
+        filteredData.bomConsumed.length === 0 &&
+        filteredData.itemBomRouting.length === 0 && (
+          <div style={styles.tableWrap}>
+            <div style={styles.emptyRow}>
+              No BOM data found for the selected criteria.
+            </div>
+          </div>
+        )}
     </div>
   );
 }
-
-const page = {
-  padding: "26px 30px",
-  background: "#f7f7f8",
-  minHeight: "100vh",
-  fontFamily: "Segoe UI, Arial, sans-serif"
-};
-
-const backLink = {
-  color: "#2563eb",
-  cursor: "pointer",
-  marginBottom: 10,
-  fontSize: 14,
-  fontWeight: 500
-};
-
-const title = {
-  fontSize: 22,
-  fontWeight: 700,
-  marginBottom: 18,
-  color: "#111827"
-};
-
-const card = {
-  background: "#fff",
-  border: "1px solid #e5e7eb",
-  borderRadius: 6,
-  padding: 18,
-  marginBottom: 18
-};
-
-const stepTitle = {
-  fontWeight: 700,
-  fontSize: 16,
-  marginBottom: 10,
-  color: "#111827"
-};
-
-const stepSubtitle = {
-  fontSize: 13,
-  color: "#4b5563",
-  marginBottom: 12
-};
-
-const topRow = {
-  display: "flex",
-  gap: 14,
-  marginBottom: 12
-};
-
-const topLeft = {
-  flex: 1
-};
-
-const topRight = {
-  flex: 1
-};
-
-const bottomRow = {
-  display: "flex",
-  gap: 14
-};
-
-const secondCriteriaWrap = {
-  flex: 1
-};
-
-const secondValueWrap = {
-  flex: 1
-};
-
-const miniLabel = {
-  fontSize: 11,
-  color: "#2563eb",
-  marginBottom: 4
-};
-
-const select = {
-  width: "100%",
-  height: 42,
-  border: "1px solid #c7cdd4",
-  borderRadius: 4,
-  padding: "0 12px",
-  fontSize: 14,
-  background: "#fff",
-  color: "#111827",
-  boxSizing: "border-box"
-};
-
-const loadingText = {
-  marginBottom: 12,
-  color: "#374151",
-  fontSize: 14
-};
-
-const errorText = {
-  marginBottom: 12,
-  color: "#b91c1c",
-  fontSize: 14,
-  fontWeight: 600
-};
-
-const emptyState = {
-  textAlign: "center",
-  color: "#6b7280",
-  padding: "34px 0 10px",
-  fontSize: 15
-};
-
-const sectionWrap = {
-  marginTop: 18
-};
-
-const sectionTitle = {
-  fontSize: 16,
-  fontWeight: 700,
-  marginBottom: 10
-};
-
-const tableCard = {
-  border: "1px solid #d1d5db",
-  borderRadius: 4,
-  overflow: "hidden",
-  background: "#fff"
-};
-
-const table = {
-  width: "100%",
-  borderCollapse: "collapse"
-};
-
-const thead = {
-  background: "#f3f4f6"
-};
-
-const th = {
-  textAlign: "left",
-  padding: "9px 12px",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "#111827",
-  borderBottom: "1px solid #d1d5db"
-};
-
-const td = {
-  padding: "8px 12px",
-  fontSize: 13,
-  color: "#111827",
-  borderTop: "1px solid #e5e7eb"
-};
-
-const emptyTableCell = {
-  padding: "14px 12px",
-  fontSize: 13,
-  color: "#6b7280",
-  textAlign: "center"
-};
