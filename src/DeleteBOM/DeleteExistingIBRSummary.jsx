@@ -109,6 +109,19 @@ const styles = {
     opacity: 0.6,
     cursor: "not-allowed",
   },
+    backBtn: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "8px",
+        border: "none",
+        background: "transparent",
+        color: "#2563eb",
+        fontSize: "13px",
+        fontWeight: 500,
+        padding: 0,
+        cursor: "pointer",
+        marginBottom: "8px",
+    },
   stateBox: {
     padding: "12px 14px",
     borderRadius: "4px",
@@ -240,7 +253,9 @@ export default function DeleteItemBomRoutingSummaryStep2() {
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
-
+ const handleBack = () => {
+    navigate(-1); // change if needed
+  };
   const handleDeleteClick = () => {
     if (!selectedRows.length) return;
     setShowModal(true);
@@ -291,6 +306,10 @@ export default function DeleteItemBomRoutingSummaryStep2() {
   return (
     <div style={styles.page}>
       <div style={styles.shell}>
+        <button type="button" onClick={handleBack} style={styles.backBtn}>
+                    <span style={{ fontSize: "16px", lineHeight: 1 }}>←</span>
+                    <span>BACK</span>
+                </button>
         <h1 style={styles.title}>Step 2: Deleted Item BOM Routing Record Summary</h1>
 
         {error ? (

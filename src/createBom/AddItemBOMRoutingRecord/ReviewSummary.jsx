@@ -72,7 +72,7 @@ const ReviewSummary = () => {
         addConnectedCoProduct,
         coProductItem: addConnectedCoProduct ? coProductItem : "",
         notes,
-        changeType: "Add",
+        changeType: "Added",
         user: {
           userId: currentUser.userId,
           userName: currentUser.userName,
@@ -123,15 +123,6 @@ const ReviewSummary = () => {
             <div style={styles.successTitle}>Record created successfully</div>
             <div>
               <strong>Engineering Change ID:</strong> {successData.engineeringChangeId}
-            </div>
-            <div>
-              <strong>Change Log ID:</strong> {successData.changeLogId}
-            </div>
-            <div>
-              <strong>Transaction Set ID:</strong> {successData.trxnSetId}
-            </div>
-            <div>
-              <strong>PostgreSQL Record ID:</strong> {successData.postgresqlRecId}
             </div>
           </div>
         ) : null}

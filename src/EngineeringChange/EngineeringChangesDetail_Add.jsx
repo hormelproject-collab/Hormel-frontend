@@ -1,17 +1,44 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
 const toText = (value) => {
   if (value == null) return "";
   return String(value);
 };
 
+const safeArray = (value) => (Array.isArray(value) ? value : []);
+
+const formatDisplayDate = (value) => {
+  if (!value) return "-";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return toText(value) || "-";
+  }
+
+  const yyyy = parsed.getFullYear();
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+
+  let hours = parsed.getHours();
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+
+  const hh = String(hours).padStart(2, "0");
+
+  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm}`;
+};
+
 export default function EngineeringChangeDetailAdd() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
-
   const passedState = routerLocation.state || {};
 
   const engineeringChangeId =
@@ -57,23 +84,19 @@ export default function EngineeringChangeDetailAdd() {
   const [apiError, setApiError] = useState("");
   const [detail, setDetail] = useState(null);
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
+const queryString = useMemo(() => {
+  const params = new URLSearchParams();
+  if (engineeringChangeId) {
+    params.append("engineeringChangeId", engineeringChangeId);
+  }
+  return params.toString();
+}, [engineeringChangeId]);
 
-    if (engineeringChangeId) params.append("engineeringChangeId", engineeringChangeId);
-    if (item) params.append("item", item);
-    if (resource) params.append("resource", resource);
-    if (bomId) params.append("bomId", bomId);
-    if (locationName) params.append("location", locationName);
-
-    return params.toString();
-  }, [engineeringChangeId, item, resource, bomId, locationName]);
 
   useEffect(() => {
     const fetchDetail = async () => {
       setLoading(true);
       setApiError("");
-
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/tables/engineering-changes-detail-add?${queryString}`,
@@ -106,6 +129,8 @@ export default function EngineeringChangeDetailAdd() {
       setApiError("Missing detail identifiers for Add change type.");
     }
   }, [queryString]);
+
+  const createdRows = safeArray(detail?.createdRecords);
 
   const styles = {
     page: {
@@ -142,12 +167,12 @@ export default function EngineeringChangeDetailAdd() {
       background: "#dff0fb",
       borderRadius: "4px",
       padding: "16px 18px",
-      marginBottom: "14px",
+      marginBottom: "16px",
       border: "1px solid #d2e9f8",
       display: "flex",
       alignItems: "flex-start",
       gap: "12px",
-      maxWidth: "860px",
+      maxWidth: "980px",
     },
     infoIcon: {
       color: "#0b79d0",
@@ -161,19 +186,21 @@ export default function EngineeringChangeDetailAdd() {
       gap: "8px",
       fontSize: "14px",
       color: "#0f172a",
+      width: "100%",
     },
     whiteCard: {
       background: "#ffffff",
       border: "1px solid #e5e7eb",
       borderRadius: "4px",
       padding: "20px 18px",
-      maxWidth: "860px",
+      maxWidth: "980px",
       boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+      marginBottom: "16px",
     },
     detailRow: {
       fontSize: "14px",
       color: "#111827",
-      marginBottom: "14px",
+      marginBottom: "12px",
       lineHeight: 1.4,
     },
     label: {
@@ -188,10 +215,66 @@ export default function EngineeringChangeDetailAdd() {
       color: "#d93025",
       fontSize: "14px",
       marginTop: "10px",
+      whiteSpace: "pre-wrap",
     },
     loading: {
       fontSize: "14px",
       color: "#374151",
+    },
+    cardGrid: {
+      display: "flex",
+      flexDirection: "column",
+      gap: "16px",
+      maxWidth: "980px",
+    },
+    cardTitle: {
+      fontSize: "16px",
+      fontWeight: 700,
+      color: "#111827",
+      marginBottom: "14px",
+    },
+    emptyBox: {
+      background: "#ffffff",
+      border: "1px solid #e5e7eb",
+      borderRadius: "4px",
+      padding: "20px 18px",
+      maxWidth: "980px",
+      fontSize: "14px",
+      color: "#6b7280",
+    },
+    sectionTitle: {
+      fontSize: "15px",
+      fontWeight: 700,
+      color: "#111827",
+      marginTop: "18px",
+      marginBottom: "10px",
+    },
+    nestedTable: {
+      width: "100%",
+      borderCollapse: "collapse",
+      border: "1px solid #e5e7eb",
+      marginTop: "8px",
+    },
+    nestedTh: {
+      textAlign: "left",
+      padding: "10px 12px",
+      fontSize: "12px",
+      fontWeight: 700,
+      color: "#374151",
+      background: "#f3f4f6",
+      borderBottom: "1px solid #e5e7eb",
+    },
+    nestedTd: {
+      padding: "10px 12px",
+      fontSize: "14px",
+      color: "#111827",
+      borderTop: "1px solid #e5e7eb",
+      verticalAlign: "top",
+    },
+    emptySubText: {
+      fontSize: "14px",
+      color: "#6b7280",
+      marginTop: "4px",
     },
   };
 
@@ -206,8 +289,8 @@ export default function EngineeringChangeDetailAdd() {
         <span>BACK TO ENGINEERING CHANGE SUMMARY</span>
       </button>
 
-      <div style={styles.title}>Engineering Change Detail: Added Item BOM Routing Record</div>
-      <div style={styles.subtitle}>Read-only view of added routing record</div>
+      <div style={styles.title}>Engineering Change Detail: Added BOM Records</div>
+      <div style={styles.subtitle}>Read-only view of added records</div>
 
       {loading ? (
         <div style={styles.loading}>Loading engineering add detail...</div>
@@ -217,67 +300,151 @@ export default function EngineeringChangeDetailAdd() {
         <>
           <div style={styles.blueCard}>
             <div style={styles.infoIcon}>ⓘ</div>
-
             <div style={styles.blueCardContent}>
               <div>
                 <span style={styles.label}>Engineering Change #: </span>
                 <span style={styles.value}>
-                  {toText(detail?.engineeringChangeId || engineeringChangeId)}
+                  {toText(detail?.engineeringChangeId || engineeringChangeId) || "-"}
                 </span>
               </div>
-
               <div>
                 <span style={styles.label}>Change Date: </span>
                 <span style={styles.value}>
-                  {toText(detail?.changeDate || changeDate)}
+                  {formatDisplayDate(detail?.changeDate || changeDate)}
                 </span>
               </div>
-
               <div>
                 <span style={styles.label}>User: </span>
                 <span style={styles.value}>
-                  {toText(detail?.user || changedBy)}
+                  {toText(detail?.user || changedBy) || "-"}
                 </span>
               </div>
-
               <div>
                 <span style={styles.label}>Change Type: </span>
-                <span style={styles.value}>Added</span>
+                <span style={styles.value}>
+                  {toText(detail?.changeType || "Added")}
+                </span>
+              </div>
+              <div>
+                <span style={styles.label}>Notes: </span>
+                <span style={styles.value}>
+                  {toText(detail?.summaryNotes) || "-"}
+                </span>
+              </div>
+              <div>
+                <span style={styles.label}>Change Summary: </span>
+                <span style={styles.value}>
+                  {toText(detail?.changeSummary) || "-"}
+                </span>
               </div>
             </div>
           </div>
 
-          <div style={styles.whiteCard}>
-            <div style={styles.detailRow}>
-              <span style={styles.label}>Item: </span>
-              <span style={styles.value}>{toText(detail?.item)}</span>
-            </div>
+          {createdRows.length === 0 ? (
+            <div style={styles.emptyBox}>No created BOM detail records found.</div>
+          ) : (
+            <div style={styles.cardGrid}>
+              {createdRows.map((row, index) => {
+                const components = safeArray(row.components);
+                const coProducts = safeArray(row.coProducts);
 
-            <div style={styles.detailRow}>
-              <span style={styles.label}>Item Release Flag: </span>
-              <span style={styles.value}>{toText(detail?.itemReleaseFlag)}</span>
-            </div>
+                return (
+                  <div key={row.key || index} style={styles.whiteCard}>
+                    <div style={styles.cardTitle}>BOM Detail {index + 1}</div>
 
-            <div style={styles.detailRow}>
-              <span style={styles.label}>Resource: </span>
-              <span style={styles.value}>{toText(detail?.resource)}</span>
-            </div>
+                    <div style={styles.detailRow}>
+                      <span style={styles.label}>Item: </span>
+                      <span style={styles.value}>
+                        {toText(row.item || detail?.item) || "-"}
+                      </span>
+                    </div>
 
-            <div style={styles.detailRow}>
-              <span style={styles.label}>Resource Relevancy: </span>
-              <span style={styles.value}>{toText(detail?.resourceRelevancy)}</span>
-            </div>
+                    <div style={styles.detailRow}>
+                      <span style={styles.label}>Resource: </span>
+                      <span style={styles.value}>
+                        {toText(row.resource || detail?.resource) || "-"}
+                      </span>
+                    </div>
 
-            <div style={styles.detailRow}>
-              <span style={styles.label}>Routing ID: </span>
-              <span style={styles.value}>{toText(detail?.routingId)}</span>
-            </div>
 
-            <div style={styles.detailRow}>
-              <span style={styles.label}>BOM ID: </span>
-              <span style={styles.value}>{toText(detail?.bomId)}</span>
+                    <div style={styles.detailRow}>
+                      <span style={styles.label}>Routing ID: </span>
+                      <span style={styles.value}>
+                        {toText(row.routingId || detail?.routingId) || "-"}
+                      </span>
+                    </div>
+
+                    <div style={styles.detailRow}>
+                      <span style={styles.label}>BOM ID: </span>
+                      <span style={styles.value}>
+                        {toText(row.bomId || detail?.bomId) || "-"}
+                      </span>
+                    </div>
+
+                    <div style={styles.sectionTitle}>Component Details</div>
+                    {components.length === 0 ? (
+                      <div style={styles.emptySubText}>No component items added.</div>
+                    ) : (
+                      <table style={styles.nestedTable}>
+                        <thead>
+                          <tr>
+                            <th style={styles.nestedTh}>Component Item</th>
+                            <th style={styles.nestedTh}>Standard Usage</th>
+                            <th style={styles.nestedTh}>Start Date</th>
+                            <th style={styles.nestedTh}>End Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {components.map((component, componentIndex) => (
+                            <tr key={component.key || componentIndex}>
+                              <td style={styles.nestedTd}>
+                                {toText(component.componentItem) || "-"}
+                              </td>
+                              <td style={styles.nestedTd}>
+                                {toText(component.standardUsage) || "-"}
+                              </td>
+                              <td style={styles.nestedTd}>
+                                {toText(component.startDate) || "-"}
+                              </td>
+                              <td style={styles.nestedTd}>
+                                {toText(component.endDate) || "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    <div style={styles.sectionTitle}>Co-Product Details</div>
+                    {coProducts.length === 0 ? (
+                      <div style={styles.emptySubText}>No co-product items added.</div>
+                    ) : (
+                      <table style={styles.nestedTable}>
+                        <thead>
+                          <tr>
+                            <th style={styles.nestedTh}>Co-Product Item</th>
+                            <th style={styles.nestedTh}>Qty Produced Per</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {coProducts.map((coProduct, coIndex) => (
+                            <tr key={coProduct.key || coIndex}>
+                              <td style={styles.nestedTd}>
+                                {toText(coProduct.coProductItem) || "-"}
+                              </td>
+                              <td style={styles.nestedTd}>
+                                {toText(coProduct.qtyProducedPer) || "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
         </>
       )}
     </div>

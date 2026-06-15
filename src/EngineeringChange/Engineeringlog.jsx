@@ -51,10 +51,34 @@ const formatDateForUI = (date) => {
   if (!date) return "";
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return toDisplayString(date);
+
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const seconds = String(d.getSeconds()).padStart(2, "0");
+
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  hours = hours === 0 ? 12 : hours;
+
+  const hh = String(hours).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd} ${hh}:${minutes}:${seconds} ${ampm}`;
+};
+
+const getCollapsedMultiValueDisplay = (values) => {
+  const cleaned = safeArray(values)
+    .map((v) => String(v ?? "").trim())
+    .filter(Boolean);
+
+  if (cleaned.length > 3) {
+    return `${cleaned.slice(0, 2).join(", ")}, ...`;
+  }
+
+  return cleaned.join(", ");
 };
 
 const fileDateStamp = () => {
@@ -380,12 +404,15 @@ const normalizeLogRecord = (item, index) => {
 
     locations,
     locationsDisplay: locations.join(", "),
+    locationsTableDisplay: getCollapsedMultiValueDisplay(locations),
 
     bomIds,
     bomIdsDisplay: bomIds.join(", "),
+    bomIdsTableDisplay: getCollapsedMultiValueDisplay(bomIds),
 
     resources,
     resourcesDisplay: resources.join(", "),
+    resourcesTableDisplay: getCollapsedMultiValueDisplay(resources),
 
     user: toDisplayString(changedBy),
     changeSummary: toDisplayString(changeSummary),
@@ -407,19 +434,19 @@ const normalizeLogRecord = (item, index) => {
 
 const getTagStyle = (type) => {
   const normalized = String(type || "").toLowerCase();
-  if (normalized.includes("add")) {
+  if (normalized.includes("added")) {
     return {
       backgroundColor: "#2f8f3a",
       color: "#ffffff",
     };
   }
-  if (normalized.includes("delete")) {
+  if (normalized.includes("deleted")) {
     return {
       backgroundColor: "#d93025",
       color: "#ffffff",
     };
   }
-  if (normalized.includes("modify")) {
+  if (normalized.includes("modified")) {
     return {
       backgroundColor: "#f29900",
       color: "#ffffff",
@@ -798,7 +825,7 @@ export default function Engineeringlog() {
       return;
     }
 
-    if (changeType.includes("modify")) {
+    if (changeType.includes("modified")) {
       navigate("/change-log/engineering-change-detail-modify", {
         state: statePayload,
       });
@@ -841,12 +868,12 @@ export default function Engineeringlog() {
         const rawList = Array.isArray(data)
           ? data
           : Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data?.rows)
-          ? data.rows
-          : Array.isArray(data?.result)
-          ? data.result
-          : [];
+            ? data.data
+            : Array.isArray(data?.rows)
+              ? data.rows
+              : Array.isArray(data?.result)
+                ? data.result
+                : [];
 
         const normalized = rawList.map(normalizeLogRecord);
         setRows(normalized);
@@ -930,6 +957,12 @@ export default function Engineeringlog() {
       padding: "24px 36px 40px 36px",
       fontFamily: "Segoe UI, Arial, sans-serif",
       color: "#1f2937",
+    },
+    link: {
+      color: "#2563eb",
+      textDecoration: "underline",
+      fontWeight: 600,
+      cursor: "pointer",
     },
     backButton: {
       display: "inline-flex",
@@ -1287,16 +1320,36 @@ export default function Engineeringlog() {
                   onClick={() => handleRowNavigation(row)}
                   style={{ cursor: "pointer" }}
                 >
-                  <td style={styles.tbodyTd}>{row.engineeringChangeNumber}</td>
+                  <td style={styles.tbodyTd}>
+                    <span
+                      role="link"
+                      tabIndex={0}
+                      style={styles.link}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRowNavigation(row);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRowNavigation(row);
+                        }
+                      }}
+                    >
+                      {row.engineeringChangeNumber}
+                    </span>
+                  </td>
+
                   <td style={styles.tbodyTd}>{row.changeDateDisplay}</td>
                   <td style={styles.tbodyTd}>
                     <span style={{ ...styles.pill, ...getTagStyle(row.changeType) }}>
                       {row.changeType || "-"}
                     </span>
                   </td>
-                  <td style={styles.tbodyTd}>{row.locationsDisplay || "-"}</td>
-                  <td style={styles.tbodyTd}>{row.bomIdsDisplay || "-"}</td>
-                  <td style={styles.tbodyTd}>{row.resourcesDisplay || "-"}</td>
+                  <td style={styles.tbodyTd}>{row.locationsTableDisplay || "-"}</td>
+                  <td style={styles.tbodyTd}>{row.bomIdsTableDisplay || "-"}</td>
+                  <td style={styles.tbodyTd}>{row.resourcesTableDisplay || "-"}</td>
                   <td style={styles.tbodyTd}>{row.user || "-"}</td>
                   <td style={styles.tbodyTd}>{row.changeSummary || "-"}</td>
                 </tr>

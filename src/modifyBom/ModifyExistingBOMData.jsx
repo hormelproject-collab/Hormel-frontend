@@ -14,7 +14,7 @@ const ModifyExistingBOMData = () => {
     const [error, setError] = useState("");
 
     const [componentItems, setComponentItems] = useState([]);
-    
+
     // State for fetched items
     const [componentItemOptions, setComponentItemOptions] = useState([]);
     const [coProductOptions, setCoProductOptions] = useState([]);
@@ -42,7 +42,11 @@ const ModifyExistingBOMData = () => {
                     bom_version: data.bom_version || "PRIMARY",
                     item_release_flag: data.item_release_flag || data.release_flag || "Release 1",
                     bom_id: data.bom_id || "",
-                    resource: data.routing_id || "",
+                    resource: data.resource || "",
+                    routing_id:
+                        data.routing_id ||
+                        data.routingId ||
+                        (data.item && data.resource ? `ROUTING_${data.item}_${data.resource}` : ""),
                 };
 
                 setRecord(mapped);
@@ -142,10 +146,10 @@ const ModifyExistingBOMData = () => {
             prev.map((item, i) =>
                 i === index
                     ? {
-                          ...item,
-                          component_item: value,
-                          component_desc: selected?.desc || "",
-                      }
+                        ...item,
+                        component_item: value,
+                        component_desc: selected?.desc || "",
+                    }
                     : item
             )
         );
@@ -430,16 +434,25 @@ const ModifyExistingBOMData = () => {
                             opacity: canProceed ? 1 : 0.65,
                             cursor: canProceed ? "pointer" : "not-allowed",
                         }}
-                        onClick={() =>
+                        onClick={() => {
+                            const normalizedRecord = {
+                                ...record,
+                                routing_id:
+                                    record?.routing_id ||
+                                    record?.routingId ||
+                                    (record?.produced_item && record?.resource
+                                        ? `ROUTING_${record.produced_item}_${record.resource}`
+                                        : ""),
+                            };
+
                             navigate("/review-changes", {
                                 state: {
-                                    record,
+                                    record: normalizedRecord,
                                     componentItems,
                                     coProducts,
                                 },
-                            })
-                        }
-                    >
+                            });
+                        }} >
                         NEXT: REVIEW CHANGES →
                     </button>
                 </div>

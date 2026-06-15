@@ -10,7 +10,7 @@ import CreateBOM from './createBom/CreateBOM';
 import SelectExistingBOM from './createBom/startFromExisting/SelectExistingBOM';
 import ModifyExistingBOM from './createBom/startFromExisting/ModifyExistingBOM';
 import EngineeringChangeLog from './EngineeringChange/Engineeringlog';
-import EngineeringChangeDetail from './EngineeringChange/EngineeringChangesDetail';
+import EngineeringChangeDetailModify from './EngineeringChange/EngineeringChangesDetail_modify';
 import DownloadBOM from './DownloadBom/DownloadBomData';
 import SummaryPage from './createBom/Summary';
 import CreateItemBOMRoutingRecord from './createBom/AddItemBOMRoutingRecord/CreateItemBOMRoutingRecord';
@@ -43,6 +43,10 @@ function App() {
         <Route
           path="/change-log/engineering-change-detail-delete-bom"
           element={<EngineeringChangeDetailDeleteBOM />}
+        />
+        <Route
+          path="/change-log/engineering-change-detail-modify"
+          element={<EngineeringChangeDetailModify />}
         />
 
         {/* Download BOM */}

@@ -10,6 +10,30 @@ const toText = (value) => {
   if (value == null) return "";
   return String(value);
 };
+const formatDisplayDate = (value) => {
+  if (!value) return "-";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return toText(value) || "-";
+  }
+
+  const yyyy = parsed.getFullYear();
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+
+  let hours = parsed.getHours();
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+
+  const hh = String(hours).padStart(2, "0");
+
+  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm}`;
+};
 
 const safeArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -84,6 +108,7 @@ export default function EngineeringChangeDetailDeleteBOM() {
         }
 
         const payload = await response.json();
+        console.log("Delete BOM detail payload:", payload);
         setDetail(payload?.data || null);
       } catch (error) {
         console.error("Engineering delete BOM detail fetch error:", error);
@@ -100,7 +125,8 @@ export default function EngineeringChangeDetailDeleteBOM() {
     }
   }, [queryString]);
 
-  const rows = safeArray(detail?.rows);
+  // ✅ use deletedBomRecords returned from backend
+  const rows = safeArray(detail?.deletedBomRecords);
 
   const styles = {
     page: {
@@ -244,7 +270,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
 
               <div>
                 <span style={styles.label}>Change Date: </span>
-                <span style={styles.value}>{toText(detail?.changeDate)}</span>
+
+                <span style={styles.value}>
+                  {formatDisplayDate(detail?.changeDate)}
+                </span>
+
               </div>
 
               <div>
@@ -255,6 +285,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
               <div>
                 <span style={styles.label}>Change Type: </span>
                 <span style={styles.value}>{toText(detail?.changeType || "Deleted")}</span>
+              </div>
+
+              <div>
+                <span style={styles.label}>Notes: </span>
+                <span style={styles.value}>{toText(detail?.notes || "Deleted")}</span>
               </div>
             </div>
           </div>
@@ -280,7 +315,7 @@ export default function EngineeringChangeDetailDeleteBOM() {
                   rows.map((row, index) => (
                     <tr key={`${toText(row.recId)}__${index}`}>
                       <td style={styles.td}>{toText(row.producedItem) || "-"}</td>
-                      <td style={styles.td}>{""}</td>
+                      <td style={styles.td}>{toText(row.itemDescription) || "-"}</td>
                       <td style={styles.td}>{toText(row.location) || "-"}</td>
                       <td style={styles.td}>{toText(row.bomId) || "-"}</td>
                     </tr>

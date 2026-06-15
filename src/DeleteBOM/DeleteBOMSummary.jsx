@@ -14,6 +14,24 @@ const styles = {
     color: "#111827",
     padding: "24px 0 40px",
   },
+      backButton: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "8px",
+      background: "transparent",
+      border: "none",
+      color: "#2563eb",
+      fontSize: "13px",
+      fontWeight: 500,
+      cursor: "pointer",
+      padding: 0,
+      marginBottom: "8px",
+    },
+
+    backArrow: {
+      fontSize: "18px",
+      lineHeight: 1,
+    },
   shell: {
     width: "1060px",
     margin: "0 auto",
@@ -293,8 +311,8 @@ export default function DeleteBomSummaryStep2() {
         if (!response.ok) {
           throw new Error(
             payload?.details ||
-              payload?.error ||
-              "Failed to load delete BOM summary"
+            payload?.error ||
+            "Failed to load delete BOM summary"
           );
         }
 
@@ -309,7 +327,7 @@ export default function DeleteBomSummaryStep2() {
               ? payload.data.routingSummary
               : []
           );
-          
+
         }
       } catch (err) {
         if (!cancelled) {
@@ -333,7 +351,9 @@ export default function DeleteBomSummaryStep2() {
     () => uniqueByKey(summaryRows, "bom_id"),
     [summaryRows]
   );
-
+  const handleBack = () => {
+    navigate("/delete-bom-dashboard/delete-existing-ibr"); // change if needed
+  };
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
@@ -364,8 +384,8 @@ export default function DeleteBomSummaryStep2() {
       if (!response.ok) {
         throw new Error(
           payload?.details ||
-            payload?.error ||
-            "Failed to delete selected BOM records"
+          payload?.error ||
+          "Failed to delete selected BOM records"
         );
       }
 
@@ -380,6 +400,14 @@ export default function DeleteBomSummaryStep2() {
 
   return (
     <div style={styles.page}>
+      <button
+        type="button"
+        onClick={handleBack}
+        style={styles.backButton}
+      >
+        <span style={styles.backArrow}>←</span>
+        <span>BACK</span>
+      </button>
       <div style={styles.shell}>
         <h1 style={styles.title}>Step 2: Deleted BOM Summary</h1>
 
