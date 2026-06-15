@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const ModifyExistingBOMSummary = () => {
   const routerLocation = useLocation();
   const navigate = useNavigate();
+
   const [notes, setNotes] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -11,6 +12,35 @@ const ModifyExistingBOMSummary = () => {
   const record = routerLocation?.state?.record ?? {};
   const componentItems = routerLocation?.state?.componentItems ?? [];
   const coProducts = routerLocation?.state?.coProducts ?? [];
+
+  const resolvedRoutingId = useMemo(() => {
+    return (
+      record?.routing_id ||
+      record?.routingId ||
+      record?.resourceInfo?.routingId ||
+      ""
+    );
+  }, [record]);
+
+  const resolvedPriority = useMemo(() => {
+    const value = record?.priority;
+    if (value === "" || value === null || value === undefined) {
+      return "";
+    }
+
+    const num = Number(value);
+    return Number.isFinite(num) ? num : "";
+  }, [record]);
+
+  const resolvedCreationDate = useMemo(() => {
+    return (
+      record?.creation_date ||
+      record?.creationDate ||
+      record?.load_datetime ||
+      record?.change_date ||
+      ""
+    );
+  }, [record]);
 
   const componentChanges = componentItems.flatMap((item, index) => [
     {
@@ -48,75 +78,83 @@ const ModifyExistingBOMSummary = () => {
     },
   ]);
 
-  const resolvedRoutingId =
-    record?.routing_id ||
-    record?.routingId ||
-    record?.resourceInfo?.routingId ||
-    (record?.produced_item && record?.resource
-      ? `ROUTING_${record.produced_item}_${record.resource}`
-      : "");
-
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
       setSuccessMessage("");
 
       const payload = {
-        bomId: record.bom_id,
+        bomId: record?.bom_id || "",
+        engineeringChange: {
+          ecNumber: record?.ec_number || record?.ecNumber || "",
+          creationDate: resolvedCreationDate,
+        },
         producedItem: {
-          item: record.produced_item,
-          status: record.item_release_flag,
+          item: record?.produced_item || "",
+          status: record?.item_release_flag || "",
         },
         locations: [
           {
-            locationName: record.location,
+            locationName: record?.location || "",
             resourceInfo: {
               routingId: resolvedRoutingId,
-              priority: record.priority,
-              coProductAssociation:
-                coProducts.length > 0 ? 1 : 0,
+              priority:
+                record?.priority === "" || record?.priority == null
+                  ? ""
+                  : Number(record.priority),
+              coProductAssociation: coProducts.length > 0 ? 1 : 0,
             },
-            componentItems:
-              componentItems.length > 0
-              && componentItems.map((item) => ({
-                componentItem: item.component_item,
-                standardUsage: parseFloat(item.standard_usage),
-              }))
+            componentItems: componentItems.map((item) => {
+              const parsedStandardUsage = Number(item?.standard_usage);
+              return {
+                componentItem: item?.component_item || "",
+                standardUsage: Number.isFinite(parsedStandardUsage)
+                  ? parsedStandardUsage
+                  : "",
+              };
+            }),
           },
         ],
+notes: notes || "",
       };
 
-      const response = await fetch(
-        "http://localhost:3000/api/tables/modify-bom",
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
+console.log("Submitting BOM modification:", payload);
 
-      const result = await response.json();
+const response = await fetch("http://localhost:3000/api/tables/modify-bom", {
+  method: "PUT",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify(payload),
+});
 
-      if (!response.ok) {
-        throw new Error(result?.message || "Failed to submit BOM changes");
-      }
+const result = await response.json();
 
-      console.log("BOM modification successful:", result);
+if (!response.ok) {
+  throw new Error(
+    result?.message ||
+    result?.error ||
+    `Failed to submit BOM changes (${response.status})`
+  );
+}
 
-      setSuccessMessage("✓ BOM changes submitted successfully!");
+console.log("BOM modification successful:", result);
+setSuccessMessage("✓ BOM changes submitted successfully!");
+
+setTimeout(() => {
+  navigate("/");
+}, 2000);
     } catch (error) {
-      console.error("Error submitting BOM changes:", error);
-      setSuccessMessage(`✗ Error: ${error.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+  console.error("Error submitting BOM changes:", error);
+  setSuccessMessage(`✗ Error: ${error.message}`);
+} finally {
+  setIsSubmitting(false);
+}
   };
 
-  return (
-    <>
-      <style>{`
+return (
+  <>
+    <style>{`
         @keyframes slideIn {
           from {
             transform: translateX(400px);
@@ -128,7 +166,8 @@ const ModifyExistingBOMSummary = () => {
           }
         }
       `}</style>
-      <div style={styles.page}>
+
+    <div style={styles.page}>
       <div style={styles.wrapper}>
         <div style={styles.back} onClick={() => navigate(-1)}>
           ← BACK
@@ -167,6 +206,16 @@ const ModifyExistingBOMSummary = () => {
                 <td style={styles.summaryCell}>Item Release Flag</td>
                 <td style={styles.summaryCell}>{record.item_release_flag || "-"}</td>
               </tr>
+              <tr style={styles.summaryRow}>
+                <td style={styles.summaryCell}>Routing ID</td>
+                <td style={styles.summaryCell}>{resolvedRoutingId || "-"}</td>
+              </tr>
+              <tr style={styles.summaryRow}>
+                <td style={styles.summaryCell}>Priority</td>
+                <td style={styles.summaryCell}>
+                  {resolvedPriority === "" ? "-" : resolvedPriority}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -186,15 +235,15 @@ const ModifyExistingBOMSummary = () => {
               </thead>
               <tbody>
                 {componentChanges.map((row, index) => (
-<tr
-  key={index}
-  style={
-    row.field.includes("Standard Usage") &&
-    String(row.original).trim() !== String(row.updated).trim()
-      ? styles.changesAltRow
-      : styles.changesRow
-  }
->
+                  <tr
+                    key={index}
+                    style={
+                      row.field.includes("Standard Usage") &&
+                        String(row.original).trim() !== String(row.updated).trim()
+                        ? styles.changesAltRow
+                        : styles.changesRow
+                    }
+                  >
                     <td style={styles.changesCell}>{row.field}</td>
                     <td style={styles.changesCell}>{row.original}</td>
                     <td style={styles.changesCell}>{row.updated}</td>
@@ -220,15 +269,15 @@ const ModifyExistingBOMSummary = () => {
               </thead>
               <tbody>
                 {coProductChanges.map((row, index) => (
-<tr
-  key={index}
-  style={
-    row.field.includes("Co-Product Quantity Produced") &&
-    String(row.original).trim() !== String(row.updated).trim()
-      ? styles.changesAltRow
-      : styles.changesRow
-  }
->
+                  <tr
+                    key={index}
+                    style={
+                      row.field.includes("Co-Product Quantity Produced") &&
+                        String(row.original).trim() !== String(row.updated).trim()
+                        ? styles.changesAltRow
+                        : styles.changesRow
+                    }
+                  >
                     <td style={styles.changesCell}>{row.field}</td>
                     <td style={styles.changesCell}>{row.original}</td>
                     <td style={styles.changesCell}>{row.updated}</td>
@@ -250,8 +299,8 @@ const ModifyExistingBOMSummary = () => {
         </div>
 
         <div style={styles.footer}>
-          <button 
-            style={styles.confirmBtn} 
+          <button
+            style={styles.confirmBtn}
             onClick={handleSubmit}
             disabled={isSubmitting}
           >
@@ -260,159 +309,20 @@ const ModifyExistingBOMSummary = () => {
         </div>
 
         {successMessage && (
-          <div style={
-            successMessage.includes("✓") 
-              ? styles.successNotification 
-              : styles.errorNotification
-          }>
-            {successMessage}
->>>>>>> c8da0c2db88c1596068b71e7edb020c06f9f6192
-          </div>
-
-          <h1 style={styles.title}>Step 3: Modified BOM Summary</h1>
-          <p style={styles.subtitle}>Review the changes to the BOM record</p>
-
-          <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>BOM Record Details</h2>
-            <table style={styles.summaryTable}>
-              <tbody>
-                <tr style={styles.summaryHeaderRow}>
-                  <th style={styles.summaryHeader}>Field</th>
-                  <th style={styles.summaryHeader}>Value</th>
-                </tr>
-                <tr style={styles.summaryRow}>
-                  <td style={styles.summaryCell}>Location</td>
-                  <td style={styles.summaryCell}>{record.location || "-"}</td>
-                </tr>
-                <tr style={styles.summaryRow}>
-                  <td style={styles.summaryCell}>BOM ID</td>
-                  <td style={styles.summaryCell}>{record.bom_id || "-"}</td>
-                </tr>
-                <tr style={styles.summaryRow}>
-                  <td style={styles.summaryCell}>Produced Item</td>
-                  <td style={styles.summaryCell}>{record.produced_item || "-"}</td>
-                </tr>
-                <tr style={styles.summaryRow}>
-                  <td style={styles.summaryCell}>Produced Item Description</td>
-                  <td style={styles.summaryCell}>
-                    {record.produced_item_desc || record.component_desc || "-"}
-                  </td>
-                </tr>
-                <tr style={styles.summaryRow}>
-                  <td style={styles.summaryCell}>Item Release Flag</td>
-                  <td style={styles.summaryCell}>{record.item_release_flag || "-"}</td>
-                </tr>
-
-                <tr style={styles.summaryRow}>
-                  <td style={styles.summaryCell}>Routing ID</td>
-                  <td style={styles.summaryCell}>{resolvedRoutingId || "-"}</td>
-                </tr>
-
-              </tbody>
-            </table>
-          </div>
-
-          <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>Component Item Changes</h2>
-            {componentChanges.length === 0 ? (
-              <div style={styles.emptyBox}>No component item changes were made.</div>
-            ) : (
-              <table style={styles.changesTable}>
-                <thead>
-                  <tr>
-                    <th style={styles.changesHeader}>Field</th>
-                    <th style={styles.changesHeader}>Original Value</th>
-                    <th style={styles.changesHeader}>Updated Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {componentChanges.map((row, index) => (
-                    <tr
-                      key={index}
-                      // style={(index + 1) % 2 === 0 ? styles.changesRow : styles.changesAltRow}
-                      style={
-                        row.field.includes("Standard Usage")
-                          ? styles.changesAltRow
-                          : styles.changesRow
-                      }
-                    >
-                      <td style={styles.changesCell}>{row.field}</td>
-                      <td style={styles.changesCell}>{row.original}</td>
-                      <td style={styles.changesCell}>{row.updated}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>Co-Product Changes</h2>
-            {coProductChanges.length === 0 ? (
-              <div style={styles.emptyBox}>No co-product changes were made.</div>
-            ) : (
-              <table style={styles.changesTable}>
-                <thead>
-                  <tr>
-                    <th style={styles.changesHeader}>Field</th>
-                    <th style={styles.changesHeader}>Original Value</th>
-                    <th style={styles.changesHeader}>Updated Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {coProductChanges.map((row, index) => (
-                    <tr
-                      key={index}
-                      // style={index % 2 === 0 ? styles.changesRow : styles.changesAltRow}
-                      style={
-                        row.field.includes("Co-Product Quantity Produced")
-                          ? styles.changesAltRow
-                          : styles.changesRow
-                      }
-                    >
-                      <td style={styles.changesCell}>{row.field}</td>
-                      <td style={styles.changesCell}>{row.original}</td>
-                      <td style={styles.changesCell}>{row.updated}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div style={styles.card}>
-            <label style={styles.noteLabel}>Notes (Optional)</label>
-            <textarea
-              style={styles.textarea}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add any notes about the BOM changes"
-            />
-          </div>
-
-          <div style={styles.footer}>
-            <button
-              style={styles.confirmBtn}
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "SUBMITTING..." : "✓ CONFIRM AND SUBMIT BOM CHANGES"}
-            </button>
-          </div>
-
-          {successMessage && (
-            <div style={
+          <div
+            style={
               successMessage.includes("✓")
                 ? styles.successNotification
                 : styles.errorNotification
-            }>
-              {successMessage}
-            </div>
-          )}
-        </div>
+            }
+          >
+            {successMessage}
+          </div>
+        )}
       </div>
-    </>
-  );
+    </div>
+  </>
+);
 };
 
 const styles = {
@@ -501,7 +411,6 @@ const styles = {
     background: "#fff",
   },
   changesAltRow: {
-    // background: "#ffefba",
     background: "lightyellow",
   },
   changesCell: {

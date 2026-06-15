@@ -14,10 +14,7 @@ const ModifyExistingBOMData = () => {
     const [error, setError] = useState("");
 
     const [componentItems, setComponentItems] = useState([]);
-<<<<<<< HEAD
-=======
     const [validationError, setValidationError] = useState("");
->>>>>>> c8da0c2db88c1596068b71e7edb020c06f9f6192
 
     // State for fetched items
     const [componentItemOptions, setComponentItemOptions] = useState([]);
@@ -33,55 +30,55 @@ const ModifyExistingBOMData = () => {
 
     //useeffect for item descriptions
     useEffect(() => {
-    const fetchItemMaster = async () => {
-        try {
-            const res = await fetch(
-                "/api/bigquery/table/item_master"
-            );
+        const fetchItemMaster = async () => {
+            try {
+                const res = await fetch(
+                    "/api/bigquery/table/item_master"
+                );
 
-            const data = await res.json();
+                const data = await res.json();
 
-            const rows = Array.isArray(data?.data)
-                ? data.data
-                : [];
+                const rows = Array.isArray(data?.data)
+                    ? data.data
+                    : [];
 
-            const lookup = {};
+                const lookup = {};
 
-            rows.forEach((row) => {
-                lookup[row.item] = row.item_desc || "";
-            });
+                rows.forEach((row) => {
+                    lookup[row.item] = row.item_desc || "";
+                });
 
-            setItemMasterLookup(lookup);
+                setItemMasterLookup(lookup);
 
-            console.log("Item Master Lookup", lookup);
-        } catch (err) {
-            console.error("Failed to fetch item master", err);
-        }
-    };
+                console.log("Item Master Lookup", lookup);
+            } catch (err) {
+                console.error("Failed to fetch item master", err);
+            }
+        };
 
-    fetchItemMaster();
-}, []);
+        fetchItemMaster();
+    }, []);
 
-//laoding the description 
-useEffect(() => {
-    if (!Object.keys(itemMasterLookup).length) return;
+    //laoding the description 
+    useEffect(() => {
+        if (!Object.keys(itemMasterLookup).length) return;
 
-    setComponentItems((prev) =>
-        prev.map((row) => ({
-            ...row,
-            component_desc:
-                itemMasterLookup[row.component_item] || "",
-        }))
-    );
+        setComponentItems((prev) =>
+            prev.map((row) => ({
+                ...row,
+                component_desc:
+                    itemMasterLookup[row.component_item] || "",
+            }))
+        );
 
-    setCoProducts((prev) =>
-        prev.map((row) => ({
-            ...row,
-            desc:
-                itemMasterLookup[row.item] || "",
-        }))
-    );
-}, [itemMasterLookup]);
+        setCoProducts((prev) =>
+            prev.map((row) => ({
+                ...row,
+                desc:
+                    itemMasterLookup[row.item] || "",
+            }))
+        );
+    }, [itemMasterLookup]);
 
     // fallback API fetch if page is opened directly / refreshed
     useEffect(() => {
@@ -98,29 +95,16 @@ useEffect(() => {
                 const data = await res.json();
 
                 // map backend response -> UI shape
-                const mapped = {
-                    id: data.postgresql_rec_id || data.id || id,
-<<<<<<< HEAD
-                    produced_item: data.item || "Item101",
-                    location: data.location || "Location 1",
-                    bom_version: data.bom_version || "PRIMARY",
-                    item_release_flag: data.item_release_flag || data.release_flag || "Release 1",
-                    bom_id: data.bom_id || "",
-                    resource: data.resource || "",
-                    routing_id:
-                        data.routing_id ||
-                        data.routingId ||
-                        (data.item && data.resource ? `ROUTING_${data.item}_${data.resource}` : ""),
-=======
-                    produced_item: data.item || data.Item || "Item101",
-                    location: data.location || data.Location || "Location 1",
-                    bom_version: data.bom_version || data.BOMVersion || data.bom_version || "PRIMARY",
-                    item_release_flag:
-                        data.item_release_flag || data.release_flag || data.release || "Release 1",
-                    bom_id: data.bom_id || data.BOMID || data.bomId || "",
-                    resource: data.routing_id || data.RoutingID || "",
->>>>>>> c8da0c2db88c1596068b71e7edb020c06f9f6192
-                };
+                const mappedRows = apiRows.map((row, index) => ({
+                    id: row.id || `${row.bom_id || "BOM"}__${row.routing_id || index}`,
+                    location: row.location || "-",
+                    produced_item: row.produced_item || "-",
+                    produced_item_desc: row.produced_item_desc || "-",
+                    bom_id: row.bom_id || "-",
+                    resource: row.resource || "-",
+                    routing_id: row.routing_id || "",
+                    item_release_flag: row.item_release_flag || "-",
+                }));
 
                 setRecord(mapped);
             } catch (e) {
@@ -133,26 +117,26 @@ useEffect(() => {
         fetchRecord();
     }, [id, record]);
 
-            const normalizeApiArray = (payload) => {
-            if (Array.isArray(payload)) return payload;
-            if (Array.isArray(payload?.data)) return payload.data;
-            if (Array.isArray(payload?.rows)) return payload.rows;
-            if (Array.isArray(payload?.value)) return payload.value;
-            return [];
-        };
+    const normalizeApiArray = (payload) => {
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload?.rows)) return payload.rows;
+        if (Array.isArray(payload?.value)) return payload.value;
+        return [];
+    };
 
-                const buildOption = (item) => {
-            const value = String(
-                item.item ?? item.Item ?? item.item_id ?? item.id ?? item.component_item ?? item.componentItem ?? item.routing_id ?? item.RoutingID ?? ""
-            ).trim();
-            const label = String(
-                item.item_name ?? item.ItemName ?? item.item ?? item.Item ?? item.label ?? item.description ?? item.desc ?? item.component_item ?? item.componentItem ?? value
-            ).trim();
-            const desc = String(
-                item.description ?? item.desc ?? item.item_desc ?? item.ItemDesc ?? item.item_description ?? item.component_desc ?? ""
-            ).trim();
-            return { value, label: label || value, desc };
-        };
+    const buildOption = (item) => {
+        const value = String(
+            item.item ?? item.Item ?? item.item_id ?? item.id ?? item.component_item ?? item.componentItem ?? item.routing_id ?? item.RoutingID ?? ""
+        ).trim();
+        const label = String(
+            item.item_name ?? item.ItemName ?? item.item ?? item.Item ?? item.label ?? item.description ?? item.desc ?? item.component_item ?? item.componentItem ?? value
+        ).trim();
+        const desc = String(
+            item.description ?? item.desc ?? item.item_desc ?? item.ItemDesc ?? item.item_description ?? item.component_desc ?? ""
+        ).trim();
+        return { value, label: label || value, desc };
+    };
 
 
     // Fetch component items and co-products based on bomId
@@ -310,40 +294,22 @@ useEffect(() => {
         ]);
     };
 
-<<<<<<< HEAD
     const handleComponentItemChange = (index, value) => {
-        console.log(componentItemOptions);
-        const selected = componentItemOptions.find((opt) => opt.value === value);
+        const description =
+            itemMasterLookup[value] || "";
+
         setComponentItems((prev) =>
             prev.map((item, i) =>
                 i === index
                     ? {
                         ...item,
                         component_item: value,
-                        component_desc: selected?.desc || "",
+                        component_desc: description,
                     }
                     : item
             )
         );
     };
-=======
-const handleComponentItemChange = (index, value) => {
-    const description =
-        itemMasterLookup[value] || "";
-
-    setComponentItems((prev) =>
-        prev.map((item, i) =>
-            i === index
-                ? {
-                    ...item,
-                    component_item: value,
-                    component_desc: description,
-                }
-                : item
-        )
-    );
-};
->>>>>>> c8da0c2db88c1596068b71e7edb020c06f9f6192
 
     const updateComponent = (index, field, value) => {
         setComponentItems((prev) =>
@@ -374,10 +340,27 @@ const handleComponentItemChange = (index, value) => {
             );
             return;
         }
+
+        const normalizedRecord = {
+            ...record,
+            routing_id:
+                record?.routing_id ||
+                record?.routingId ||
+                "",
+        };
+
+        if (!normalizedRecord.routing_id) {
+            setValidationError(
+                "Routing ID is missing for the selected BOM record."
+            );
+            return;
+        }
+
         setValidationError("");
+
         navigate("/review-changes", {
             state: {
-                record,
+                record: normalizedRecord,
                 componentItems,
                 coProducts,
             },
@@ -417,17 +400,17 @@ const handleComponentItemChange = (index, value) => {
         ]);
     };
 
-const handleCoProductItemChange = (index, value) => {
-    const updated = [...coProducts];
+    const handleCoProductItemChange = (index, value) => {
+        const updated = [...coProducts];
 
-    updated[index] = {
-        ...updated[index],
-        item: value,
-        desc: itemMasterLookup[value] || "",
+        updated[index] = {
+            ...updated[index],
+            item: value,
+            desc: itemMasterLookup[value] || "",
+        };
+
+        setCoProducts(updated);
     };
-
-    setCoProducts(updated);
-};
 
     const updateCoProduct = (index, field, value) => {
         const updated = [...coProducts];
@@ -669,30 +652,8 @@ const handleCoProductItemChange = (index, value) => {
                             opacity: canProceed ? 1 : 0.65,
                             cursor: canProceed ? "pointer" : "not-allowed",
                         }}
-<<<<<<< HEAD
-                        onClick={() => {
-                            const normalizedRecord = {
-                                ...record,
-                                routing_id:
-                                    record?.routing_id ||
-                                    record?.routingId ||
-                                    (record?.produced_item && record?.resource
-                                        ? `ROUTING_${record.produced_item}_${record.resource}`
-                                        : ""),
-                            };
-
-                            navigate("/review-changes", {
-                                state: {
-                                    record: normalizedRecord,
-                                    componentItems,
-                                    coProducts,
-                                },
-                            });
-                        }} >
-=======
                         onClick={validateAndNavigate}
                     >
->>>>>>> c8da0c2db88c1596068b71e7edb020c06f9f6192
                         NEXT: REVIEW CHANGES →
                     </button>
                 </div>
@@ -930,4 +891,3 @@ const styles = {
         marginTop: "16px",
     },
 };
-``
