@@ -1,6 +1,8 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function DownloadBOM() {
+  const navigate = useNavigate();
   const [selectedTables, setSelectedTables] = useState([
     "BOM Parameters",
   ]);
@@ -21,43 +23,48 @@ export default function DownloadBOM() {
   };
 
   const tableLabelToDbName = {
-  "BOM Parameters": "bom_parameters",
-  "BOM Produced": "bom_produced",
-  "BOM Consumed": "bom_consumed",
-  "Item BOM Routing": "item_bom_routing",
-};
+    "BOM Parameters": "bom_parameters",
+    "BOM Produced": "bom_produced",
+    "BOM Consumed": "bom_consumed",
+    "Item BOM Routing": "item_bom_routing",
+  };
 
-async function downloadSelectedTablesCsv(selectedTablesLabels) {
-  const tables = selectedTablesLabels
-    .map((label) => tableLabelToDbName[label])
-    .filter(Boolean);
+  async function downloadSelectedTablesCsv(selectedTablesLabels) {
+    const tables = selectedTablesLabels
+      .map((label) => tableLabelToDbName[label])
+      .filter(Boolean);
 
-  const response = await fetch("/api/bom/download-csv", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tables }),
-  });
+    const response = await fetch("/api/bom/download-csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tables }),
+    });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || "Download failed");
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || "Download failed");
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bom_tables.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(url);
   }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "bom_tables.csv";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  window.URL.revokeObjectURL(url);
-}
 
   return (
     <div style={styles.container}>
+      {/* Back */}
+      <div style={styles.back} onClick={() => navigate(-1)}>
+        ← BACK
+      </div>
+
       {/* Header */}
       <h1 style={styles.title}>Download BOM Data</h1>
       <p style={styles.subtitle}>
@@ -102,9 +109,9 @@ async function downloadSelectedTablesCsv(selectedTablesLabels) {
 
       {/* Button */}
       <div style={styles.buttonContainer}>
-        <button 
-        style={styles.button}   
-        onClick={() => downloadSelectedTablesCsv(selectedTables)}>
+        <button
+          style={styles.button}
+          onClick={() => downloadSelectedTablesCsv(selectedTables)}>
           ⬇ DOWNLOAD SELECTED TABLES
         </button>
       </div>
@@ -190,4 +197,11 @@ const styles = {
     alignItems: "center",
     gap: "8px",
   },
+  back: {
+    color: "#2563eb",
+    cursor: "pointer",
+    marginBottom: "12px",
+    fontSize: "14px",
+  },
+
 };
