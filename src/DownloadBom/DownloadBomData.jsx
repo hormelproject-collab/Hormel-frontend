@@ -1,6 +1,8 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function DownloadBOM() {
+  const navigate = useNavigate();
   const [selectedTables, setSelectedTables] = useState([
     "BOM Parameters",
   ]);
@@ -27,12 +29,15 @@ export default function DownloadBOM() {
     "Item BOM Routing": "item_bom_routing",
   };
 
-  async function downloadSelectedTablesExcel(selectedTablesLabels) {
+
+  async function downloadSelectedTablesCsv(selectedTablesLabels) {
+
     const tables = selectedTablesLabels
       .map((label) => tableLabelToDbName[label])
       .filter(Boolean);
 
     const response = await fetch(`http://localhost:3000/api/tables/download-bom-excel`, {
+
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tables }),
@@ -49,6 +54,7 @@ export default function DownloadBOM() {
     const a = document.createElement("a");
     a.href = url;
     a.download = "bom_tables.xlsx";
+
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -58,6 +64,11 @@ export default function DownloadBOM() {
 
   return (
     <div style={styles.container}>
+      {/* Back */}
+      <div style={styles.back} onClick={() => navigate(-1)}>
+        ← BACK
+      </div>
+
       {/* Header */}
       <h1 style={styles.title}>Download BOM Data</h1>
       <p style={styles.subtitle}>
@@ -99,6 +110,7 @@ export default function DownloadBOM() {
         <button
           style={styles.button}
           onClick={() => downloadSelectedTablesExcel(selectedTables)}>
+
           ⬇ DOWNLOAD SELECTED TABLES
         </button>
       </div>
@@ -184,4 +196,11 @@ const styles = {
     alignItems: "center",
     gap: "8px",
   },
+  back: {
+    color: "#2563eb",
+    cursor: "pointer",
+    marginBottom: "12px",
+    fontSize: "14px",
+  },
+
 };

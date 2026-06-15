@@ -21,6 +21,13 @@ const ModifySelectExistingBOM = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
+    const normalizeApiRows = (payload) => {
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.value)) return payload.value;
+        if (Array.isArray(payload?.data)) return payload.data;
+        return [];
+    };
+
     // Fetch data from API
     useEffect(() => {
         const fetchBomData = async () => {
@@ -29,11 +36,12 @@ const ModifySelectExistingBOM = () => {
                 setError("");
 
                 // Fetch BOM data
-                const bomRes = await fetch("http://localhost:3000/api/bigquery/table/bom_produced");
+                const bomRes = await fetch("http://localhost:3000/api/tables/bom_produced");
                 if (!bomRes.ok) throw new Error("Failed to fetch BOM data");
 
                 const bomData = await bomRes.json();
-                if (!bomData.success || !Array.isArray(bomData.data)) {
+                const bomRows = normalizeApiRows(bomData);
+                if (!Array.isArray(bomRows)) {
                     throw new Error("Invalid BOM API response");
                 }
 
@@ -41,80 +49,56 @@ const ModifySelectExistingBOM = () => {
                 const itemRes = await fetch("http://localhost:3000/api/bigquery/table/item_master");
                 if (!itemRes.ok) throw new Error("Failed to fetch item master data");
 
-                const itemData = await itemRes.json();
-                if (!itemData.success || !Array.isArray(itemData.data)) {
-                    throw new Error("Invalid item master API response");
-                }
+                const itemDataRaw = await itemRes.json();
+                const itemData = normalizeApiRows(itemDataRaw);
 
                 // Fetch Item Release Flag data
                 const releaseFlagRes = await fetch("http://localhost:3000/api/bigquery/table/item_releaseflag");
                 if (!releaseFlagRes.ok) throw new Error("Failed to fetch item release flag data");
 
-                const releaseFlagData = await releaseFlagRes.json();
-                if (!releaseFlagData.success || !Array.isArray(releaseFlagData.data)) {
-                    throw new Error("Invalid release flag API response");
-                }
+                const releaseFlagDataRaw = await releaseFlagRes.json();
+                const releaseFlagData = normalizeApiRows(releaseFlagDataRaw);
 
                 // Create lookup map: item -> item_desc
                 const itemDescMap = {};
-                itemData.data.forEach((item) => {
-                    if (item.item) {
+                itemData.forEach((item) => {
+                    if (item?.item) {
                         itemDescMap[item.item] = item.item_desc || "-";
                     }
                 });
 
                 // Create lookup map: item -> release
                 const releaseFlagMap = {};
-                releaseFlagData.data.forEach((record) => {
-                    if (record.item) {
+                releaseFlagData.forEach((record) => {
+                    if (record?.item) {
                         releaseFlagMap[record.item] = record.release || "-";
                     }
                 });
 
-                    // Fetch Routing Resource Constraints data
-                    const routingRes = await fetch("http://localhost:3000/api/bigquery/table/routing_rescons");
-                    if (!routingRes.ok) throw new Error("Failed to fetch routing resource data");
+                // Fetch Routing Resource Constraints data
+                const routingRes = await fetch("http://localhost:3000/api/bigquery/table/routing_rescons?limit=100");
+                if (!routingRes.ok) throw new Error("Failed to fetch routing resource data");
 
-                    const routingData = await routingRes.json();
-                    if (!routingData.success || !Array.isArray(routingData.data)) {
-                        throw new Error("Invalid routing resource API response");
+                const routingDataRaw = await routingRes.json();
+                const routingData = normalizeApiRows(routingDataRaw);
+
+                // Create lookup map: item -> Resource
+                const resourceMap = {};
+                routingData.forEach((record) => {
+                    if (record?.item) {
+                        resourceMap[record.item] = record.resource || "-";
                     }
-
-                    // Create lookup map: item -> Resource
-               // Create lookup map: item -> { resource, routing_id }
-const routingMap = {};
-routingData.data.forEach((record) => {
-    if (record.item) {
-        const resourceValue = record.resource || "-";
-        routingMap[record.item] = {
-            resource: resourceValue,
-            routing_id:
-                record.routing_id ||
-                record.routingId ||
-                `ROUTING_${record.item}_${resourceValue}`,
-        };
-    }
-});
-
+                });
                 // Map API response to table format with enriched item descriptions and release flags
-             const mappedRows = bomData.data.map((record, index) => {
-    const routingMeta = routingMap[record.item] || {};
-    const resolvedResource = routingMeta.resource || record.resource || "-";
-
-    return {
-        id: record.rec_id || index + 1,
-        location: record.location || "-",
-        produced_item: record.item || "-",
-        produced_item_desc: itemDescMap[record.item] || record.item_desc || "-",
-        bom_id: record.bom_id || "-",
-        resource: resolvedResource,
-        routing_id:
-            routingMeta.routing_id ||
-            `ROUTING_${record.item || ""}_${resolvedResource || ""}`,
-        item_release_flag:
-            releaseFlagMap[record.item] || record.item_release_flag || "-",
-    };
-});
+                const mappedRows = bomRows.map((record, index) => ({
+                    id: record.postgresql_rec_id || record.rec_id || index + 1,
+                    location: record.location || "-",
+                    produced_item: record.item || "-",
+                    produced_item_desc: itemDescMap[record.item] || record.item_desc || "-",
+                    bom_id: record.bom_id || "-",
+                    resource: resourceMap[record.item] || record.resource || "-",
+                    item_release_flag: releaseFlagMap[record.item] || record.item_release_flag || "-",
+                }));
 
                 setRows(mappedRows);
             } catch (e) {
