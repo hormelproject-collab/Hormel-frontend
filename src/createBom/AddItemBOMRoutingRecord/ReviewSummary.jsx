@@ -51,7 +51,9 @@ const ReviewSummary = () => {
     !!routingPriority && // NEW REQUIRED FIELD
     !!routingId &&
     !submitting;
-
+  const handleReturnToMainMenu = () => {
+    navigate("/");
+  };
   const handleSubmit = async () => {
     if (!canSubmit) return;
 
@@ -92,9 +94,9 @@ const ReviewSummary = () => {
       if (!res.ok) {
         throw new Error(
           json?.details ||
-            json?.error ||
-            json?.message ||
-            "Failed to create item BOM routing record"
+          json?.error ||
+          json?.message ||
+          "Failed to create item BOM routing record"
         );
       }
 
@@ -175,6 +177,15 @@ const ReviewSummary = () => {
         </div>
 
         <div style={styles.footer}>
+          <button
+            type="button"
+            onClick={handleReturnToMainMenu}
+            style={styles.mainMenuButton}
+          >
+            <span style={{ fontSize: "13px" }}>⌂</span>
+            <span>RETURN TO MAIN MENU</span>
+          </button>
+
           <button
             style={{
               ...styles.submitButton,
@@ -264,7 +275,23 @@ const styles = {
   footer: {
     display: "flex",
     justifyContent: "flex-end",
+    alignItems: "center",
+    gap: "12px",
     marginTop: "18px",
+  },
+  mainMenuButton: {
+    height: "46px",
+    border: "1px solid #6da0e1",
+    borderRadius: "4px",
+    background: "#ffffff",
+    color: "#1e63b5",
+    fontSize: "13px",
+    fontWeight: 600,
+    padding: "0 16px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
   },
   submitButton: {
     display: "inline-flex",

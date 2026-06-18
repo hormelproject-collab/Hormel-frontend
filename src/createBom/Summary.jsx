@@ -586,7 +586,9 @@ export default function SummaryPage() {
       [groupKey]: !prev[groupKey],
     }));
   };
-
+  const handleReturnToMainMenu = () => {
+    navigate("/");
+  };
   const submitBOMs = async () => {
     if (actualPayload.length === 0) {
       setValidationResult({
@@ -957,7 +959,14 @@ export default function SummaryPage() {
         ) : null}
 
         <div style={styles.bottomBar}>
-          
+          <button
+            type="button"
+            onClick={handleReturnToMainMenu}
+            style={styles.secondaryBtn}
+          >
+            <span style={{ fontSize: "13px" }}>⌂</span>
+            <span>RETURN TO MAIN MENU</span>
+          </button>
 
           <button
             onClick={submitBOMs}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IoIosArrowDown, IoIosArrowUp } from "react-icons/io";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
+import { MdDelete } from "react-icons/md";
 import {
   fetchItemMaster,
   fetchLocationMaster,
@@ -756,66 +757,76 @@ const ResourceComponentInfo = () => {
                               {!config.noComponentItems &&
                                 (config.components || []).map((row) => (
                                   <div key={row.id} style={styles.rowForm}>
-                                    <select
-                                      style={styles.input}
-                                      value={row.componentItem}
-                                      onChange={(e) =>
-                                        changeComponentRow(
-                                          item.item,
-                                          loc.location,
-                                          row.id,
-                                          { componentItem: e.target.value }
-                                        )
-                                      }
-                                    >
-                                      <option value="">Component Item</option>
-                                      {itemOptions.map((option) => (
-                                        <option
-                                          key={option.item}
-                                          value={option.item}
-                                        >
-                                          {option.item}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <div style={styles.fieldWithLabel}>
+                                      <div style={styles.inlineFieldLabel}>Component Item</div>
+                                      <select
+                                        style={styles.input}
+                                        value={row.componentItem}
+                                        onChange={(e) =>
+                                          changeComponentRow(
+                                            item.item,
+                                            loc.location,
+                                            row.id,
+                                            { componentItem: e.target.value }
+                                          )
+                                        }
+                                      >
+                                        <option value="">Component Item</option>
+                                        {itemOptions.map((option) => (
+                                          <option key={option.item} value={option.item}>
+                                            {option.item}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
 
-                                    <input
-                                      value={row.description}
-                                      readOnly
-                                      placeholder="Description"
-                                      style={styles.inputDisabled}
-                                    />
+                                    <div style={styles.fieldWithLabel}>
+                                      <div style={styles.inlineFieldLabel}>Item Description</div>
+                                      <input
+                                        value={row.description}
+                                        readOnly
+                                        placeholder="Description"
+                                        style={styles.inputDisabled}
+                                      />
+                                    </div>
 
-                                    <input
-                                      type="number"
-                                      min="0.0001"
-                                      step="0.0001"
-                                      placeholder="Standard Usage"
-                                      value={row.standardUsage}
-                                      onChange={(e) =>
-                                        changeComponentRow(
-                                          item.item,
-                                          loc.location,
-                                          row.id,
-                                          { standardUsage: e.target.value }
-                                        )
-                                      }
-                                      style={styles.input}
-                                    />
+                                    <div style={styles.fieldWithLabel}>
+                                      <div style={styles.inlineFieldLabel}>Standard Usage</div>
+                                      <input
+                                        type="number"
+                                        min="0.0001"
+                                        step="0.0001"
+                                        placeholder="Standard Usage"
+                                        value={row.standardUsage}
+                                        onChange={(e) =>
+                                          changeComponentRow(
+                                            item.item,
+                                            loc.location,
+                                            row.id,
+                                            { standardUsage: e.target.value }
+                                          )
+                                        }
+                                        style={styles.input}
+                                      />
+                                    </div>
 
-                                    <button
-                                      type="button"
-                                      style={styles.deleteBtn}
-                                      onClick={() =>
-                                        removeComponentRow(
-                                          item.item,
-                                          loc.location,
-                                          row.id
-                                        )
-                                      }
-                                    >
-                                      🗑
-                                    </button>
+                                    <div style={styles.deleteBtnContainer}>
+                                      <button
+                                        type="button"
+                                        style={styles.deleteBtn}
+                                        onClick={() =>
+                                          removeComponentRow(
+                                            item.item,
+                                            loc.location,
+                                            row.id
+                                          )
+                                        }
+                                      >
+                                        <span style={styles.iconWrapper}>
+                                                <MdDelete />
+                                            </span>
+                                      </button>
+                                    </div>
                                   </div>
                                 ))}
 
@@ -853,64 +864,77 @@ const ResourceComponentInfo = () => {
 
                               {(config.coproducts || []).map((row) => (
                                 <div key={row.id} style={styles.rowForm}>
-                                  <select
-                                    style={styles.input}
-                                    value={row.coProductItem}
-                                    onChange={(e) =>
-                                      changeCoProductRow(
-                                        item.item,
-                                        loc.location,
-                                        row.id,
-                                        { coProductItem: e.target.value }
-                                      )
-                                    }
-                                  >
-                                    <option value="">Co-Product Item</option>
-                                    {itemOptions.map((option) => (
-                                      <option key={option.item} value={option.item}>
-                                        {option.item}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <div style={styles.fieldWithLabel}>
+                                    <div style={styles.inlineFieldLabel}>Co-Product Item</div>
+                                    <select
+                                      style={styles.input}
+                                      value={row.coProductItem}
+                                      onChange={(e) =>
+                                        changeCoProductRow(
+                                          item.item,
+                                          loc.location,
+                                          row.id,
+                                          { coProductItem: e.target.value }
+                                        )
+                                      }
+                                    >
+                                      <option value="">Co-Product Item</option>
+                                      {itemOptions.map((option) => (
+                                        <option key={option.item} value={option.item}>
+                                          {option.item}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
 
-                                  <input
-                                    value={row.description}
-                                    readOnly
-                                    placeholder="Description"
-                                    style={styles.inputDisabled}
-                                  />
+                                  <div style={styles.fieldWithLabel}>
+                                    <div style={styles.inlineFieldLabel}>Item Description</div>
+                                    <input
+                                      value={row.description}
+                                      readOnly
+                                      placeholder="Description"
+                                      style={styles.inputDisabled}
+                                    />
+                                  </div>
 
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="0.9999"
-                                    step="0.0001"
-                                    placeholder="Qty Produced"
-                                    value={row.qtyProduced}
-                                    onChange={(e) =>
-                                      changeCoProductRow(
-                                        item.item,
-                                        loc.location,
-                                        row.id,
-                                        { qtyProduced: e.target.value }
-                                      )
-                                    }
-                                    style={styles.input}
-                                  />
+                                  <div style={styles.fieldWithLabel}>
+                                    <div style={styles.inlineFieldLabel}>Qty Produced</div>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="0.9999"
+                                      step="0.0001"
+                                      placeholder="Qty Produced"
+                                      value={row.qtyProduced}
+                                      onChange={(e) =>
+                                        changeCoProductRow(
+                                          item.item,
+                                          loc.location,
+                                          row.id,
+                                          { qtyProduced: e.target.value }
+                                        )
+                                      }
+                                      style={styles.input}
+                                    />
+                                  </div>
 
-                                  <button
-                                    type="button"
-                                    style={styles.deleteBtn}
-                                    onClick={() =>
-                                      removeCoProductRow(
-                                        item.item,
-                                        loc.location,
-                                        row.id
-                                      )
-                                    }
-                                  >
-                                    🗑
-                                  </button>
+                                  <div style={styles.deleteBtnContainer}>
+                                    <button
+                                      type="button"
+                                      style={styles.deleteBtn}
+                                      onClick={() =>
+                                        removeCoProductRow(
+                                          item.item,
+                                          loc.location,
+                                          row.id
+                                        )
+                                      }
+                                    >
+                                      <span style={styles.iconWrapper}>
+                                                <MdDelete />
+                                            </span>
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1094,6 +1118,34 @@ const styles = {
     fontWeight: 600,
     color: "#374151",
     marginBottom: "6px",
+  },
+  fieldWithLabel: {
+    display: "flex",
+    flexDirection: "column",
+  },
+
+  inlineFieldLabel: {
+    fontSize: "12px",
+    fontWeight: 600,
+    color: "#374151",
+    marginBottom: "6px",
+  },
+  removeBtn: {
+    cursor: "pointer",
+    border: "none",
+    background: "transparent",
+    padding: "10px",
+  },
+  iconWrapper: {
+    all: "unset",
+    color: "#dc2626",
+    fontSize: "28px",
+  },
+
+  deleteBtnContainer: {
+    display: "flex",
+    alignItems: "flex-end",
+    height: "100%",
   },
   input: {
     width: "100%",

@@ -14,7 +14,7 @@ const styles = {
     paddingTop: "28px",
   },
   shell: {
-    width: "1060px",
+    width: "1180px",
     margin: "0 auto",
   },
   title: {
@@ -77,7 +77,7 @@ const styles = {
     display: "flex",
     gap: "12px",
     alignItems: "center",
-    marginTop: "2px",
+    marginTop: "12px",
   },
   confirmBtn: {
     height: "28px",
@@ -109,19 +109,19 @@ const styles = {
     opacity: 0.6,
     cursor: "not-allowed",
   },
-    backBtn: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "8px",
-        border: "none",
-        background: "transparent",
-        color: "#2563eb",
-        fontSize: "13px",
-        fontWeight: 500,
-        padding: 0,
-        cursor: "pointer",
-        marginBottom: "8px",
-    },
+  backBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    border: "none",
+    background: "transparent",
+    color: "#2563eb",
+    fontSize: "13px",
+    fontWeight: 500,
+    padding: 0,
+    cursor: "pointer",
+    marginBottom: "8px",
+  },
   stateBox: {
     padding: "12px 14px",
     borderRadius: "4px",
@@ -155,7 +155,7 @@ const styles = {
     zIndex: 999,
   },
   modal: {
-    width: "500px",
+    width: "520px",
     background: "#ffffff",
     borderRadius: "6px",
     boxShadow: "0 16px 40px rgba(0,0,0,0.18)",
@@ -198,6 +198,18 @@ const styles = {
     cursor: "pointer",
     fontWeight: 600,
   },
+  warningBox: {
+    marginBottom: "14px",
+    padding: "10px 12px",
+    borderRadius: "3px",
+    fontSize: "12px",
+    background: "#fff7ed",
+    color: "#9a3412",
+    border: "1px solid #fdba74",
+  },
+  coProductRow: {
+    background: "#fef9c3",
+  },
 };
 
 const toText = (value) => String(value ?? "").trim();
@@ -221,14 +233,28 @@ const deriveResourceFromRoutingId = (routingId) => {
 const normalizeSelectedRow = (row, index) => {
   const bomId = toText(row?.bomId ?? row?.bom_id);
   const routingId = toText(row?.routingId ?? row?.routing_id);
+  const coProductAssociation = Number(
+    toText(
+      row?.coProductAssociation ??
+        row?.co_product_association ??
+        row?.erp_co_product_association
+    ) || "0"
+  );
+
   return {
-    id: toText(row?.id) || toText(row?.recId) || toText(row?.rec_id) || `${bomId}__${routingId}__${index}`,
+    id:
+      toText(row?.id) ||
+      toText(row?.recId) ||
+      toText(row?.rec_id) ||
+      `${bomId}__${routingId}__${index}`,
     recId: toText(row?.recId ?? row?.rec_id),
     item: toText(row?.item),
     bomId,
     routingId,
     location: toText(row?.location) || deriveLocationFromBomId(bomId),
     resource: toText(row?.resource) || deriveResourceFromRoutingId(routingId),
+    coProductItem: toText(row?.coProductItem ?? row?.co_product_item),
+    coProductAssociation,
     raw: row,
   };
 };
@@ -253,9 +279,11 @@ export default function DeleteItemBomRoutingSummaryStep2() {
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
- const handleBack = () => {
-    navigate(-1); // change if needed
+
+  const handleBack = () => {
+    navigate(-1);
   };
+
   const handleDeleteClick = () => {
     if (!selectedRows.length) return;
     setShowModal(true);
@@ -271,6 +299,10 @@ export default function DeleteItemBomRoutingSummaryStep2() {
         rec_id: row.recId,
         bom_id: row.bomId,
         routing_id: row.routingId,
+        item: row.item,
+        location: row.location,
+        co_product_item: row.coProductItem,
+        co_product_association: row.coProductAssociation,
       }));
 
       const response = await fetch(DELETE_ITEM_BOM_ROUTING_API, {
@@ -307,44 +339,56 @@ export default function DeleteItemBomRoutingSummaryStep2() {
     <div style={styles.page}>
       <div style={styles.shell}>
         <button type="button" onClick={handleBack} style={styles.backBtn}>
-                    <span style={{ fontSize: "16px", lineHeight: 1 }}>←</span>
-                    <span>BACK</span>
-                </button>
+          <span style={{ fontSize: "16px", lineHeight: 1 }}>←</span>
+          <span>BACK</span>
+        </button>
+
         <h1 style={styles.title}>Step 2: Deleted Item BOM Routing Record Summary</h1>
 
         {error ? (
           <div style={{ ...styles.stateBox, ...styles.errorBox }}>{error}</div>
         ) : null}
 
+        <div style={styles.warningBox}>
+          Warning: When a parent item is selected, the associated co-products are
+          also deleted.
+        </div>
+
         <div style={styles.card}>
           <table style={styles.table}>
             <thead>
               <tr style={styles.headRow}>
-                <th style={{ ...styles.th, width: "130px" }}>Location</th>
-                <th style={{ ...styles.th, width: "110px" }}>Item</th>
+                <th style={{ ...styles.th, width: "110px" }}>Location</th>
+                <th style={{ ...styles.th, width: "100px" }}>Item</th>
                 <th style={{ ...styles.th, width: "220px" }}>BOM ID</th>
-                <th style={{ ...styles.th, width: "130px" }}>Resource</th>
-                <th style={styles.th}>Routing ID</th>
+                <th style={{ ...styles.th, width: "120px" }}>Resource</th>
+                <th style={{ ...styles.th, width: "230px" }}>Routing ID</th>
+               
               </tr>
             </thead>
             <tbody>
               {selectedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={styles.emptyRow}>
+                  <td colSpan={7} style={styles.emptyRow}>
                     No item BOM routing records selected.
                   </td>
                 </tr>
               ) : null}
 
-              {selectedRows.map((row) => (
-                <tr key={row.id}>
-                  <td style={styles.td}>{row.location || "-"}</td>
-                  <td style={styles.td}>{row.item || "-"}</td>
-                  <td style={styles.td}>{row.bomId || "-"}</td>
-                  <td style={styles.td}>{row.resource || "-"}</td>
-                  <td style={styles.td}>{row.routingId || "-"}</td>
-                </tr>
-              ))}
+              {selectedRows.map((row) => {
+                const isCoProduct = row.coProductAssociation === 1;
+
+                return (
+                  <tr key={row.id} style={isCoProduct ? styles.coProductRow : undefined}>
+                    <td style={styles.td}>{row.location || "-"}</td>
+                    <td style={styles.td}>{row.item || "-"}</td>
+                    <td style={styles.td}>{row.bomId || "-"}</td>
+                    <td style={styles.td}>{row.resource || "-"}</td>
+                    <td style={styles.td}>{row.routingId || "-"}</td>
+
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -385,7 +429,8 @@ export default function DeleteItemBomRoutingSummaryStep2() {
               Item BOM Routing record deletion completed successfully
             </div>
             <div style={{ marginBottom: "5px" }}>
-              <strong>Engineering Change ID:</strong> {toText(result.engineeringChangeId) || "-"}
+              <strong>Engineering Change ID:</strong>{" "}
+              {toText(result.engineeringChangeId) || "-"}
             </div>
           </div>
         ) : null}
@@ -396,8 +441,11 @@ export default function DeleteItemBomRoutingSummaryStep2() {
           <div style={styles.modal}>
             <div style={styles.modalHeader}>Permanent Deletion Warning</div>
             <div style={styles.modalBody}>
-              The selected Item BOM Routing record(s) will be permanently deleted from the live system.Do you still want to continue?
-               </div>
+              The selected Item BOM Routing record(s), including any associated
+              co-products, will be permanently deleted from the live system.
+              Related records will also be removed from the bom_consumed table.
+              Do you still want to continue?
+            </div>
             <div style={styles.modalActions}>
               <button
                 type="button"

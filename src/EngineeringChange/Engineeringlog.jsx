@@ -37,38 +37,12 @@ const toDisplayString = (value) => {
   return String(value);
 };
 
-const formatDateForInput = (date) => {
-  if (!date) return "";
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+const formatDateForInput = () => "";
 
 const formatDateForUI = (date) => {
-  if (!date) return "";
-
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return toDisplayString(date);
-
-  const formatted = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  }).formatToParts(d);
-
-  const map = Object.fromEntries(formatted.map((p) => [p.type, p.value]));
-
-  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second} ${map.dayPeriod} CST`;
+  if (date == null) return "";
+  return String(date) + ' CST';
 };
-
 const getCollapsedMultiValueDisplay = (values) => {
   const cleaned = safeArray(values)
     .map((v) => String(v ?? "").trim())
@@ -267,13 +241,9 @@ const normalizeLogRecord = (item, index) => {
     item.id ||
     `EC-${index + 1}`;
 
-  const changeDate =
-  item.change_date ||
-  item.changeDate ||
-  item.created_at ||
-  item.createdAt ||
-  item.updated_at ||
-  item.updatedAt ||
+const changeDate =
+  item.change_date ??
+  item.changeDate ??
   "";
 
   const changeType =

@@ -201,11 +201,34 @@ const styles = {
         padding: "22px 12px",
         fontSize: "12px",
     },
-
-    //  highlight for co-product rows
-highlightedCoProductRow: {
-    background: "#fef9c3",
-},
+    highlightedCoProductRow: {
+        background: "#fef9c3",
+    },
+    warningBox: {
+        marginBottom: "14px",
+        padding: "10px 12px",
+        borderRadius: "3px",
+        fontSize: "12px",
+        background: "#fff7ed",
+        color: "#9a3412",
+        border: "1px solid #fdba74",
+    },
+    legendRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        marginTop: "12px",
+        fontSize: "12px",
+        color: "#374151",
+    },
+    legendColor: {
+        width: "18px",
+        height: "14px",
+        background: "#fef9c3",
+        border: "1px solid #e5e7eb",
+        borderRadius: "2px",
+        flexShrink: 0,
+    },
 };
 
 const CRITERIA_OPTIONS = [
@@ -232,20 +255,16 @@ const getValue = (obj, keys) => {
 const deriveLocationFromBomId = (bomId) => {
     const value = String(bomId || "").trim();
     if (!value) return "";
-
     const parts = value.split("_");
     if (parts.length < 3) return "";
-
     return parts.slice(2).join("_").trim();
 };
 
 const deriveResourceFromRoutingId = (routingId) => {
     const value = String(routingId || "").trim();
     if (!value) return "";
-
     const parts = value.split("_");
     if (parts.length < 4) return "";
-
     return parts[parts.length - 1].trim();
 };
 
@@ -258,21 +277,17 @@ const normalizeRoutingRecord = (row, index) => {
         "ROUTING_ID",
     ]);
     const bomId = getValue(row, ["bom_id", "BOMID", "bomId", "BOM_ID"]);
-
     const resource =
         getValue(row, ["resource", "Resource", "RESOURCE"]) ||
         deriveResourceFromRoutingId(routingId);
-
     const recId = getValue(row, ["rec_id", "recId", "REC_ID"]);
     const location = deriveLocationFromBomId(bomId);
-
     const componentItem = getValue(row, [
         "component_item",
         "componentItem",
         "ComponentItem",
         "COMPONENT_ITEM",
     ]);
-
     const coProductItem = getValue(row, [
         "co_product_item",
         "coProductItem",
@@ -280,7 +295,6 @@ const normalizeRoutingRecord = (row, index) => {
         "coproduct_item",
         "COPRODUCT_ITEM",
     ]);
-
     const rawCoProductAssociation = getValue(row, [
         "erp_co_product_association",
         "co_product_association",
@@ -288,7 +302,6 @@ const normalizeRoutingRecord = (row, index) => {
         "coProductAssociation",
         "ERP_CO_PRODUCT_ASSOCIATION",
     ]);
-
     const coProductAssociation =
         String(rawCoProductAssociation).trim() === "1" ? 1 : 0;
 
@@ -328,16 +341,17 @@ const getCriteriaValue = (row, field) => {
     }
 };
 
+const buildParentGroupKey = (row) =>
+    `${String(row?.bomId || "").trim()}__${String(row?.routingId || "").trim()}`;
+
 export default function DeleteExistingItemBomRoutingStep1() {
     const navigate = useNavigate();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [selectedIds, setSelectedIds] = useState([]);
-
     const [criteria1Field, setCriteria1Field] = useState("routingId");
     const [criteria1Value, setCriteria1Value] = useState("");
-
     const [criteria2Field, setCriteria2Field] = useState("bomId");
     const [criteria2Value, setCriteria2Value] = useState("");
 
@@ -347,7 +361,6 @@ export default function DeleteExistingItemBomRoutingStep1() {
         const loadRows = async () => {
             setLoading(true);
             setError("");
-
             try {
                 const response = await fetch(ITEM_BOM_ROUTING_API, {
                     method: "GET",
@@ -397,13 +410,11 @@ export default function DeleteExistingItemBomRoutingStep1() {
         return rows.filter((row) => {
             const value1 = getCriteriaValue(row, criteria1Field).toLowerCase();
             const value2 = getCriteriaValue(row, criteria2Field).toLowerCase();
-
             const search1 = criteria1Value.trim().toLowerCase();
             const search2 = criteria2Value.trim().toLowerCase();
 
             const match1 =
                 !criteria1Field || !search1 ? true : value1.includes(search1);
-
             const match2 =
                 !criteria2Field || !search2 ? true : value2.includes(search2);
 
@@ -412,6 +423,7 @@ export default function DeleteExistingItemBomRoutingStep1() {
     }, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
 
     const selectedCount = selectedIds.length;
+
     const allVisibleSelected =
         filteredRows.length > 0 &&
         filteredRows.every((row) => selectedIds.includes(row.id));
@@ -444,16 +456,42 @@ export default function DeleteExistingItemBomRoutingStep1() {
     };
 
     const handleConfirm = () => {
-        const selectedRows = rows.filter((row) => selectedIds.includes(row.id));
+        const directlySelectedRows = rows.filter((row) => selectedIds.includes(row.id));
+        const expandedMap = new Map();
+
+        directlySelectedRows.forEach((selectedRow) => {
+            expandedMap.set(selectedRow.id, selectedRow);
+
+            const isParentRow = selectedRow.coProductAssociation !== 1;
+
+            if (isParentRow) {
+                const parentGroupKey = buildParentGroupKey(selectedRow);
+
+                rows
+                    .filter(
+                        (candidate) =>
+                            buildParentGroupKey(candidate) === parentGroupKey &&
+                            candidate.coProductAssociation === 1
+                    )
+                    .forEach((coProductRow) => {
+                        expandedMap.set(coProductRow.id, coProductRow);
+                    });
+            }
+        });
+
+        const selectedRows = Array.from(expandedMap.values());
+
         navigate("/delete-bom-dashboard/delete-existing-ibr/summary", {
-            state: { selectedRows },
+            state: {
+                selectedRows,
+                originallySelectedRows: directlySelectedRows,
+            },
         });
     };
 
     return (
         <div style={styles.page}>
             <div style={styles.topRule} />
-
             <div style={styles.shell}>
                 <button type="button" onClick={handleBack} style={styles.backBtn}>
                     <span style={{ fontSize: "16px", lineHeight: 1 }}>←</span>
@@ -467,7 +505,6 @@ export default function DeleteExistingItemBomRoutingStep1() {
                 <div style={styles.filterStack}>
                     <div style={styles.fieldGroup}>
                         <div style={styles.fieldLabel}>Search By (Criteria 1)</div>
-
                         <div style={styles.selectWrap}>
                             <select
                                 value={criteria1Field}
@@ -496,7 +533,6 @@ export default function DeleteExistingItemBomRoutingStep1() {
 
                     <div style={styles.fieldGroup}>
                         <div style={styles.fieldLabel}>Search By (Criteria 2)</div>
-
                         <div style={styles.selectWrap}>
                             <select
                                 value={criteria2Field}
@@ -534,6 +570,11 @@ export default function DeleteExistingItemBomRoutingStep1() {
                     <div style={{ ...styles.stateBox, ...styles.error }}>{error}</div>
                 ) : null}
 
+                <div style={styles.warningBox}>
+                    Warning: If a parent item is selected for deletion, any associated
+                    co-products will also be included in the deletion.
+                </div>
+
                 <div style={styles.tableCard}>
                     <div style={styles.tableScroller}>
                         <table style={styles.table}>
@@ -555,6 +596,7 @@ export default function DeleteExistingItemBomRoutingStep1() {
                                     <th style={{ ...styles.th, width: "340px" }}>Routing ID</th>
                                 </tr>
                             </thead>
+
                             <tbody>
                                 {!loading && filteredRows.length === 0 ? (
                                     <tr>
@@ -564,51 +606,56 @@ export default function DeleteExistingItemBomRoutingStep1() {
                                     </tr>
                                 ) : null}
 
-                               {filteredRows.map((row) => {
-    const isSelected = selectedIds.includes(row.id);
-    const highlighted =
-        row.coProductAssociation === 1
-            ? styles.highlightedCoProductRow
-            : undefined;
+                                {filteredRows.map((row) => {
+                                    const isSelected = selectedIds.includes(row.id);
+                                    const highlighted =
+                                        row.coProductAssociation === 1
+                                            ? styles.highlightedCoProductRow
+                                            : undefined;
 
-    return (
-        <tr key={row.id}>
-            <td
-                style={{
-                    ...styles.td,
-                    ...styles.checkboxCell,
-                    ...(highlighted || {}),
-                }}
-            >
-                <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => handleToggleRow(row.id)}
-                    style={styles.checkbox}
-                    aria-label={`Select routing record ${row.routingId || row.id}`}
-                />
-            </td>
-            <td style={{ ...styles.td, ...(highlighted || {}) }}>
-                {row.location || "-"}
-            </td>
-            <td style={{ ...styles.td, ...(highlighted || {}) }}>
-                {row.item || "-"}
-            </td>
-            <td style={{ ...styles.td, ...(highlighted || {}) }}>
-                {row.bomId || "-"}
-            </td>
-            <td style={{ ...styles.td, ...(highlighted || {}) }}>
-                {row.resource || "-"}
-            </td>
-            <td style={{ ...styles.td, ...(highlighted || {}) }}>
-                {row.routingId || "-"}
-            </td>
-        </tr>
-    );
-})}
+                                    return (
+                                        <tr key={row.id}>
+                                            <td
+                                                style={{
+                                                    ...styles.td,
+                                                    ...styles.checkboxCell,
+                                                    ...(highlighted || {}),
+                                                }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => handleToggleRow(row.id)}
+                                                    style={styles.checkbox}
+                                                    aria-label={`Select routing record ${row.routingId || row.id}`}
+                                                />
+                                            </td>
+                                            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                                                {row.location || "-"}
+                                            </td>
+                                            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                                                {row.item || "-"}
+                                            </td>
+                                            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                                                {row.bomId || "-"}
+                                            </td>
+                                            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                                                {row.resource || "-"}
+                                            </td>
+                                            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                                                {row.routingId || "-"}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <div style={styles.legendRow}>
+                    <span style={styles.legendColor} />
+                    <span>Yellow color code represents co-products.</span>
                 </div>
 
                 <div style={styles.footerRow}>

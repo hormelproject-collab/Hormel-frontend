@@ -39,6 +39,17 @@ const formatDisplayDate = (value) => {
 
 const safeArray = (value) => (Array.isArray(value) ? value : []);
 
+const isCoProductRow = (row) => {
+  const value = String(
+    row?.coProductAssociation ??
+    row?.co_product_association ??
+    row?.co_prod_association ??
+    ""
+  ).trim();
+
+  return value === "1";
+};
+
 export default function EngineeringChangeDetailDeleteBOM() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
@@ -160,6 +171,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
       fontFamily: "Segoe UI, Arial, sans-serif",
       color: "#111827",
     },
+
+    coProductRow: {
+      background: "#fef9c3",
+    },
+
     backButton: {
       display: "inline-flex",
       alignItems: "center",
@@ -393,17 +409,24 @@ export default function EngineeringChangeDetailDeleteBOM() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row, index) => (
-                    <tr key={`${toText(row.recId || row.postgresqlRecId || row.bomId)}__${index}`}>
-                      <td style={styles.td}>{toText(row.producedItem) || "-"}</td>
-                      <td style={styles.td}>{toText(row.itemDescription) || "-"}</td>
-                      <td style={styles.td}>{toText(row.location) || "-"}</td>
-                      <td style={styles.td}>{toText(row.bomId) || "-"}</td>
-                      {showRoutingInDeletedTable && (
-                        <td style={styles.td}>{toText(row.routingId) || "-"}</td>
-                      )}
-                    </tr>
-                  ))
+                  rows.map((row, index) => {
+                    const highlighted = isCoProductRow(row);
+
+                    return (
+                      <tr
+                        key={`${toText(row.recId || row.postgresqlRecId || row.bomId)}__${index}`}
+                        style={highlighted ? styles.coProductRow : undefined}
+                      >
+                        <td style={styles.td}>{toText(row.producedItem) || "-"}</td>
+                        <td style={styles.td}>{toText(row.itemDescription) || "-"}</td>
+                        <td style={styles.td}>{toText(row.location) || "-"}</td>
+                        <td style={styles.td}>{toText(row.bomId) || "-"}</td>
+                        {showRoutingInDeletedTable && (
+                          <td style={styles.td}>{toText(row.routingId) || "-"}</td>
+                        )}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

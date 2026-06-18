@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { MdDelete } from "react-icons/md";
 
 const NEXT_ROUTE = "/summary";
 
@@ -107,9 +108,9 @@ const makeCoProductRow = (seed = {}) => ({
 const getCoProductAssociationValue = (row) => {
   return Number(
     row?.erp_co_product_association ??
-      row?.coProductAssociation ??
-      row?.co_product_association ??
-      0
+    row?.coProductAssociation ??
+    row?.co_product_association ??
+    0
   );
 };
 
@@ -617,7 +618,7 @@ const ModifyExistingBOM = () => {
                 onChange={setSelectedResources}
                 placeholder="Select resource(s)"
               />
-           
+
             </div>
 
             <div style={styles.field}>
@@ -627,7 +628,7 @@ const ModifyExistingBOM = () => {
                 style={styles.inputDisabled}
                 disabled
               />
-          
+
             </div>
           </div>
 
@@ -715,7 +716,9 @@ const ModifyExistingBOM = () => {
                     style={styles.deleteBtn}
                     onClick={() => removeComponent(row.id)}
                   >
-                    Delete
+                    <span style={styles.iconWrapper}>
+                      <MdDelete />
+                    </span>
                   </button>
                 </div>
               ))}
@@ -801,7 +804,9 @@ const ModifyExistingBOM = () => {
                       style={styles.deleteBtn}
                       onClick={() => removeCoProduct(row.id)}
                     >
-                      Delete
+                      <span style={styles.iconWrapper}>
+                      <MdDelete />
+                    </span>
                     </button>
                   </div>
                 ))}
@@ -1038,15 +1043,18 @@ const styles = {
     background: "#f9fafb",
     color: "#6b7280",
   },
-  deleteBtn: {
-    height: 32,
-    borderRadius: 3,
-    border: "1px solid #fecaca",
-    background: "#ffffff",
+    iconWrapper: {
+    all: "unset",
     color: "#dc2626",
-    fontSize: 12,
-    fontWeight: 600,
+    fontSize: "28px",
+  },
+  deleteBtn: {
+    width: "36px",
+    height: "36px",
+    border: "none",
+    background: "transparent",
     cursor: "pointer",
+    fontSize: "16px",
   },
   bottom: {
     display: "flex",
