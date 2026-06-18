@@ -201,6 +201,11 @@ const styles = {
         padding: "22px 12px",
         fontSize: "12px",
     },
+
+    //  highlight for co-product rows
+highlightedCoProductRow: {
+    background: "#fef9c3",
+},
 };
 
 const CRITERIA_OPTIONS = [
@@ -276,8 +281,19 @@ const normalizeRoutingRecord = (row, index) => {
         "COPRODUCT_ITEM",
     ]);
 
+    const rawCoProductAssociation = getValue(row, [
+        "erp_co_product_association",
+        "co_product_association",
+        "erpCoProductAssociation",
+        "coProductAssociation",
+        "ERP_CO_PRODUCT_ASSOCIATION",
+    ]);
+
+    const coProductAssociation =
+        String(rawCoProductAssociation).trim() === "1" ? 1 : 0;
+
     return {
-        id: recId || routingId || `${bomId}__${index}`,
+        id: recId || `${bomId}__${routingId}__${item}__${index}`,
         recId,
         item,
         routingId,
@@ -286,6 +302,7 @@ const normalizeRoutingRecord = (row, index) => {
         resource,
         componentItem,
         coProductItem,
+        coProductAssociation,
         raw: row,
     };
 };
@@ -324,7 +341,6 @@ export default function DeleteExistingItemBomRoutingStep1() {
     const [criteria2Field, setCriteria2Field] = useState("bomId");
     const [criteria2Value, setCriteria2Value] = useState("");
 
-
     useEffect(() => {
         let cancelled = false;
 
@@ -345,8 +361,8 @@ export default function DeleteExistingItemBomRoutingStep1() {
                 if (!response.ok) {
                     throw new Error(
                         result?.details ||
-                        result?.error ||
-                        "Failed to fetch item BOM routing records"
+                            result?.error ||
+                            "Failed to fetch item BOM routing records"
                     );
                 }
 
@@ -377,24 +393,23 @@ export default function DeleteExistingItemBomRoutingStep1() {
         };
     }, []);
 
- const filteredRows = useMemo(() => {
-  return rows.filter((row) => {
-    const value1 = getCriteriaValue(row, criteria1Field).toLowerCase();
-    const value2 = getCriteriaValue(row, criteria2Field).toLowerCase();
+    const filteredRows = useMemo(() => {
+        return rows.filter((row) => {
+            const value1 = getCriteriaValue(row, criteria1Field).toLowerCase();
+            const value2 = getCriteriaValue(row, criteria2Field).toLowerCase();
 
-    const search1 = criteria1Value.trim().toLowerCase();
-    const search2 = criteria2Value.trim().toLowerCase();
+            const search1 = criteria1Value.trim().toLowerCase();
+            const search2 = criteria2Value.trim().toLowerCase();
 
-    const match1 =
-      !criteria1Field || !search1 ? true : value1.includes(search1);
+            const match1 =
+                !criteria1Field || !search1 ? true : value1.includes(search1);
 
-    const match2 =
-      !criteria2Field || !search2 ? true : value2.includes(search2);
+            const match2 =
+                !criteria2Field || !search2 ? true : value2.includes(search2);
 
-    return match1 && match2;
-  });
-}, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
-
+            return match1 && match2;
+        });
+    }, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
 
     const selectedCount = selectedIds.length;
     const allVisibleSelected =
@@ -450,7 +465,6 @@ export default function DeleteExistingItemBomRoutingStep1() {
                 </h1>
 
                 <div style={styles.filterStack}>
-                    {/* LEFT SIDE */}
                     <div style={styles.fieldGroup}>
                         <div style={styles.fieldLabel}>Search By (Criteria 1)</div>
 
@@ -473,13 +487,13 @@ export default function DeleteExistingItemBomRoutingStep1() {
                             type="text"
                             value={criteria1Value}
                             onChange={(e) => setCriteria1Value(e.target.value)}
-                            placeholder={`Search ${CRITERIA_OPTIONS.find((x) => x.value === criteria1Field)?.label || ""
-                                }`}
+                            placeholder={`Search ${
+                                CRITERIA_OPTIONS.find((x) => x.value === criteria1Field)?.label || ""
+                            }`}
                             style={styles.input}
                         />
                     </div>
 
-                    {/* RIGHT SIDE */}
                     <div style={styles.fieldGroup}>
                         <div style={styles.fieldLabel}>Search By (Criteria 2)</div>
 
@@ -502,8 +516,9 @@ export default function DeleteExistingItemBomRoutingStep1() {
                             type="text"
                             value={criteria2Value}
                             onChange={(e) => setCriteria2Value(e.target.value)}
-                            placeholder={`Search ${CRITERIA_OPTIONS.find((x) => x.value === criteria2Field)?.label || ""
-                                }`}
+                            placeholder={`Search ${
+                                CRITERIA_OPTIONS.find((x) => x.value === criteria2Field)?.label || ""
+                            }`}
                             style={styles.input}
                         />
                     </div>
@@ -549,28 +564,48 @@ export default function DeleteExistingItemBomRoutingStep1() {
                                     </tr>
                                 ) : null}
 
-                                {filteredRows.map((row) => {
-                                    const isSelected = selectedIds.includes(row.id);
+                               {filteredRows.map((row) => {
+    const isSelected = selectedIds.includes(row.id);
+    const highlighted =
+        row.coProductAssociation === 1
+            ? styles.highlightedCoProductRow
+            : undefined;
 
-                                    return (
-                                        <tr key={row.id}>
-                                            <td style={{ ...styles.td, ...styles.checkboxCell }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isSelected}
-                                                    onChange={() => handleToggleRow(row.id)}
-                                                    style={styles.checkbox}
-                                                    aria-label={`Select routing record ${row.routingId || row.id}`}
-                                                />
-                                            </td>
-                                            <td style={styles.td}>{row.location || "-"}</td>
-                                            <td style={styles.td}>{row.item || "-"}</td>
-                                            <td style={styles.td}>{row.bomId || "-"}</td>
-                                            <td style={styles.td}>{row.resource || "-"}</td>
-                                            <td style={styles.td}>{row.routingId || "-"}</td>
-                                        </tr>
-                                    );
-                                })}
+    return (
+        <tr key={row.id}>
+            <td
+                style={{
+                    ...styles.td,
+                    ...styles.checkboxCell,
+                    ...(highlighted || {}),
+                }}
+            >
+                <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => handleToggleRow(row.id)}
+                    style={styles.checkbox}
+                    aria-label={`Select routing record ${row.routingId || row.id}`}
+                />
+            </td>
+            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                {row.location || "-"}
+            </td>
+            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                {row.item || "-"}
+            </td>
+            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                {row.bomId || "-"}
+            </td>
+            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                {row.resource || "-"}
+            </td>
+            <td style={{ ...styles.td, ...(highlighted || {}) }}>
+                {row.routingId || "-"}
+            </td>
+        </tr>
+    );
+})}
                             </tbody>
                         </table>
                     </div>

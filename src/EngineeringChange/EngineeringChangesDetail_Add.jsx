@@ -27,13 +27,14 @@ const formatDisplayDate = (value) => {
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
+  const CST = "CST";
 
   hours = hours % 12;
   if (hours === 0) hours = 12;
 
   const hh = String(hours).padStart(2, "0");
 
-  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm}`;
+  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
 };
 
 export default function EngineeringChangeDetailAdd() {
@@ -84,14 +85,13 @@ export default function EngineeringChangeDetailAdd() {
   const [apiError, setApiError] = useState("");
   const [detail, setDetail] = useState(null);
 
-const queryString = useMemo(() => {
-  const params = new URLSearchParams();
-  if (engineeringChangeId) {
-    params.append("engineeringChangeId", engineeringChangeId);
-  }
-  return params.toString();
-}, [engineeringChangeId]);
-
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams();
+    if (engineeringChangeId) {
+      params.append("engineeringChangeId", engineeringChangeId);
+    }
+    return params.toString();
+  }, [engineeringChangeId]);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -110,7 +110,9 @@ const queryString = useMemo(() => {
 
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(errText || `Failed to fetch add detail (${response.status})`);
+          throw new Error(
+            errText || `Failed to fetch add detail (${response.status})`
+          );
         }
 
         const data = await response.json();
@@ -131,6 +133,14 @@ const queryString = useMemo(() => {
   }, [queryString]);
 
   const createdRows = safeArray(detail?.createdRecords);
+
+  const changeSummaryText = toText(
+    detail?.changeSummary || passedState.changeSummary || ""
+  ).toLowerCase();
+
+  const isAddedIBRFlow =
+    changeSummaryText.includes("added in item bom routing") ||
+    changeSummaryText.includes("item bom routing");
 
   const styles = {
     page: {
@@ -355,17 +365,16 @@ const queryString = useMemo(() => {
                     <div style={styles.detailRow}>
                       <span style={styles.label}>Item: </span>
                       <span style={styles.value}>
-                        {toText(row.item || detail?.item) || "-"}
+                        {toText(row.item || detail?.item || item) || "-"}
                       </span>
                     </div>
 
                     <div style={styles.detailRow}>
                       <span style={styles.label}>Resource: </span>
                       <span style={styles.value}>
-                        {toText(row.resource || detail?.resource) || "-"}
+                        {toText(row.resource || detail?.resource || resource) || "-"}
                       </span>
                     </div>
-
 
                     <div style={styles.detailRow}>
                       <span style={styles.label}>Routing ID: </span>
@@ -377,42 +386,50 @@ const queryString = useMemo(() => {
                     <div style={styles.detailRow}>
                       <span style={styles.label}>BOM ID: </span>
                       <span style={styles.value}>
-                        {toText(row.bomId || detail?.bomId) || "-"}
+                        {toText(row.bomId || detail?.bomId || bomId) || "-"}
                       </span>
                     </div>
 
-                    <div style={styles.sectionTitle}>Component Details</div>
-                    {components.length === 0 ? (
-                      <div style={styles.emptySubText}>No component items added.</div>
-                    ) : (
-                      <table style={styles.nestedTable}>
-                        <thead>
-                          <tr>
-                            <th style={styles.nestedTh}>Component Item</th>
-                            <th style={styles.nestedTh}>Standard Usage</th>
-                            <th style={styles.nestedTh}>Start Date</th>
-                            <th style={styles.nestedTh}>End Date</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {components.map((component, componentIndex) => (
-                            <tr key={component.key || componentIndex}>
-                              <td style={styles.nestedTd}>
-                                {toText(component.componentItem) || "-"}
-                              </td>
-                              <td style={styles.nestedTd}>
-                                {toText(component.standardUsage) || "-"}
-                              </td>
-                              <td style={styles.nestedTd}>
-                                {toText(component.startDate) || "-"}
-                              </td>
-                              <td style={styles.nestedTd}>
-                                {toText(component.endDate) || "-"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div style={styles.detailRow}>
+                      <span style={styles.label}>Item BOM Routing Priority: </span>
+                      <span style={styles.value}>
+                        {toText(
+                          row.itemBomRoutingPriority ||
+                            row.item_bom_routing_priority ||
+                            detail?.itemBomRoutingPriority ||
+                            detail?.item_bom_routing_priority
+                        ) || "-"}
+                      </span>
+                    </div>
+
+                    {!isAddedIBRFlow && (
+                      <>
+                        <div style={styles.sectionTitle}>Component Details</div>
+                        {components.length === 0 ? (
+                          <div style={styles.emptySubText}>No component items added.</div>
+                        ) : (
+                          <table style={styles.nestedTable}>
+                            <thead>
+                              <tr>
+                                <th style={styles.nestedTh}>Component Item</th>
+                                <th style={styles.nestedTh}>Standard Usage</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {components.map((component, componentIndex) => (
+                                <tr key={component.key || componentIndex}>
+                                  <td style={styles.nestedTd}>
+                                    {toText(component.componentItem) || "-"}
+                                  </td>
+                                  <td style={styles.nestedTd}>
+                                    {toText(component.standardUsage) || "-"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </>
                     )}
 
                     <div style={styles.sectionTitle}>Co-Product Details</div>

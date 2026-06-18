@@ -10,6 +10,7 @@ const toText = (value) => {
   if (value == null) return "";
   return String(value);
 };
+
 const formatDisplayDate = (value) => {
   if (!value) return "-";
 
@@ -26,13 +27,14 @@ const formatDisplayDate = (value) => {
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
+  const CST = "CST";
 
   hours = hours % 12;
   if (hours === 0) hours = 12;
 
   const hh = String(hours).padStart(2, "0");
 
-  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm}`;
+  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
 };
 
 const safeArray = (value) => (Array.isArray(value) ? value : []);
@@ -73,18 +75,38 @@ export default function EngineeringChangeDetailDeleteBOM() {
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
   const [detail, setDetail] = useState(null);
-
+  const isConsolidatedDeleteFlow = String(
+    passedState.changeSummary || passedState.change_summary || ""
+  )
+    .toLowerCase()
+    .includes("all 4 consolidated tables");
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
 
-    if (engineeringChangeId) params.append("engineeringChangeId", engineeringChangeId);
-    if (item) params.append("item", item);
-    if (resource) params.append("resource", resource);
-    if (bomId) params.append("bomId", bomId);
-    if (locationName) params.append("location", locationName);
+    if (engineeringChangeId) {
+      params.append("engineeringChangeId", engineeringChangeId);
+    }
+
+    // IMPORTANT:
+    // For consolidated delete flow, fetch all records for the engineering change ID.
+    // Do not narrow using clicked row filters.
+    if (!isConsolidatedDeleteFlow) {
+      if (item) params.append("item", item);
+      if (resource) params.append("resource", resource);
+      if (bomId) params.append("bomId", bomId);
+      if (locationName) params.append("location", locationName);
+    }
 
     return params.toString();
-  }, [engineeringChangeId, item, resource, bomId, locationName]);
+  }, [
+    engineeringChangeId,
+    item,
+    resource,
+    bomId,
+    locationName,
+    isConsolidatedDeleteFlow,
+  ]);
+  ``
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -108,7 +130,6 @@ export default function EngineeringChangeDetailDeleteBOM() {
         }
 
         const payload = await response.json();
-        console.log("Delete BOM detail payload:", payload);
         setDetail(payload?.data || null);
       } catch (error) {
         console.error("Engineering delete BOM detail fetch error:", error);
@@ -125,8 +146,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
     }
   }, [queryString]);
 
-  // ✅ use deletedBomRecords returned from backend
   const rows = safeArray(detail?.deletedBomRecords);
+  const connectedRoutingRows = safeArray(detail?.connectedRoutingRecords);
+
+  const showRoutingInDeletedTable = Boolean(detail?.showRoutingInDeletedTable);
+  const showConnectedRoutingTable = Boolean(detail?.showConnectedRoutingTable);
 
   const styles = {
     page: {
@@ -158,6 +182,20 @@ export default function EngineeringChangeDetailDeleteBOM() {
       fontSize: "14px",
       color: "#4b5563",
       marginBottom: "18px",
+    },
+    warningCard: {
+      background: "#efe4cf",
+      border: "1px solid #e0cfaa",
+      borderRadius: "4px",
+      padding: "14px 18px",
+      marginBottom: "16px",
+      maxWidth: "960px",
+      color: "#8a5a00",
+      fontSize: "14px",
+      fontWeight: 600,
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
     },
     blueCard: {
       background: "#dff0fb",
@@ -198,6 +236,7 @@ export default function EngineeringChangeDetailDeleteBOM() {
       overflow: "hidden",
       maxWidth: "960px",
       boxShadow: "0 2px 3px rgba(0,0,0,0.08)",
+      marginBottom: "24px",
     },
     table: {
       width: "100%",
@@ -219,6 +258,16 @@ export default function EngineeringChangeDetailDeleteBOM() {
       borderBottom: "1px solid #d5d7db",
       color: "#111827",
       verticalAlign: "middle",
+      wordBreak: "break-word",
+    },
+    neutralTh: {
+      textAlign: "left",
+      fontSize: "13px",
+      fontWeight: 500,
+      padding: "14px 12px",
+      borderBottom: "1px solid #d5d7db",
+      color: "#111827",
+      background: "#f7f7f7",
     },
     error: {
       color: "#d93025",
@@ -234,6 +283,18 @@ export default function EngineeringChangeDetailDeleteBOM() {
       color: "#6b7280",
       padding: "18px 12px",
       fontSize: "13px",
+    },
+    sectionTitle: {
+      fontSize: "28px",
+      fontWeight: 600,
+      color: "#111827",
+      marginBottom: "6px",
+    },
+    sectionSubText: {
+      fontSize: "14px",
+      color: "#2563eb",
+      marginBottom: "12px",
+      maxWidth: "960px",
     },
   };
 
@@ -257,6 +318,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
         <div style={styles.error}>{apiError}</div>
       ) : (
         <>
+          <div style={styles.warningCard}>
+            <span style={{ fontSize: "18px" }}>⚠</span>
+            <span>Warning: The following records were permanently deleted</span>
+          </div>
+
           <div style={styles.blueCard}>
             <div style={styles.infoIcon}>ⓘ</div>
 
@@ -264,32 +330,41 @@ export default function EngineeringChangeDetailDeleteBOM() {
               <div>
                 <span style={styles.label}>Engineering Change #: </span>
                 <span style={styles.value}>
-                  {toText(detail?.engineeringChangeId || engineeringChangeId)}
+                  {toText(detail?.engineeringChangeId || engineeringChangeId) || "-"}
                 </span>
               </div>
 
               <div>
                 <span style={styles.label}>Change Date: </span>
-
                 <span style={styles.value}>
                   {formatDisplayDate(detail?.changeDate)}
                 </span>
-
               </div>
 
               <div>
                 <span style={styles.label}>User: </span>
-                <span style={styles.value}>{toText(detail?.user)}</span>
+                <span style={styles.value}>{toText(detail?.user) || "-"}</span>
               </div>
 
               <div>
                 <span style={styles.label}>Change Type: </span>
-                <span style={styles.value}>{toText(detail?.changeType || "Deleted")}</span>
+                <span style={styles.value}>
+                  {toText(detail?.changeType || "Deleted")}
+                </span>
               </div>
 
               <div>
                 <span style={styles.label}>Notes: </span>
-                <span style={styles.value}>{toText(detail?.notes || "Deleted")}</span>
+                <span style={styles.value}>
+                  {toText(detail?.summaryNotes || detail?.notes) || "-"}
+                </span>
+              </div>
+
+              <div>
+                <span style={styles.label}>Change Summary: </span>
+                <span style={styles.value}>
+                  {toText(detail?.changeSummary) || "-"}
+                </span>
               </div>
             </div>
           </div>
@@ -302,28 +377,75 @@ export default function EngineeringChangeDetailDeleteBOM() {
                   <th style={styles.th}>Item Description</th>
                   <th style={styles.th}>Location</th>
                   <th style={styles.th}>BOM ID</th>
+                  {showRoutingInDeletedTable && (
+                    <th style={styles.th}>Routing ID</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={styles.emptyRow}>
+                    <td
+                      colSpan={showRoutingInDeletedTable ? 5 : 4}
+                      style={styles.emptyRow}
+                    >
                       No deleted BOM records found.
                     </td>
                   </tr>
                 ) : (
                   rows.map((row, index) => (
-                    <tr key={`${toText(row.recId)}__${index}`}>
+                    <tr key={`${toText(row.recId || row.postgresqlRecId || row.bomId)}__${index}`}>
                       <td style={styles.td}>{toText(row.producedItem) || "-"}</td>
                       <td style={styles.td}>{toText(row.itemDescription) || "-"}</td>
                       <td style={styles.td}>{toText(row.location) || "-"}</td>
                       <td style={styles.td}>{toText(row.bomId) || "-"}</td>
+                      {showRoutingInDeletedTable && (
+                        <td style={styles.td}>{toText(row.routingId) || "-"}</td>
+                      )}
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
+
+          {showConnectedRoutingTable && (
+            <>
+              <div style={styles.sectionTitle}>Connected Routing IDs</div>
+              <div style={styles.sectionSubText}>
+                The following Routing IDs are connected to the BOM records and were also deleted
+              </div>
+
+              <div style={styles.tableCard}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.neutralTh}>BOM ID</th>
+                      <th style={styles.neutralTh}>Resource</th>
+                      <th style={styles.neutralTh}>Routing ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connectedRoutingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={styles.emptyRow}>
+                          No connected routing records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      connectedRoutingRows.map((row, index) => (
+                        <tr key={`${toText(row.bomId)}__${toText(row.routingId)}__${index}`}>
+                          <td style={styles.td}>{toText(row.bomId) || "-"}</td>
+                          <td style={styles.td}>{toText(row.resource) || "-"}</td>
+                          <td style={styles.td}>{toText(row.routingId) || "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

@@ -49,24 +49,24 @@ const formatDateForInput = (date) => {
 
 const formatDateForUI = (date) => {
   if (!date) return "";
+
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return toDisplayString(date);
 
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).formatToParts(d);
 
-  let hours = d.getHours();
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  const seconds = String(d.getSeconds()).padStart(2, "0");
+  const map = Object.fromEntries(formatted.map((p) => [p.type, p.value]));
 
-  const ampm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12;
-  hours = hours === 0 ? 12 : hours;
-
-  const hh = String(hours).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd} ${hh}:${minutes}:${seconds} ${ampm}`;
+  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second} ${map.dayPeriod} CST`;
 };
 
 const getCollapsedMultiValueDisplay = (values) => {
@@ -268,13 +268,13 @@ const normalizeLogRecord = (item, index) => {
     `EC-${index + 1}`;
 
   const changeDate =
-    item.change_date ||
-    item.changeDate ||
-    item.created_at ||
-    item.createdAt ||
-    item.updated_at ||
-    item.updatedAt ||
-    "";
+  item.change_date ||
+  item.changeDate ||
+  item.created_at ||
+  item.createdAt ||
+  item.updated_at ||
+  item.updatedAt ||
+  "";
 
   const changeType =
     item.change_type ||

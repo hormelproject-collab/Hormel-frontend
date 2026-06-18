@@ -35,16 +35,16 @@ const normalizeValidationEntries = (validationResult) => {
 
     const code = String(
       entry.validationSequence ??
-        entry.validation_sequence ??
-        entry.seq ??
-        entry.sequence ??
-        entry.code ??
-        parent.validationSequence ??
-        parent.validation_sequence ??
-        parent.seq ??
-        parent.sequence ??
-        parent.code ??
-        index + 1
+      entry.validation_sequence ??
+      entry.seq ??
+      entry.sequence ??
+      entry.code ??
+      parent.validationSequence ??
+      parent.validation_sequence ??
+      parent.seq ??
+      parent.sequence ??
+      parent.code ??
+      index + 1
     );
 
     const desc =
@@ -95,8 +95,8 @@ const normalizeValidationEntries = (validationResult) => {
   const manualErrorList = Array.isArray(validationResult?.errorList)
     ? validationResult.errorList
     : Array.isArray(validationResult?.data?.errorList)
-    ? validationResult.data.errorList
-    : [];
+      ? validationResult.data.errorList
+      : [];
 
   if (manualErrorList.length > 0) {
     manualErrorList.forEach((row, rowIndex) => {
@@ -254,9 +254,8 @@ export default function SummaryPage() {
         : [];
 
       const routingRows = generatedRoutingRows.map((row, index) => ({
-        key: `${
-          modifiedBomData.newBomId ?? modifiedBomData.originalBomId ?? "bom"
-        }__${row.routingId ?? index}`,
+        key: `${modifiedBomData.newBomId ?? modifiedBomData.originalBomId ?? "bom"
+          }__${row.routingId ?? index}`,
         resource: row.resource ?? "",
         resourceRelevancy: row.resourceRelevancy ?? "",
         routingId:
@@ -274,8 +273,7 @@ export default function SummaryPage() {
           key:
             modifiedBomData.newBomId ??
             modifiedBomData.originalBomId ??
-            `${modifiedBomData.producedItem ?? ""}__${
-              modifiedBomData.location ?? ""
+            `${modifiedBomData.producedItem ?? ""}__${modifiedBomData.location ?? ""
             }`,
           producedItem:
             modifiedBomData.producedItem ?? selectedBom?.produced_item ?? "-",
@@ -365,18 +363,18 @@ export default function SummaryPage() {
         },
         routingRows: Array.isArray(entry.generatedRoutingRows)
           ? entry.generatedRoutingRows.map((row, index) => ({
-              key: `${entry.key}__${row.routingId ?? index}`,
-              resource: row.resource ?? "",
-              resourceRelevancy: row.resourceRelevancy ?? "",
-              routingId:
-                row.routingId ??
-                buildRoutingId(
-                  entry.producedItem ?? "",
-                  entry.location ?? "",
-                  row.resource ?? ""
-                ),
-              defaultPriority: index + 1,
-            }))
+            key: `${entry.key}__${row.routingId ?? index}`,
+            resource: row.resource ?? "",
+            resourceRelevancy: row.resourceRelevancy ?? "",
+            routingId:
+              row.routingId ??
+              buildRoutingId(
+                entry.producedItem ?? "",
+                entry.location ?? "",
+                row.resource ?? ""
+              ),
+            defaultPriority: index + 1,
+          }))
           : [],
         isModifyFlow: false,
       }));
@@ -530,15 +528,17 @@ export default function SummaryPage() {
               priority: Number(
                 priorityMap[row.routingId] ?? row.defaultPriority ?? 1
               ),
-              coProductAssociation: config.producedCoProduct === false ? 0 : 1,
+              // Original produced item should remain blank in item_bom_routing.
+              // Co-product routing rows will be inserted separately in backend with association = 1.
+              coProductAssociation: null,
             })),
             componentItems: config.noComponentItems
               ? []
               : normalizeNonEmptyComponentItems(components).map((row) => ({
-                  componentItem: row.componentItem,
-                  description: row.description ?? "",
-                  standardUsage: toNumberOrNull(row.standardUsage),
-                })),
+                componentItem: row.componentItem,
+                description: row.description ?? "",
+                standardUsage: toNumberOrNull(row.standardUsage),
+              })),
             coProducts: normalizeNonEmptyCoProducts(coproducts).map((row) => ({
               coProductItem: row.coProductItem,
               description: row.description ?? "",
@@ -671,14 +671,14 @@ export default function SummaryPage() {
                   group.routingRows.length > 0
                     ? group.routingRows
                     : [
-                        {
-                          key: `${group.key}__NOROUTING`,
-                          routingId: "-",
-                          defaultPriority: 1,
-                          resource: "",
-                          resourceRelevancy: "",
-                        },
-                      ];
+                      {
+                        key: `${group.key}__NOROUTING`,
+                        routingId: "-",
+                        defaultPriority: 1,
+                        resource: "",
+                        resourceRelevancy: "",
+                      },
+                    ];
 
                 return (
                   <div key={group.key} style={styles.summaryCard}>
@@ -730,7 +730,7 @@ export default function SummaryPage() {
                               <div style={styles.headerValue}>
                                 {row.routingId || "-"}
                               </div>
-                            
+
                             </div>
                           ))}
                         </div>
@@ -803,8 +803,8 @@ export default function SummaryPage() {
                                       </td>
                                       <td style={styles.innerTd}>
                                         {componentRow.standardUsage === "" ||
-                                        componentRow.standardUsage === null ||
-                                        componentRow.standardUsage === undefined
+                                          componentRow.standardUsage === null ||
+                                          componentRow.standardUsage === undefined
                                           ? "-"
                                           : componentRow.standardUsage}
                                       </td>
@@ -872,12 +872,12 @@ export default function SummaryPage() {
                                       </td>
                                       <td style={styles.innerTd}>
                                         {coProductRow.qtyProduced === "" ||
-                                        coProductRow.qtyProduced === null ||
-                                        coProductRow.qtyProduced === undefined
+                                          coProductRow.qtyProduced === null ||
+                                          coProductRow.qtyProduced === undefined
                                           ? coProductRow.qtyProducedPer === "" ||
                                             coProductRow.qtyProducedPer === null ||
                                             coProductRow.qtyProducedPer ===
-                                              undefined
+                                            undefined
                                             ? "-"
                                             : coProductRow.qtyProducedPer
                                           : coProductRow.qtyProduced}
@@ -950,14 +950,15 @@ export default function SummaryPage() {
           <div style={styles.successCard}>
             <div style={styles.resultTitle}>Validation Success</div>
             <div style={styles.successText}>
-              {`Validation was successful and the records are saved successfully${
-                successEcNumber ? ` with ${successEcNumber}.` : "."
-              }`}
+              {`Validation was successful and the records are saved successfully${successEcNumber ? ` with ${successEcNumber}.` : "."
+                }`}
             </div>
           </div>
         ) : null}
 
         <div style={styles.bottomBar}>
+          
+
           <button
             onClick={submitBOMs}
             disabled={submitting || summaryGroups.length === 0}
@@ -1289,10 +1290,25 @@ const styles = {
     verticalAlign: "top",
     whiteSpace: "pre-wrap",
     lineHeight: 1.5,
+  }, secondaryBtn: {
+    border: "1px solid #6da0e1",
+    borderRadius: "3px",
+    height: "28px",
+    padding: "0 12px",
+    fontSize: "12px",
+    fontWeight: 500,
+    color: "#1e63b5",
+    background: "#fff",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
   },
   bottomBar: {
     display: "flex",
     justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 12,
     marginTop: 20,
   },
   submitBtn: {

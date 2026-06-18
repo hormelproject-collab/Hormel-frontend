@@ -25,13 +25,14 @@ const formatDisplayDate = (value) => {
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
+  const CST = "CST";
 
   hours = hours % 12;
   if (hours === 0) hours = 12;
 
   const hh = String(hours).padStart(2, "0");
 
-  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm}`;
+  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
 };
 
 const styles = {
@@ -288,8 +289,8 @@ const EngineeringChangeDetailModify = () => {
         if (!response.ok || !result?.success) {
           throw new Error(
             result?.message ||
-            result?.details ||
-            `Failed to fetch engineering modify detail (${response.status})`
+              result?.details ||
+              `Failed to fetch engineering modify detail (${response.status})`
           );
         }
 
@@ -310,18 +311,89 @@ const EngineeringChangeDetailModify = () => {
   }, [queryString]);
 
   const header = useMemo(() => detail?.header || {}, [detail]);
-  const bomRecordDetails = useMemo(
+  const rawBomRecordDetails = useMemo(
     () => detail?.bomRecordDetails || [],
     [detail]
   );
-  const componentItemChanges = useMemo(
-    () => detail?.componentItemChanges || [],
-    [detail]
-  );
+const componentItemChanges = useMemo(() => {
+  const rows = detail?.componentItemChanges || [];
+
+  return rows.filter((row) => {
+    const field = String(row.field || "").toLowerCase();
+
+    return (
+      !field.includes("start date") &&
+      !field.includes("end date") &&
+      !field.includes("start_date") &&
+      !field.includes("end_date")
+    );
+  });
+}, [detail]);
+
   const coProductChanges = useMemo(
     () => detail?.coProductChanges || [],
     [detail]
   );
+
+  const bomRecordDetails = useMemo(() => {
+    const valueMap = {};
+
+    rawBomRecordDetails.forEach((row) => {
+      const key = String(row?.field || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+      valueMap[key] = row?.value ?? "";
+    });
+
+    return [
+      {
+        field: "Location",
+        value:
+          valueMap["location"] ||
+          locationName ||
+          header.location ||
+          "-",
+      },
+      {
+        field: "BOM ID",
+        value:
+          valueMap["bom id"] ||
+          valueMap["bom_id"] ||
+          bomId ||
+          header.bomId ||
+          "-",
+      },
+      {
+        field: "Produced Item",
+        value:
+          valueMap["produced item"] ||
+          valueMap["item"] ||
+          valueMap["produced_item"] ||
+          producedItem ||
+          header.producedItem ||
+          "-",
+      },
+      {
+        field: "Routing ID",
+        value:
+          valueMap["routing id"] ||
+          valueMap["routing_id"] ||
+          header.routingId ||
+          "-",
+      },
+      {
+        field: "Item BOM Routing Priority",
+        value:
+          valueMap["item bom routing priority"] ||
+          valueMap["item_bom_routing_priority"] ||
+          valueMap["priority"] ||
+          header.itemBomRoutingPriority ||
+          header.priority ||
+          "-",
+      },
+    ];
+  }, [rawBomRecordDetails, locationName, bomId, producedItem, header]);
 
   if (loading) {
     return (
