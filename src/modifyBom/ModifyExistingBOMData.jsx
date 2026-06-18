@@ -50,7 +50,7 @@ const ModifyExistingBOMData = () => {
 
                 setItemMasterLookup(lookup);
 
-                console.log("Item Master Lookup", lookup);
+                // console.log("Item Master Lookup", lookup);
             } catch (err) {
                 console.error("Failed to fetch item master", err);
             }
@@ -89,13 +89,14 @@ const ModifyExistingBOMData = () => {
                 setLoading(true);
                 setError("");
 
-                const res = await fetch(`/api/tables/item_bom_routing/${id}`);
+                const res = await fetch(`http://localhost:3000/api/tables/item_bom_routing/${id}`);
                 if (!res.ok) throw new Error("Failed to fetch record");
 
                 const data = await res.json();
+                const rows = normalizeApiArray(data);
 
                 // map backend response -> UI shape
-                const mappedRows = apiRows.map((row, index) => ({
+                const mappedRows = rows.map((row, index) => ({
                     id: row.id || `${row.bom_id || "BOM"}__${row.routing_id || index}`,
                     location: row.location || "-",
                     produced_item: row.produced_item || "-",
@@ -106,7 +107,7 @@ const ModifyExistingBOMData = () => {
                     item_release_flag: row.item_release_flag || "-",
                 }));
 
-                setRecord(mapped);
+                setRecord(mappedRows[0] || null);
             } catch (e) {
                 setError(e.message || "Failed to load record");
             } finally {
@@ -122,6 +123,7 @@ const ModifyExistingBOMData = () => {
         if (Array.isArray(payload?.data)) return payload.data;
         if (Array.isArray(payload?.rows)) return payload.rows;
         if (Array.isArray(payload?.value)) return payload.value;
+        if (payload && typeof payload === "object") return [payload];
         return [];
     };
 
@@ -217,17 +219,17 @@ const ModifyExistingBOMData = () => {
 
                 // Fetch Component Items
                 const componentRows = await fetchRows(
-                    `/api/bigquery/table/bom-consumed/${encodeURIComponent(bomId)}`,
-                    "/api/bigquery/table/bom_consumed?limit=100"
+                    `http://localhost:3000/api/tables/bom_consumed/${encodeURIComponent(bomId)}`,
+                    `http://localhost:3000/api/tables/bom_consumed`,
                 );
                 const filteredComponentRows = filterRowsByBomId(componentRows, bomId);
                 setComponentItemOptions(filteredComponentRows.map(buildOption));
                 setComponentItems(filteredComponentRows.map(buildComponentRow));
-
+                
                 // Fetch Co-Products
                 const coProductRows = await fetchRows(
-                    `/api/bigquery/table/item_bom_routing/${encodeURIComponent(bomId)}`,
-                    "/api/bigquery/table/item_bom_routing?limit=100"
+                    `http://localhost:3000/api/tables/bom_produced/${encodeURIComponent(bomId)}`,
+                    `http://localhost:3000/api/tables/bom_produced`,
                 );
                 const filteredCoProductRows = filterRowsByBomId(coProductRows, bomId);
                 setCoProductOptions(filteredCoProductRows.map(buildOption));
@@ -247,10 +249,10 @@ const ModifyExistingBOMData = () => {
         const fetchDropdownData = async () => {
             try {
                 const componentRes = await fetch(
-                    "/api/bigquery/table/bom_consumed"
+                    "/api/bigquery/table/item_master"
                 );
                 const componentData = await componentRes.json();
-                console.log("Fetched component items:", componentData);
+                // console.log("Fetched component items:", componentData);
 
                 const componentRows = normalizeApiArray(componentData);
                 // console.log("componentRows", componentRows);
@@ -261,14 +263,14 @@ const ModifyExistingBOMData = () => {
                 );
 
                 const coProductRes = await fetch(
-                    "/api/bigquery/table/item_bom_routing"
+                    "/api/bigquery/table/item_master"
                 );
                 const coProductData = await coProductRes.json();
                 // console.log("Fetched co-product items:", coProductData);
 
                 const coProductRows = normalizeApiArray(coProductData);
-                console.log("coRows", coProductRows);
-                console.log("first row", coProductRows[0]);
+                // console.log("coRows", coProductRows);
+                // console.log("first row", coProductRows[0]);
                 setAllCoProductOptions(
                     coProductRows.map(buildOption)
                 );
