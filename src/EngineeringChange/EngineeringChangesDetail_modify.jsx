@@ -32,7 +32,7 @@ const formatDisplayDate = (value) => {
 
   const hh = String(hours).padStart(2, "0");
 
-  return `${yyyy}-${dd}-${mm} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
+  return `${yyyy}-${mm}-${dd} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
 };
 
 const styles = {
