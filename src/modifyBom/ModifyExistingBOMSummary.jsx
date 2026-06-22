@@ -388,7 +388,7 @@ const ModifyExistingBOMSummary = () => {
               </thead>
               <tbody>
                 {addedComponentItems.map((item, index) => (
-                  <tr key={index} style={styles.changesRow}>
+                  <tr key={index} style={styles.changesAltRow}>
                     <td style={styles.changesCell}>{item.component_item || "-"}</td>
                     <td style={styles.changesCell}>{item.component_desc || "-"}</td>
                     <td style={styles.changesCell}>{item.standard_usage || "-"}</td>
@@ -449,7 +449,7 @@ const ModifyExistingBOMSummary = () => {
               </thead>
               <tbody>
                 {addedCoProducts.map((item, index) => (
-                  <tr key={index} style={styles.changesRow}>
+                  <tr key={index} style={styles.changesAltRow}>
                     <td style={styles.changesCell}>{item.item || "-"}</td>
                     <td style={styles.changesCell}>{item.desc || "-"}</td>
                     <td style={styles.changesCell}>{item.qty || "-"}</td>

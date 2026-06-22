@@ -483,9 +483,43 @@ const ModifyExistingBOMData = () => {
         setComponentItems((prev) => prev.filter((_, i) => i !== index));
     };
 
+    const getStandardUsageFieldError = (value) => {
+        const trimmed = String(value).trim();
+        if (trimmed === "") return "";
+        const num = Number(trimmed);
+        if (Number.isNaN(num)) return "Standard Usage must be numeric.";
+        if (num >= 1) return "Standard Usage must be less than 1.";
+        return "";
+    };
+
+    const getQtyProducedFieldError = (value) => {
+        const trimmed = String(value).trim();
+        if (trimmed === "") return "";
+        const num = Number(trimmed);
+        if (Number.isNaN(num)) return "Qty Produced must be numeric.";
+        if (num >= 1) return "Qty Produced must be less than 1.";
+        return "";
+    };
+
+    const getNumericFieldError = (value, label) => {
+        const trimmed = String(value).trim();
+        if (trimmed === "") return "";
+        const num = Number(trimmed);
+        if (Number.isNaN(num)) return `${label} must be numeric and less than 1.`;
+        if (num >= 1) return `${label} must be less than 1.`;
+        return "";
+    };
+
     const hasMissingStandardUsage = componentItems.some(
         (item) => String(item.standard_usage).trim() === ""
     );
+
+    const hasInvalidStandardUsage = componentItems.some((item) => {
+        const trimmed = String(item.standard_usage).trim();
+        if (trimmed === "") return false;
+        const num = Number(trimmed);
+        return !Number.isNaN(num) && num >= 1;
+    });
 
     const hasMissingCoProductFields = coProducts.some((cp) => {
         if (!producedCoProduct) return false;
@@ -494,11 +528,21 @@ const ModifyExistingBOMData = () => {
         return missingItem || missingQty;
     });
 
+    const hasInvalidCoProductQty = coProducts.some((cp) => {
+        if (!producedCoProduct) return false;
+        const trimmed = String(cp.qty ?? "").trim();
+        if (trimmed === "") return false;
+        const num = Number(trimmed);
+        return !Number.isNaN(num) && num >= 1;
+    });
+
+    const hasInvalidNumericValues = hasInvalidStandardUsage || hasInvalidCoProductQty;
+
     useEffect(() => {
-        if (!hasMissingStandardUsage && !hasMissingCoProductFields) {
+        if (!hasMissingStandardUsage && !hasMissingCoProductFields && !hasInvalidNumericValues) {
             setValidationError("");
         }
-    }, [hasMissingStandardUsage, hasMissingCoProductFields]);
+    }, [hasMissingStandardUsage, hasMissingCoProductFields, hasInvalidNumericValues]);
 
     const validateAndNavigate = () => {
         if (hasMissingStandardUsage) {
@@ -511,6 +555,13 @@ const ModifyExistingBOMData = () => {
         if (hasMissingCoProductFields) {
             setValidationError(
                 "Please fill in Item and Qty Produced for all co-product rows before moving forward."
+            );
+            return;
+        }
+
+        if (hasInvalidNumericValues) {
+            setValidationError(
+                "Standard Usage and Qty Produced values must be numeric and less than 1."
             );
             return;
         }
@@ -573,7 +624,8 @@ const ModifyExistingBOMData = () => {
     const canProceed =
         !!record &&
         !hasMissingStandardUsage &&
-        !hasMissingCoProductFields;
+        !hasMissingCoProductFields &&
+        !hasInvalidNumericValues;
 
     if (loading) {
         return <div style={styles.page}><div style={styles.wrapper}>Loading...</div></div>;
@@ -734,14 +786,23 @@ const ModifyExistingBOMData = () => {
                                             readOnly
                                         />
 
-                                        <input
-                                            style={styles.input}
-                                            placeholder="Standard Usage"
-                                            value={item.standard_usage}
-                                            onChange={(e) =>
-                                                updateComponent(index, "standard_usage", e.target.value)
-                                            }
-                                        />
+                                        <div style={styles.inputWithError}>
+                                            <input
+                                                style={
+                                                    getStandardUsageFieldError(item.standard_usage)
+                                                        ? styles.inputError
+                                                        : styles.input
+                                                }
+                                                placeholder="Standard Usage"
+                                                value={item.standard_usage}
+                                                onChange={(e) => {
+                                                    updateComponent(index, "standard_usage", e.target.value);
+                                                }}
+                                            />
+                                            <div style={styles.inlineError}>
+                                                {getStandardUsageFieldError(item.standard_usage)}
+                                            </div>
+                                        </div>
 
                                         <button
                                             style={styles.removeBtn}
@@ -811,14 +872,23 @@ const ModifyExistingBOMData = () => {
                                                 value={cp.desc}
                                                 readOnly
                                             />
-                                            <input
-                                                style={styles.input}
-                                                placeholder="Qty Produced"
-                                                value={cp.qty}
-                                                onChange={(e) =>
-                                                    updateCoProduct(index, "qty", e.target.value)
-                                                }
-                                            />
+                                            <div style={styles.inputWithError}>
+                                                <input
+                                                    style={
+                                                        getQtyProducedFieldError(cp.qty)
+                                                            ? styles.inputError
+                                                            : styles.input
+                                                    }
+                                                    placeholder="Qty Produced"
+                                                    value={cp.qty}
+                                                    onChange={(e) => {
+                                                        updateCoProduct(index, "qty", e.target.value);
+                                                    }}
+                                                />
+                                                <div style={styles.inlineError}>
+                                                    {getQtyProducedFieldError(cp.qty)}
+                                                </div>
+                                            </div>
                                             <button
                                                 style={styles.removeBtn}
                                                 onClick={() => removeCoProduct(index)}
@@ -835,10 +905,6 @@ const ModifyExistingBOMData = () => {
                     </div>
                 )}
 
-                {/* Footer */}
-                {validationError && (
-                    <div style={styles.error}>{validationError}</div>
-                )}
                 <div style={styles.footer}>
                     <button
                         disabled={!canProceed}
@@ -1071,6 +1137,32 @@ const styles = {
         padding: "0 12px",
         fontSize: "14px",
         boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inputWithError: {
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        gap: "4px",
+    },
+
+    inputError: {
+        width: "100%",
+        height: "42px",
+        borderRadius: "4px",
+        border: "1px solid #ef4444",
+        padding: "0 12px",
+        fontSize: "14px",
+        boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inlineError: {
+        color: "#dc2626",
+        fontSize: "12px",
+        fontWeight: 600,
+        minHeight: "18px",
     },
 
     removeBtn: {
@@ -1122,5 +1214,15 @@ const styles = {
         color: "#b91c1c",
         fontWeight: 600,
         marginTop: "16px",
+    },
+    validationBanner: {
+        background: "#fee2e2",
+        color: "#b91c1c",
+        border: "1px solid #fca5a5",
+        borderRadius: "6px",
+        padding: "14px 16px",
+        margin: "16px 0",
+        fontSize: "14px",
+        fontWeight: 600,
     },
 };
