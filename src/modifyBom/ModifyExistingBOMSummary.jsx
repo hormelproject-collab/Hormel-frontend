@@ -18,12 +18,32 @@ const ModifyExistingBOMSummary = () => {
   const initialCoProductsFromState = routerLocation?.state?.initialCoProducts ?? [];
 
   const resolvedRoutingId = useMemo(() => {
-    return (
+    const directRoutingId =
       record?.routing_id ||
       record?.routingId ||
       record?.resourceInfo?.routingId ||
-      ""
-    );
+      record?.resourceInfo?.routing_id ||
+      "";
+
+    if (directRoutingId) {
+      return directRoutingId;
+    }
+
+    const produced =
+      record?.produced_item ||
+      record?.item ||
+      "";
+
+    const resource =
+      record?.resource ||
+      record?.resourceInfo?.resource ||
+      "";
+
+    if (produced && resource) {
+      return `ROUTING_${produced}_${resource}`;
+    }
+
+    return "";
   }, [record]);
 
   const resolvedPriority = useMemo(() => {
@@ -137,6 +157,45 @@ const ModifyExistingBOMSummary = () => {
   const addedCoProducts = coProducts.filter(
     (cp) => cp.isNew || !cp.original_item
   );
+  const coProductChanges = coProducts.flatMap((cp, index) => [
+    {
+      field: `Co-Product Item ${index + 1}`,
+      original: cp.original_item || cp.item || "-",
+      updated: cp.item || "-",
+    },
+    {
+      field: `Co-Product Item Description ${index + 1}`,
+      original: cp.original_desc || "-",
+      updated: cp.desc || "-",
+    },
+    {
+      field: `Co-Product Quantity Produced ${index + 1}`,
+      original: cp.original_qty || "-",
+      updated: cp.qty || "-",
+    },
+  ]);
+
+  const componentChanges = componentItems.flatMap((item, index) => [
+    {
+      field: `Component Item ${index + 1}`,
+      original: item.original_component_item || item.component_item || "-",
+      updated: item.component_item || "-",
+    },
+    {
+      field: `Component Item Description ${index + 1}`,
+      original: item.original_component_desc || item.component_desc || "-",
+      updated: item.component_desc || "-",
+    },
+    {
+      field: `Component Standard Usage ${index + 1}`,
+      original: item.original_standard_usage || item.standard_usage || "-",
+      updated: item.standard_usage || "-",
+    },
+  ]);
+
+  const handleReturnToMainMenu = () => {
+    navigate("/");
+  };
 
   const handleSubmit = async () => {
     try {
@@ -173,48 +232,57 @@ const ModifyExistingBOMSummary = () => {
                   : "",
               };
             }),
+            coProductItems: coProducts.map((cp) => {
+              const parsedStandardUsage = Number(
+                cp?.standard_usage ?? cp?.qty ?? cp?.qty_produced_per
+              );
+              return {
+                coProductItem: cp?.item || cp?.co_product_item || "",
+                standardUsage: Number.isFinite(parsedStandardUsage)
+                  ? parsedStandardUsage
+                  : "",
+              };
+            }),
           },
         ],
-notes: notes || "",
+
+        notes: notes || "",
       };
 
-console.log("Submitting BOM modification:", payload);
+      console.log("Submitting BOM modification:", payload);
 
-const response = await fetch("http://localhost:3000/api/tables/modify-bom", {
-  method: "PUT",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify(payload),
-});
+      const response = await fetch("http://localhost:3000/api/tables/modify-bom", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
 
-const result = await response.json();
+      const result = await response.json();
 
-if (!response.ok) {
-  throw new Error(
-    result?.message ||
-    result?.error ||
-    `Failed to submit BOM changes (${response.status})`
-  );
-}
+      if (!response.ok) {
+        throw new Error(
+          result?.message ||
+          result?.error ||
+          `Failed to submit BOM changes (${response.status})`
+        );
+      }
 
-console.log("BOM modification successful:", result);
-setSuccessMessage("✓ BOM changes submitted successfully!");
+      console.log("BOM modification successful:", result);
+      setSuccessMessage("✓ BOM changes submitted successfully!");
 
-setTimeout(() => {
-  navigate("/");
-}, 2000);
     } catch (error) {
-  console.error("Error submitting BOM changes:", error);
-  setSuccessMessage(`✗ Error: ${error.message}`);
-} finally {
-  setIsSubmitting(false);
-}
+      console.error("Error submitting BOM changes:", error);
+      setSuccessMessage(`✗ Error: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-return (
-  <>
-    <style>{`
+  return (
+    <>
+      <style>{`
         @keyframes slideIn {
           from {
             transform: translateX(400px);
@@ -426,7 +494,7 @@ return (
       </div>
     </div>
   </>
-);
+  );
 };
 
 const styles = {
@@ -553,6 +621,20 @@ const styles = {
     display: "flex",
     justifyContent: "flex-end",
     marginTop: "8px",
+  },
+  secondaryBtn: {
+    border: "1px solid #6da0e1",
+    borderRadius: "3px",
+    height: "28px",
+    padding: "0 12px",
+    fontSize: "12px",
+    fontWeight: 500,
+    color: "#1e63b5",
+    background: "#fff",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
   },
   confirmBtn: {
     background: "#166534",
