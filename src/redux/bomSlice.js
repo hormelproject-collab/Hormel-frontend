@@ -275,6 +275,24 @@ const locationsAdapter = createEntityAdapter({
 const initialState = {
   selectedAction: null,
 
+  modifySelectState: {
+    searchBy1: "",
+    searchBy2: "",
+    query1: "",
+    query2: "",
+    rows: [],
+    selectedRecord: null,
+  },
+
+  modifyExistingBomState: {
+    record: null,
+    componentItems: [],
+    initialComponentItems: [],
+    coProducts: [],
+    initialCoProducts: [],
+    producedCoProduct: false,
+  },
+
   items: itemsAdapter.getInitialState({
     loading: false,
     error: null,
@@ -316,6 +334,44 @@ const bomSlice = createSlice({
       state.resourceComponentConfigs[key] = {
         ...existing,
         ...config,
+      };
+    },
+
+    setModifySelectState: (state, action) => {
+      const payload = action.payload || {};
+      state.modifySelectState = {
+        ...state.modifySelectState,
+        ...payload,
+      };
+    },
+
+    clearModifySelectState: (state) => {
+      state.modifySelectState = {
+        searchBy1: "",
+        searchBy2: "",
+        query1: "",
+        query2: "",
+        rows: [],
+        selectedRecord: null,
+      };
+    },
+
+    setModifyExistingBomState: (state, action) => {
+      const payload = action.payload || {};
+      state.modifyExistingBomState = {
+        ...state.modifyExistingBomState,
+        ...payload,
+      };
+    },
+
+    clearModifyExistingBomState: (state) => {
+      state.modifyExistingBomState = {
+        record: null,
+        componentItems: [],
+        initialComponentItems: [],
+        coProducts: [],
+        initialCoProducts: [],
+        producedCoProduct: false,
       };
     },
 
@@ -462,6 +518,10 @@ export const {
   toggleLocation,
   clearLocations,
   setResourceComponentConfig,
+  setModifySelectState,
+  clearModifySelectState,
+  setModifyExistingBomState,
+  clearModifyExistingBomState,
   ensureResourceComponentConfig,
   replicateResourceComponentInfoToLocations,
   clearResourceComponentConfigs,
@@ -505,6 +565,9 @@ export const selectHasInactiveLocationsSelected = createSelector(
   [selectSelectedLocations],
   (selected) => selected.some((x) => !isActiveStatus(x.status))
 );
+
+export const selectModifySelectState = (state) => state.bom.modifySelectState;
+export const selectModifyExistingBomState = (state) => state.bom.modifyExistingBomState;
 
 export const selectItemsLoading = (state) => state.bom.items.loading;
 export const selectItemsError = (state) => state.bom.items.error;

@@ -12,6 +12,10 @@ const ModifyExistingBOMSummary = () => {
   const record = routerLocation?.state?.record ?? {};
   const componentItems = routerLocation?.state?.componentItems ?? [];
   const coProducts = routerLocation?.state?.coProducts ?? [];
+  const removedComponentItems = routerLocation?.state?.removedComponentItems ?? [];
+  const removedCoProducts = routerLocation?.state?.removedCoProducts ?? [];
+  const initialComponentItemsFromState = routerLocation?.state?.initialComponentItems ?? [];
+  const initialCoProductsFromState = routerLocation?.state?.initialCoProducts ?? [];
 
   const resolvedRoutingId = useMemo(() => {
     return (
@@ -42,41 +46,97 @@ const ModifyExistingBOMSummary = () => {
     );
   }, [record]);
 
-  const componentChanges = componentItems.flatMap((item, index) => [
-    {
-      field: `Component Item ${index + 1}`,
-      original: item.original_component_item || item.component_item || "-",
-      updated: item.component_item || "-",
-    },
-    {
-      field: `Component Item Description ${index + 1}`,
-      original: item.original_component_desc || "-",
-      updated: item.component_desc || "-",
-    },
-    {
-      field: `Standard Usage ${index + 1}`,
-      original: item.original_standard_usage || "-",
-      updated: item.standard_usage || "-",
-    },
-  ]);
+  const existingComponentItems = componentItems
+    .filter((item) => !item.isNew && item.original_component_item)
+    .map((item) => {
+      const originalUsage = String(item.original_standard_usage ?? item.standard_usage ?? "");
+      const updatedUsage = String(item.standard_usage ?? "");
+      const hasStandardUsageChanged = originalUsage.trim() !== updatedUsage.trim();
+      return {
+        ...item,
+        original_standard_usage: originalUsage,
+        updated_standard_usage: hasStandardUsageChanged ? updatedUsage : "No Changes",
+        hasStandardUsageChanged,
+      };
+    });
 
-  const coProductChanges = coProducts.flatMap((cp, index) => [
-    {
-      field: `Co-Product Item ${index + 1}`,
-      original: cp.original_item || cp.item || "-",
-      updated: cp.item || "-",
-    },
-    {
-      field: `Co-Product Item Description ${index + 1}`,
-      original: cp.original_desc || "-",
-      updated: cp.desc || "-",
-    },
-    {
-      field: `Co-Product Quantity Produced ${index + 1}`,
-      original: cp.original_qty || "-",
-      updated: cp.qty || "-",
-    },
-  ]);
+  // Include removed original component items (marked as removed in navigation state)
+  const removedMappedComponentItems = removedComponentItems.map((item) => {
+    console.log("Mapping removed component item:", item);
+    const originalUsage = String(item.original_standard_usage ?? item.standard_usage ?? "");
+    const key = String(item.original_component_item || item.component_item || "");
+    const fallback =
+      initialComponentItemsFromState.find((it) =>
+        String(it.original_component_item || it.component_item || "").trim() === key.trim()
+      ) || {};
+    const compDesc =
+      item.component_desc ||
+      item.desc ||
+      item.original_component_desc ||
+      item.original_desc ||
+      fallback.component_desc ||
+      fallback.componentDesc ||
+      fallback.desc ||
+      "";
+    return {
+      ...item,
+      original_standard_usage: originalUsage,
+      component_desc: compDesc,
+      updated_standard_usage: "Item Removed",
+      hasStandardUsageChanged: true,
+    };
+  });
+
+  const finalExistingComponentItems = [...existingComponentItems, ...removedMappedComponentItems];
+
+  const addedComponentItems = componentItems.filter(
+    (item) => item.isNew || !item.original_component_item
+  );
+
+  const existingCoProducts = coProducts
+    .filter((cp) => !cp.isNew && cp.original_item)
+    .map((cp) => {
+      const originalQty = String(cp.original_qty ?? cp.qty ?? "");
+      const updatedQty = String(cp.qty ?? "");
+      const hasQtyChanged = originalQty.trim() !== updatedQty.trim();
+      return {
+        ...cp,
+        original_qty: originalQty,
+        updated_qty: hasQtyChanged ? updatedQty : "No Changes",
+        hasQtyChanged,
+      };
+    });
+
+  const removedMappedCoProducts = removedCoProducts.map((cp) => {
+    const originalQty = String(cp.original_qty ?? cp.qty ?? "");
+    const key = String(cp.original_item || cp.item || "");
+    const fallback =
+      initialCoProductsFromState.find((it) =>
+        String(it.original_item || it.item || "").trim() === key.trim()
+      ) || {};
+    const coDesc =
+      cp.desc ||
+      cp.component_desc ||
+      cp.original_desc ||
+      cp.original_component_desc ||
+      fallback.desc ||
+      fallback.component_desc ||
+      fallback.original_desc ||
+      "";
+    return {
+      ...cp,
+      original_qty: originalQty,
+      desc: coDesc,
+      updated_qty: "Item Removed",
+      hasQtyChanged: true,
+    };
+  });
+
+  const finalExistingCoProducts = [...existingCoProducts, ...removedMappedCoProducts];
+
+  const addedCoProducts = coProducts.filter(
+    (cp) => cp.isNew || !cp.original_item
+  );
 
   const handleSubmit = async () => {
     try {
@@ -206,47 +266,38 @@ return (
                 <td style={styles.summaryCell}>Item Release Flag</td>
                 <td style={styles.summaryCell}>{record.item_release_flag || "-"}</td>
               </tr>
-              <tr style={styles.summaryRow}>
-                <td style={styles.summaryCell}>Routing ID</td>
-                <td style={styles.summaryCell}>{resolvedRoutingId || "-"}</td>
-              </tr>
-              <tr style={styles.summaryRow}>
-                <td style={styles.summaryCell}>Priority</td>
-                <td style={styles.summaryCell}>
-                  {resolvedPriority === "" ? "-" : resolvedPriority}
-                </td>
-              </tr>
             </tbody>
           </table>
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>Component Item Changes</h2>
-          {componentChanges.length === 0 ? (
-            <div style={styles.emptyBox}>No component item changes were made.</div>
+          <h2 style={styles.sectionTitle}>Existing Component Item Values</h2>
+          {finalExistingComponentItems.length === 0 ? (
+            <div style={styles.emptyBox}>No existing component item values were changed.</div>
           ) : (
             <table style={styles.changesTable}>
               <thead>
                 <tr>
-                  <th style={styles.changesHeader}>Field</th>
-                  <th style={styles.changesHeader}>Original Value</th>
-                  <th style={styles.changesHeader}>Updated Value</th>
+                  <th style={styles.changesHeader}>Component Item</th>
+                  <th style={styles.changesHeader}>Description</th>
+                  <th style={styles.changesHeader}>Original Standard Usage</th>
+                  <th style={styles.changesHeader}>Updated Standard Usage</th>
                 </tr>
               </thead>
               <tbody>
-                {componentChanges.map((row, index) => (
+                {finalExistingComponentItems.map((item, index) => (
                   <tr
                     key={index}
                     style={
-                      row.field.includes("Standard Usage") &&
-                        String(row.original).trim() !== String(row.updated).trim()
+                      item.hasStandardUsageChanged
                         ? styles.changesAltRow
                         : styles.changesRow
                     }
                   >
-                    <td style={styles.changesCell}>{row.field}</td>
-                    <td style={styles.changesCell}>{row.original}</td>
-                    <td style={styles.changesCell}>{row.updated}</td>
+                    <td style={styles.changesCell}>{item.component_item || "-"}</td>
+                    <td style={styles.changesCell}>{item.component_desc || "-"}</td>
+                    <td style={styles.changesCell}>{item.original_standard_usage || "-"}</td>
+                    <td style={styles.changesCell}>{item.updated_standard_usage || "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -255,32 +306,85 @@ return (
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>Co-Product Changes</h2>
-          {coProductChanges.length === 0 ? (
-            <div style={styles.emptyBox}>No co-product changes were made.</div>
+          <h2 style={styles.sectionTitle}>Added Component Values</h2>
+          {addedComponentItems.length === 0 ? (
+            <div style={styles.emptyBox}>No new component items were added.</div>
           ) : (
             <table style={styles.changesTable}>
               <thead>
                 <tr>
-                  <th style={styles.changesHeader}>Field</th>
-                  <th style={styles.changesHeader}>Original Value</th>
-                  <th style={styles.changesHeader}>Updated Value</th>
+                  <th style={styles.changesHeader}>Component Item</th>
+                  <th style={styles.changesHeader}>Description</th>
+                  <th style={styles.changesHeader}>Standard Usage</th>
                 </tr>
               </thead>
               <tbody>
-                {coProductChanges.map((row, index) => (
+                {addedComponentItems.map((item, index) => (
+                  <tr key={index} style={styles.changesRow}>
+                    <td style={styles.changesCell}>{item.component_item || "-"}</td>
+                    <td style={styles.changesCell}>{item.component_desc || "-"}</td>
+                    <td style={styles.changesCell}>{item.standard_usage || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Existing Co-Product Values</h2>
+          {finalExistingCoProducts.length === 0 ? (
+            <div style={styles.emptyBox}>No existing co-product values were changed.</div>
+          ) : (
+            <table style={styles.changesTable}>
+              <thead>
+                <tr>
+                  <th style={styles.changesHeader}>Co-Product Item</th>
+                  <th style={styles.changesHeader}>Description</th>
+                  <th style={styles.changesHeader}>Original Qty Produced</th>
+                  <th style={styles.changesHeader}>Updated Qty Produced</th>
+                </tr>
+              </thead>
+              <tbody>
+                {finalExistingCoProducts.map((item, index) => (
                   <tr
                     key={index}
                     style={
-                      row.field.includes("Co-Product Quantity Produced") &&
-                        String(row.original).trim() !== String(row.updated).trim()
+                      item.hasQtyChanged
                         ? styles.changesAltRow
                         : styles.changesRow
                     }
                   >
-                    <td style={styles.changesCell}>{row.field}</td>
-                    <td style={styles.changesCell}>{row.original}</td>
-                    <td style={styles.changesCell}>{row.updated}</td>
+                    <td style={styles.changesCell}>{item.item || "-"}</td>
+                    <td style={styles.changesCell}>{item.desc || "-"}</td>
+                    <td style={styles.changesCell}>{item.original_qty || "-"}</td>
+                    <td style={styles.changesCell}>{item.updated_qty || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Added Co-Product Values</h2>
+          {addedCoProducts.length === 0 ? (
+            <div style={styles.emptyBox}>No new co-product values were added.</div>
+          ) : (
+            <table style={styles.changesTable}>
+              <thead>
+                <tr>
+                  <th style={styles.changesHeader}>Co-Product Item</th>
+                  <th style={styles.changesHeader}>Description</th>
+                  <th style={styles.changesHeader}>Qty Produced</th>
+                </tr>
+              </thead>
+              <tbody>
+                {addedCoProducts.map((item, index) => (
+                  <tr key={index} style={styles.changesRow}>
+                    <td style={styles.changesCell}>{item.item || "-"}</td>
+                    <td style={styles.changesCell}>{item.desc || "-"}</td>
+                    <td style={styles.changesCell}>{item.qty || "-"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -1,4 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { setModifySelectState, selectModifySelectState } from "../redux/bomSlice";
 import { useNavigate } from "react-router-dom";
 
 const SEARCH_FIELDS = [
@@ -26,12 +28,10 @@ const buildRoutingId = (producedItem, resource) => {
 
 const ModifySelectExistingBOM = () => {
   const navigate = useNavigate();
-
-  const [searchBy1, setSearchBy1] = useState("");
-  const [searchBy2, setSearchBy2] = useState("");
-  const [query1, setQuery1] = useState("");
-  const [query2, setQuery2] = useState("");
-  const [rows, setRows] = useState([]);
+  const dispatch = useDispatch();
+  const { searchBy1, searchBy2, query1, query2, rows } = useSelector(
+    selectModifySelectState
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -65,17 +65,25 @@ const ModifySelectExistingBOM = () => {
           item_release_flag: row.item_release_flag || "-",
         }));
 
-        setRows(mappedRows);
+        dispatch(
+          setModifySelectState({
+            rows: mappedRows,
+          })
+        );
       } catch (e) {
         console.error("Failed to load existing BOM rows:", e);
         setError(e.message || "Failed to load BOM data");
-        setRows([]);
+        dispatch(setModifySelectState({ rows: [] }));
       } finally {
         setLoading(false);
       }
     };
 
-    fetchBomData();
+    if (!rows || rows.length === 0) {
+      fetchBomData();
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   const filteredRows = useMemo(() => {
@@ -136,7 +144,9 @@ const ModifySelectExistingBOM = () => {
                   <label style={styles.label}>Search By (Criteria 1)</label>
                   <select
                     value={searchBy1}
-                    onChange={(e) => setSearchBy1(e.target.value)}
+                    onChange={(e) =>
+                      dispatch(setModifySelectState({ searchBy1: e.target.value }))
+                    }
                     style={styles.select}
                   >
                     <option value="">Select</option>
@@ -152,7 +162,9 @@ const ModifySelectExistingBOM = () => {
                   <label style={styles.label}>Search Value</label>
                   <input
                     value={query1}
-                    onChange={(e) => setQuery1(e.target.value)}
+                    onChange={(e) =>
+                      dispatch(setModifySelectState({ query1: e.target.value }))
+                    }
                     placeholder={searchBy1 ? `Search ${searchBy1}` : ""}
                     style={styles.input}
                   />
@@ -164,7 +176,9 @@ const ModifySelectExistingBOM = () => {
                   <label style={styles.label}>Search By (Criteria 2)</label>
                   <select
                     value={searchBy2}
-                    onChange={(e) => setSearchBy2(e.target.value)}
+                    onChange={(e) =>
+                      dispatch(setModifySelectState({ searchBy2: e.target.value }))
+                    }
                     style={styles.select}
                   >
                     <option value="">Select</option>
@@ -180,7 +194,9 @@ const ModifySelectExistingBOM = () => {
                   <label style={styles.label}>Search Value</label>
                   <input
                     value={query2}
-                    onChange={(e) => setQuery2(e.target.value)}
+                    onChange={(e) =>
+                      dispatch(setModifySelectState({ query2: e.target.value }))
+                    }
                     placeholder={searchBy2 ? `Search ${searchBy2}` : ""}
                     style={styles.input}
                   />
