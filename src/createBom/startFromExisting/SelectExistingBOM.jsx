@@ -108,21 +108,70 @@ const SelectExistingBOM = () => {
 
     fetchRows();
   }, []);
+const getSearchValue = (row, field) => {
+  switch (field) {
+    case "location":
+      return row.location || "";
 
-  const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-      const value1 = String(row[searchBy1] ?? "").toLowerCase();
-      const value2 = String(row[searchBy2] ?? "").toLowerCase();
+    case "item":
+    case "produced_item":
+      return row.item || row.produced_item || row.producedItem || "";
 
-      const match1 =
-        !searchBy1 || !query1 || value1.includes(query1.toLowerCase());
+    case "item_description":
+    case "produced_item_description":
+      return (
+        row.item_description ||
+        row.produced_item_description ||
+        row.itemDescription ||
+        row.producedItemDescription ||
+        ""
+      );
 
-      const match2 =
-        !searchBy2 || !query2 || value2.includes(query2.toLowerCase());
+    case "item_release_flag":
+      return row.item_release_flag || row.itemReleaseFlag || "";
 
-      return match1 && match2; // AND logic
-    });
-  }, [rows, searchBy1, searchBy2, query1, query2]);
+    case "bom_id":
+    case "bomId":
+      return row.bom_id || row.bomId || "";
+
+    case "resource":
+      return row.resource || "";
+
+    case "routing_id":
+    case "routingId":
+      return row.routing_id || row.routingId || "";
+
+    default:
+      return "";
+  }
+};
+``
+
+const filteredRows = useMemo(() => {
+  return rows.filter((row) => {
+    const value1 = String(getSearchValue(row, searchBy1) ?? "")
+      .trim()
+      .toLowerCase();
+
+    const value2 = String(getSearchValue(row, searchBy2) ?? "")
+      .trim()
+      .toLowerCase();
+
+    const search1 = String(query1 ?? "")
+      .trim()
+      .toLowerCase();
+
+    const search2 = String(query2 ?? "")
+      .trim()
+      .toLowerCase();
+
+    const match1 = !searchBy1 || !search1 ? true : value1 === search1;
+    const match2 = !searchBy2 || !search2 ? true : value2 === search2;
+
+    return match1 && match2;
+  });
+}, [rows, searchBy1, searchBy2, query1, query2]);
+
 
   const handleRowClick = (row) => {
     setSelectedRowId(row.id);

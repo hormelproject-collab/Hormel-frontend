@@ -393,12 +393,14 @@ export default function EngineeringChangeDetailAdd() {
                     <div style={styles.detailRow}>
                       <span style={styles.label}>Item BOM Routing Priority: </span>
                       <span style={styles.value}>
+
                         {toText(
                           row.itemBomRoutingPriority ||
-                            row.item_bom_routing_priority ||
-                            detail?.itemBomRoutingPriority ||
-                            detail?.item_bom_routing_priority
+                          row.item_bom_routing_priority ||
+                          detail?.itemBomRoutingPriority ||
+                          detail?.item_bom_routing_priority
                         ) || "-"}
+
                       </span>
                     </div>
 

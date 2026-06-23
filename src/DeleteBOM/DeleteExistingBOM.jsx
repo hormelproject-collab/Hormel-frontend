@@ -367,23 +367,26 @@ export default function DeleteExistingBomStep1() {
     };
   }, []);
 
-  const filteredRows = useMemo(() => {
+const filteredRows = useMemo(() => {
     return rows.filter((row) => {
-      const value1 = getRowValueByCriteria(row, criteria1Field).toLowerCase();
-      const value2 = getRowValueByCriteria(row, criteria2Field).toLowerCase();
+        const value1 = String(getRowValueByCriteria(row, criteria1Field) ?? "").trim().toLowerCase();
+        const value2 = String(getRowValueByCriteria(row, criteria2Field) ?? "").trim().toLowerCase();
+        const search1 = String(criteria1Value ?? "").trim().toLowerCase();
+        const search2 = String(criteria2Value ?? "").trim().toLowerCase();
 
-      const search1 = criteria1Value.trim().toLowerCase();
-      const search2 = criteria2Value.trim().toLowerCase();
+        const match1 =
+            !criteria1Field || !search1
+                ? true
+                : value1 === search1;
 
-      const match1 =
-        !criteria1Field || !search1 ? true : value1.includes(search1);
+        const match2 =
+            !criteria2Field || !search2
+                ? true
+                : value2 === search2;
 
-      const match2 =
-        !criteria2Field || !search2 ? true : value2.includes(search2);
-
-      return match1 && match2;
+        return match1 && match2;
     });
-  }, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
+}, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
 
   const selectedCount = selectedIds.length;
 

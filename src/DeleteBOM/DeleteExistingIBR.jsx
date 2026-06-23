@@ -7,20 +7,15 @@ const ITEM_BOM_ROUTING_API = `${BASE_URL}/api/tables/existing-item-bom-routing-s
 const styles = {
     page: {
         minHeight: "100vh",
-        background: "#f3f4f6",
+        background: "#ececec",
         fontFamily:
             'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         color: "#111827",
     },
-    topRule: {
-        height: "8px",
-        background: "#e5e7eb",
-        width: "100%",
-    },
     shell: {
-        maxWidth: "1080px",
+        maxWidth: "1220px",
         margin: "0 auto",
-        padding: "24px 18px 40px",
+        padding: "18px 24px 40px",
     },
     backBtn: {
         display: "inline-flex",
@@ -33,43 +28,53 @@ const styles = {
         fontWeight: 500,
         padding: 0,
         cursor: "pointer",
-        marginBottom: "8px",
+        marginBottom: "10px",
     },
     title: {
-        margin: "0 0 18px",
-        fontSize: "20px",
+        margin: "0 0 22px",
+        fontSize: "24px",
         lineHeight: 1.2,
         fontWeight: 700,
         color: "#111827",
     },
+
     filterStack: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: "12px",
-        marginBottom: "18px",
-        maxWidth: "960px",
-    },
-    fieldGroup: {
         display: "flex",
         flexDirection: "column",
-        gap: "10px",
+        gap: "14px",
+        marginBottom: "20px",
+        maxWidth: "1150px",
+    },
+    criteriaRow: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "16px",
+        alignItems: "center",
+    },
+    fieldGroup: {
+        position: "relative",
     },
     fieldLabel: {
+        position: "absolute",
+        top: "-7px",
+        left: "14px",
         fontSize: "11px",
         color: "#2563eb",
-        marginBottom: "-4px",
-        paddingLeft: "2px",
+        background: "#ececec",
+        padding: "0 4px",
+        zIndex: 2,
+        lineHeight: 1,
     },
     selectWrap: {
         position: "relative",
     },
     select: {
         width: "100%",
-        height: "42px",
-        border: "1px solid #c7cbd1",
+        height: "50px",
+        border: "1px solid #bcc3cc",
         borderRadius: "2px",
-        padding: "0 38px 0 14px",
-        fontSize: "13px",
+        padding: "0 42px 0 16px",
+        fontSize: "14px",
         color: "#111827",
         outline: "none",
         appearance: "none",
@@ -78,11 +83,11 @@ const styles = {
     },
     input: {
         width: "100%",
-        height: "42px",
-        border: "1px solid #c7cbd1",
+        height: "50px",
+        border: "1px solid #bcc3cc",
         borderRadius: "2px",
-        padding: "0 14px",
-        fontSize: "13px",
+        padding: "0 16px",
+        fontSize: "14px",
         color: "#111827",
         outline: "none",
         background: "#ffffff",
@@ -91,94 +96,13 @@ const styles = {
     selectArrow: {
         position: "absolute",
         top: "50%",
-        right: "12px",
+        right: "14px",
         transform: "translateY(-50%)",
         pointerEvents: "none",
         color: "#6b7280",
         fontSize: "12px",
     },
-    tableCard: {
-        background: "#ffffff",
-        border: "1px solid #d1d5db",
-        borderRadius: "3px",
-        boxShadow: "0 2px 3px rgba(0,0,0,0.08)",
-        overflow: "hidden",
-    },
-    tableScroller: {
-        overflowX: "auto",
-    },
-    table: {
-        width: "100%",
-        borderCollapse: "collapse",
-        tableLayout: "fixed",
-    },
-    tableHeadRow: {
-        background: "#f3f4f6",
-    },
-    th: {
-        textAlign: "left",
-        fontSize: "12px",
-        fontWeight: 500,
-        color: "#111827",
-        padding: "13px 12px",
-        borderBottom: "1px solid #d1d5db",
-        whiteSpace: "nowrap",
-    },
-    td: {
-        fontSize: "12px",
-        color: "#111827",
-        padding: "12px 12px",
-        borderBottom: "1px solid #d1d5db",
-        verticalAlign: "middle",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-    },
-    checkboxCell: {
-        width: "34px",
-        textAlign: "center",
-        padding: "0 0 0 12px",
-    },
-    checkbox: {
-        width: "15px",
-        height: "15px",
-        cursor: "pointer",
-    },
-    footerRow: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginTop: "18px",
-        gap: "16px",
-    },
-    selectionText: {
-        fontSize: "12px",
-        color: "#374151",
-    },
-    confirmBtn: {
-        minWidth: "214px",
-        height: "30px",
-        border: "none",
-        borderRadius: "3px",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "8px",
-        fontSize: "12px",
-        fontWeight: 500,
-        textTransform: "uppercase",
-        letterSpacing: "0.1px",
-        cursor: "pointer",
-    },
-    confirmBtnDisabled: {
-        background: "#e5e5e5",
-        color: "#a8a8a8",
-        cursor: "not-allowed",
-    },
-    confirmBtnEnabled: {
-        background: "#2563eb",
-        color: "#ffffff",
-    },
+
     stateBox: {
         marginBottom: "14px",
         padding: "10px 12px",
@@ -195,15 +119,6 @@ const styles = {
         color: "#b91c1c",
         border: "1px solid #fecaca",
     },
-    emptyRow: {
-        textAlign: "center",
-        color: "#6b7280",
-        padding: "22px 12px",
-        fontSize: "12px",
-    },
-    highlightedCoProductRow: {
-        background: "#fef9c3",
-    },
     warningBox: {
         marginBottom: "14px",
         padding: "10px 12px",
@@ -212,7 +127,69 @@ const styles = {
         background: "#fff7ed",
         color: "#9a3412",
         border: "1px solid #fdba74",
+        maxWidth: "1150px",
     },
+
+    tableCard: {
+        background: "#ffffff",
+        border: "1px solid #d1d5db",
+        borderRadius: "3px",
+        boxShadow: "0 2px 3px rgba(0,0,0,0.08)",
+        overflow: "hidden",
+        maxWidth: "1150px",
+    },
+    tableScroller: {
+        overflowX: "auto",
+    },
+    table: {
+        width: "100%",
+        borderCollapse: "collapse",
+        tableLayout: "fixed",
+    },
+    tableHeadRow: {
+        background: "#f3f4f6",
+    },
+    th: {
+        textAlign: "left",
+        fontSize: "12px",
+        fontWeight: 600,
+        color: "#111827",
+        padding: "13px 12px",
+        borderBottom: "1px solid #d1d5db",
+        whiteSpace: "nowrap",
+    },
+    td: {
+        fontSize: "12px",
+        color: "#111827",
+        padding: "12px 12px",
+        borderBottom: "1px solid #d1d5db",
+        verticalAlign: "middle",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        background: "#ffffff",
+    },
+    checkboxCell: {
+        width: "34px",
+        textAlign: "center",
+        padding: "0 0 0 12px",
+    },
+    checkbox: {
+        width: "15px",
+        height: "15px",
+        cursor: "pointer",
+    },
+    emptyRow: {
+        textAlign: "center",
+        color: "#6b7280",
+        padding: "22px 12px",
+        fontSize: "12px",
+    },
+
+    highlightedCoProductRow: {
+        background: "#fef08a",
+    },
+
     legendRow: {
         display: "flex",
         alignItems: "center",
@@ -220,22 +197,60 @@ const styles = {
         marginTop: "12px",
         fontSize: "12px",
         color: "#374151",
+        maxWidth: "1150px",
     },
     legendColor: {
         width: "18px",
         height: "14px",
-        background: "#fef9c3",
-        border: "1px solid #e5e7eb",
+        background: "#fef08a",
+        border: "1px solid #d1d5db",
         borderRadius: "2px",
         flexShrink: 0,
+    },
+
+    footerRow: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: "18px",
+        gap: "16px",
+        maxWidth: "1150px",
+    },
+    selectionText: {
+        fontSize: "12px",
+        color: "#374151",
+    },
+    confirmBtn: {
+        minWidth: "214px",
+        height: "32px",
+        border: "none",
+        borderRadius: "3px",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "8px",
+        fontSize: "12px",
+        fontWeight: 600,
+        textTransform: "uppercase",
+        letterSpacing: "0.1px",
+        cursor: "pointer",
+    },
+    confirmBtnDisabled: {
+        background: "#e5e5e5",
+        color: "#a8a8a8",
+        cursor: "not-allowed",
+    },
+    confirmBtnEnabled: {
+        background: "#2563eb",
+        color: "#ffffff",
     },
 };
 
 const CRITERIA_OPTIONS = [
     { value: "", label: "None" },
     { value: "location", label: "Location" },
-    { value: "item", label: "Item" },
-    { value: "bomId", label: "BOM ID" },
+    { value: "item", label: "Produced Item" },
+    { value: "bomId", label: "BOMID" },
     { value: "resource", label: "Resource" },
     { value: "routingId", label: "Routing ID" },
     { value: "componentItem", label: "Component Item" },
@@ -302,6 +317,7 @@ const normalizeRoutingRecord = (row, index) => {
         "coProductAssociation",
         "ERP_CO_PRODUCT_ASSOCIATION",
     ]);
+
     const coProductAssociation =
         String(rawCoProductAssociation).trim() === "1" ? 1 : 0;
 
@@ -350,9 +366,9 @@ export default function DeleteExistingItemBomRoutingStep1() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [selectedIds, setSelectedIds] = useState([]);
-    const [criteria1Field, setCriteria1Field] = useState("routingId");
+    const [criteria1Field, setCriteria1Field] = useState("bomId");
     const [criteria1Value, setCriteria1Value] = useState("");
-    const [criteria2Field, setCriteria2Field] = useState("bomId");
+    const [criteria2Field, setCriteria2Field] = useState("item");
     const [criteria2Value, setCriteria2Value] = useState("");
 
     useEffect(() => {
@@ -361,6 +377,7 @@ export default function DeleteExistingItemBomRoutingStep1() {
         const loadRows = async () => {
             setLoading(true);
             setError("");
+
             try {
                 const response = await fetch(ITEM_BOM_ROUTING_API, {
                     method: "GET",
@@ -408,15 +425,18 @@ export default function DeleteExistingItemBomRoutingStep1() {
 
     const filteredRows = useMemo(() => {
         return rows.filter((row) => {
-            const value1 = getCriteriaValue(row, criteria1Field).toLowerCase();
-            const value2 = getCriteriaValue(row, criteria2Field).toLowerCase();
-            const search1 = criteria1Value.trim().toLowerCase();
-            const search2 = criteria2Value.trim().toLowerCase();
+            const value1 = String(getCriteriaValue(row, criteria1Field) ?? "")
+                .trim()
+                .toLowerCase();
+            const value2 = String(getCriteriaValue(row, criteria2Field) ?? "")
+                .trim()
+                .toLowerCase();
 
-            const match1 =
-                !criteria1Field || !search1 ? true : value1.includes(search1);
-            const match2 =
-                !criteria2Field || !search2 ? true : value2.includes(search2);
+            const search1 = String(criteria1Value ?? "").trim().toLowerCase();
+            const search2 = String(criteria2Value ?? "").trim().toLowerCase();
+
+            const match1 = !criteria1Field || !search1 ? true : value1 === search1;
+            const match2 = !criteria2Field || !search2 ? true : value2 === search2;
 
             return match1 && match2;
         });
@@ -489,74 +509,92 @@ export default function DeleteExistingItemBomRoutingStep1() {
         });
     };
 
+    const criteria1Label =
+        CRITERIA_OPTIONS.find((x) => x.value === criteria1Field)?.label || "";
+    const criteria2Label =
+        CRITERIA_OPTIONS.find((x) => x.value === criteria2Field)?.label || "";
+
     return (
         <div style={styles.page}>
-            <div style={styles.topRule} />
             <div style={styles.shell}>
                 <button type="button" onClick={handleBack} style={styles.backBtn}>
                     <span style={{ fontSize: "16px", lineHeight: 1 }}>←</span>
                     <span>BACK</span>
                 </button>
 
-                <h1 style={styles.title}>
-                    Step 1: Select Existing Item BOM Routing Record
-                </h1>
+                <h1 style={styles.title}>Step 1: Select Existing BOM</h1>
 
                 <div style={styles.filterStack}>
-                    <div style={styles.fieldGroup}>
-                        <div style={styles.fieldLabel}>Search By (Criteria 1)</div>
-                        <div style={styles.selectWrap}>
-                            <select
-                                value={criteria1Field}
-                                onChange={(e) => setCriteria1Field(e.target.value)}
-                                style={styles.select}
-                            >
-                                {CRITERIA_OPTIONS.map((option) => (
-                                    <option key={option.value || "criteria1"} value={option.value}>
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                            <span style={styles.selectArrow}>▼</span>
+                    <div style={styles.criteriaRow}>
+                        <div style={styles.fieldGroup}>
+                            <div style={styles.fieldLabel}>Search By (Criteria 1)</div>
+                            <div style={styles.selectWrap}>
+                                <select
+                                    value={criteria1Field}
+                                    onChange={(e) => setCriteria1Field(e.target.value)}
+                                    style={styles.select}
+                                >
+                                    {CRITERIA_OPTIONS.map((option) => (
+                                        <option
+                                            key={option.value || "criteria1"}
+                                            value={option.value}
+                                        >
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <span style={styles.selectArrow}>▼</span>
+                            </div>
                         </div>
 
-                        <input
-                            type="text"
-                            value={criteria1Value}
-                            onChange={(e) => setCriteria1Value(e.target.value)}
-                            placeholder={`Search ${
-                                CRITERIA_OPTIONS.find((x) => x.value === criteria1Field)?.label || ""
-                            }`}
-                            style={styles.input}
-                        />
+                        <div style={styles.fieldGroup}>
+                            <div style={styles.fieldLabel}>
+                                Search {criteria1Label || "Value"}
+                            </div>
+                            <input
+                                type="text"
+                                value={criteria1Value}
+                                onChange={(e) => setCriteria1Value(e.target.value)}
+                                placeholder={`Search ${criteria1Label || ""}`}
+                                style={styles.input}
+                            />
+                        </div>
                     </div>
 
-                    <div style={styles.fieldGroup}>
-                        <div style={styles.fieldLabel}>Search By (Criteria 2)</div>
-                        <div style={styles.selectWrap}>
-                            <select
-                                value={criteria2Field}
-                                onChange={(e) => setCriteria2Field(e.target.value)}
-                                style={styles.select}
-                            >
-                                {CRITERIA_OPTIONS.map((option) => (
-                                    <option key={option.value || "criteria2"} value={option.value}>
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                            <span style={styles.selectArrow}>▼</span>
+                    <div style={styles.criteriaRow}>
+                        <div style={styles.fieldGroup}>
+                            <div style={styles.fieldLabel}>Search By (Criteria 2)</div>
+                            <div style={styles.selectWrap}>
+                                <select
+                                    value={criteria2Field}
+                                    onChange={(e) => setCriteria2Field(e.target.value)}
+                                    style={styles.select}
+                                >
+                                    {CRITERIA_OPTIONS.map((option) => (
+                                        <option
+                                            key={option.value || "criteria2"}
+                                            value={option.value}
+                                        >
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <span style={styles.selectArrow}>▼</span>
+                            </div>
                         </div>
 
-                        <input
-                            type="text"
-                            value={criteria2Value}
-                            onChange={(e) => setCriteria2Value(e.target.value)}
-                            placeholder={`Search ${
-                                CRITERIA_OPTIONS.find((x) => x.value === criteria2Field)?.label || ""
-                            }`}
-                            style={styles.input}
-                        />
+                        <div style={styles.fieldGroup}>
+                            <div style={styles.fieldLabel}>
+                                Search {criteria2Label || "Value"}
+                            </div>
+                            <input
+                                type="text"
+                                value={criteria2Value}
+                                onChange={(e) => setCriteria2Value(e.target.value)}
+                                placeholder={`Search ${criteria2Label || ""}`}
+                                style={styles.input}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -591,9 +629,9 @@ export default function DeleteExistingItemBomRoutingStep1() {
                                     </th>
                                     <th style={{ ...styles.th, width: "120px" }}>Location</th>
                                     <th style={{ ...styles.th, width: "105px" }}>Item</th>
-                                    <th style={{ ...styles.th, width: "190px" }}>BOM ID</th>
+                                    <th style={{ ...styles.th, width: "220px" }}>BOM ID</th>
                                     <th style={{ ...styles.th, width: "120px" }}>Resource</th>
-                                    <th style={{ ...styles.th, width: "340px" }}>Routing ID</th>
+                                    <th style={{ ...styles.th, width: "360px" }}>Routing ID</th>
                                 </tr>
                             </thead>
 
@@ -627,7 +665,9 @@ export default function DeleteExistingItemBomRoutingStep1() {
                                                     checked={isSelected}
                                                     onChange={() => handleToggleRow(row.id)}
                                                     style={styles.checkbox}
-                                                    aria-label={`Select routing record ${row.routingId || row.id}`}
+                                                    aria-label={`Select routing record ${
+                                                        row.routingId || row.id
+                                                    }`}
                                                 />
                                             </td>
                                             <td style={{ ...styles.td, ...(highlighted || {}) }}>

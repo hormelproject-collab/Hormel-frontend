@@ -41,7 +41,7 @@ const formatDateForInput = () => "";
 
 const formatDateForUI = (date) => {
   if (date == null) return "";
-  return String(date) + ' CST';
+  return String(date);
 };
 const getCollapsedMultiValueDisplay = (values) => {
   const cleaned = safeArray(values)
@@ -1254,7 +1254,7 @@ export default function Engineeringlog() {
           <thead>
             <tr>
               <th style={{ ...styles.theadTh, width: "12%" }}>Engineering Change #</th>
-              <th style={{ ...styles.theadTh, width: "9%" }}>Change Date</th>
+              <th style={{ ...styles.theadTh, width: "9%" }}>Change Date (CST)</th>
               <th style={{ ...styles.theadTh, width: "9%" }}>Change Type</th>
               <th style={{ ...styles.theadTh, width: "12%" }}>Location(s)</th>
               <th style={{ ...styles.theadTh, width: "18%" }}>BOM ID(s)</th>

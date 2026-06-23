@@ -78,23 +78,31 @@ const ModifySelectExistingBOM = () => {
     fetchBomData();
   }, []);
 
-  const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-      const match1 =
-        !query1 ||
-        String(row[searchBy1] || "")
-          .toLowerCase()
-          .includes(query1.toLowerCase());
+   const filteredRows = useMemo(() => {
+  return rows.filter((row) => {
+    const value1 = String(row[searchBy1] ?? "").trim().toLowerCase();
+    const value2 = String(row[searchBy2] ?? "").trim().toLowerCase();
 
-      const match2 =
-        !query2 ||
-        String(row[searchBy2] || "")
-          .toLowerCase()
-          .includes(query2.toLowerCase());
+    const search1 = String(query1 ?? "").trim().toLowerCase();
+    const search2 = String(query2 ?? "").trim().toLowerCase();
 
-      return match1 && match2;
-    });
-  }, [rows, query1, query2, searchBy1, searchBy2]);
+    const match1 =
+      !searchBy1 || !search1
+        ? true
+        : searchBy1 === "bom_id"
+        ? value1 === search1
+        : value1.includes(search1);
+
+    const match2 =
+      !searchBy2 || !search2
+        ? true
+        : searchBy2 === "bom_id"
+        ? value2 === search2
+        : value2.includes(search2);
+
+    return match1 && match2; // AND logic
+  });
+}, [rows, searchBy1, searchBy2, query1, query2]);
 
   const getReleaseStyle = (flag) => {
     const text = String(flag || "");
