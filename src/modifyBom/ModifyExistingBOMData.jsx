@@ -1103,6 +1103,32 @@ const styles = {
         padding: "0 12px",
         fontSize: "14px",
         boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inputWithError: {
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        gap: "4px",
+    },
+
+    inputError: {
+        width: "100%",
+        height: "42px",
+        borderRadius: "4px",
+        border: "1px solid #ef4444",
+        padding: "0 12px",
+        fontSize: "14px",
+        boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inlineError: {
+        color: "#dc2626",
+        fontSize: "12px",
+        fontWeight: 600,
+        minHeight: "18px",
     },
         input2: {
         width: "100%",

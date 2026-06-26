@@ -10,30 +10,47 @@ const toText = (value) => {
 };
 
 const safeArray = (value) => (Array.isArray(value) ? value : []);
+const uniqueRoutingRows = (rows) => {
+  const seen = new Set();
 
+  return safeArray(rows).filter((row) => {
+    const resourceValue = toText(row.resource).trim().toUpperCase();
+    const routingIdValue = toText(row.routingId || row.routing_id)
+      .trim()
+      .toUpperCase();
+
+    const priorityValue = toText(
+      row.itemBomRoutingPriority ||
+        row.item_bom_routing_priority ||
+        row.priority
+    )
+      .trim()
+      .toUpperCase();
+
+    const key = `${resourceValue}__${routingIdValue}__${priorityValue}`;
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 const formatDisplayDate = (value) => {
   if (!value) return "-";
-
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return toText(value) || "-";
   }
-
   const yyyy = parsed.getFullYear();
   const dd = String(parsed.getDate()).padStart(2, "0");
   const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-
   let hours = parsed.getHours();
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
   const CST = "CST";
-
   hours = hours % 12;
   if (hours === 0) hours = 12;
-
   const hh = String(hours).padStart(2, "0");
-
   return `${yyyy}-${mm}-${dd} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
 };
 
@@ -107,14 +124,12 @@ export default function EngineeringChangeDetailAdd() {
             },
           }
         );
-
         if (!response.ok) {
           const errText = await response.text();
           throw new Error(
             errText || `Failed to fetch add detail (${response.status})`
           );
         }
-
         const data = await response.json();
         setDetail(data);
       } catch (error) {
@@ -133,7 +148,6 @@ export default function EngineeringChangeDetailAdd() {
   }, [queryString]);
 
   const createdRows = safeArray(detail?.createdRecords);
-
   const changeSummaryText = toText(
     detail?.changeSummary || passedState.changeSummary || ""
   ).toLowerCase();
@@ -357,6 +371,7 @@ export default function EngineeringChangeDetailAdd() {
               {createdRows.map((row, index) => {
                 const components = safeArray(row.components);
                 const coProducts = safeArray(row.coProducts);
+                const routingDetails = uniqueRoutingRows(row.routingDetails);
 
                 return (
                   <div key={row.key || index} style={styles.whiteCard}>
@@ -370,43 +385,55 @@ export default function EngineeringChangeDetailAdd() {
                     </div>
 
                     <div style={styles.detailRow}>
-                      <span style={styles.label}>Resource: </span>
-                      <span style={styles.value}>
-                        {toText(row.resource || detail?.resource || resource) || "-"}
-                      </span>
-                    </div>
-
-                    <div style={styles.detailRow}>
-                      <span style={styles.label}>Routing ID: </span>
-                      <span style={styles.value}>
-                        {toText(row.routingId || detail?.routingId) || "-"}
-                      </span>
-                    </div>
-
-                    <div style={styles.detailRow}>
                       <span style={styles.label}>BOM ID: </span>
                       <span style={styles.value}>
                         {toText(row.bomId || detail?.bomId || bomId) || "-"}
                       </span>
                     </div>
 
-                    <div style={styles.detailRow}>
-                      <span style={styles.label}>Item BOM Routing Priority: </span>
-                      <span style={styles.value}>
-                        {toText(
-                          row.itemBomRoutingPriority ||
-                            row.item_bom_routing_priority ||
-                            detail?.itemBomRoutingPriority ||
-                            detail?.item_bom_routing_priority
-                        ) || "-"}
-                      </span>
-                    </div>
+                    <div style={styles.sectionTitle}>Routing / Resource Details</div>
+                    {routingDetails.length === 0 ? (
+                      <div style={styles.emptySubText}>
+                        No routing/resource rows added.
+                      </div>
+                    ) : (
+                      <table style={styles.nestedTable}>
+                        <thead>
+                          <tr>
+                            <th style={styles.nestedTh}>Resource</th>
+                            <th style={styles.nestedTh}>Routing ID</th>
+                            <th style={styles.nestedTh}>Item BOM Routing Priority</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {routingDetails.map((routingRow, routingIndex) => (
+                            <tr key={routingRow.key || routingIndex}>
+                              <td style={styles.nestedTd}>
+                                {toText(routingRow.resource) || "-"}
+                              </td>
+                              <td style={styles.nestedTd}>
+                                {toText(routingRow.routingId) || "-"}
+                              </td>
+                              <td style={styles.nestedTd}>
+                                {toText(
+                                  routingRow.itemBomRoutingPriority ||
+                                    routingRow.item_bom_routing_priority ||
+                                    routingRow.priority
+                                ) || "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
 
                     {!isAddedIBRFlow && (
                       <>
                         <div style={styles.sectionTitle}>Component Details</div>
                         {components.length === 0 ? (
-                          <div style={styles.emptySubText}>No component items added.</div>
+                          <div style={styles.emptySubText}>
+                            No component items added.
+                          </div>
                         ) : (
                           <table style={styles.nestedTable}>
                             <thead>
@@ -434,7 +461,9 @@ export default function EngineeringChangeDetailAdd() {
 
                     <div style={styles.sectionTitle}>Co-Product Details</div>
                     {coProducts.length === 0 ? (
-                      <div style={styles.emptySubText}>No co-product items added.</div>
+                      <div style={styles.emptySubText}>
+                        No co-product items added.
+                      </div>
                     ) : (
                       <table style={styles.nestedTable}>
                         <thead>

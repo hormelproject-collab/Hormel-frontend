@@ -14,24 +14,23 @@ const styles = {
     color: "#111827",
     padding: "24px 0 40px",
   },
-      backButton: {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: "8px",
-      background: "transparent",
-      border: "none",
-      color: "#2563eb",
-      fontSize: "13px",
-      fontWeight: 500,
-      cursor: "pointer",
-      padding: 0,
-      marginBottom: "8px",
-    },
-
-    backArrow: {
-      fontSize: "18px",
-      lineHeight: 1,
-    },
+  backButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    background: "transparent",
+    border: "none",
+    color: "#2563eb",
+    fontSize: "13px",
+    fontWeight: 500,
+    cursor: "pointer",
+    padding: 0,
+    marginBottom: "8px",
+  },
+  backArrow: {
+    fontSize: "18px",
+    lineHeight: 1,
+  },
   shell: {
     width: "1060px",
     margin: "0 auto",
@@ -76,18 +75,46 @@ const styles = {
   th: {
     textAlign: "left",
     fontSize: "13px",
-    fontWeight: 500,
-    padding: "14px 12px",
+    fontWeight: 600,
+    padding: "13px 14px",
     borderBottom: "1px solid #d5d7db",
     color: "#111827",
+    whiteSpace: "nowrap",
   },
   td: {
     fontSize: "13px",
-    padding: "12px",
+    padding: "13px 14px",
     borderBottom: "1px solid #d5d7db",
     color: "#111827",
     verticalAlign: "middle",
+    wordBreak: "break-word",
+    overflowWrap: "anywhere",
+    lineHeight: 1.45,
   },
+
+  summaryProducedCol: {
+    width: "22%",
+  },
+  summaryDescCol: {
+    width: "34%",
+  },
+  summaryLocationCol: {
+    width: "18%",
+  },
+  summaryBomCol: {
+    width: "26%",
+  },
+
+  bomIdCol: {
+    width: "22%",
+  },
+  resourceCol: {
+    width: "12%",
+  },
+  routingIdCol: {
+    width: "66%",
+  },
+
   sectionTitle: {
     margin: "18px 0 6px",
     fontSize: "15px",
@@ -115,21 +142,41 @@ const styles = {
   },
   buttonRow: {
     display: "flex",
-    gap: "12px",
-    marginTop: "2px",
+    gap: "14px",
+    marginTop: "16px",
     alignItems: "center",
   },
   primaryBtn: {
     border: "none",
-    borderRadius: "3px",
-    height: "28px",
-    padding: "0 14px",
-    fontSize: "12px",
+    borderRadius: "4px",
+    height: "44px",
+    minWidth: "176px",
+    padding: "0 18px",
+    fontSize: "13px",
     fontWeight: 700,
     color: "#fff",
     background: "#d93025",
     cursor: "pointer",
     boxShadow: "0 2px 4px rgba(0,0,0,0.14)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mainMenuButton: {
+    height: "44px",
+    minWidth: "210px",
+    border: "1px solid #6da0e1",
+    borderRadius: "4px",
+    background: "#ffffff",
+    color: "#1e63b5",
+    fontSize: "13px",
+    fontWeight: 700,
+    padding: "0 18px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
   },
   secondaryBtn: {
     border: "1px solid #6da0e1",
@@ -192,10 +239,10 @@ const styles = {
     padding: "0 14px",
     cursor: "pointer",
   },
-  dangerBtn: {
+   dangerBtn: {
     border: "none",
     background: "#d93025",
-    color: "#fff",
+    color: "#ffffff",
     borderRadius: "4px",
     height: "34px",
     padding: "0 16px",
@@ -247,12 +294,51 @@ const styles = {
 
 const toText = (value) => String(value ?? "").trim();
 
+const deriveResourceFromRoutingId = (routingId) => {
+  const parts = toText(routingId)
+    .split("_")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  // Expected format: ROUTING_LOCATION_resource
+  // Resource = all text after second underscore
+  return parts.length >= 3 ? parts.slice(2).join("_") : "";
+};
+
 const uniqueByKey = (arr, key) => {
   const seen = new Set();
+
   return arr.filter((item) => {
     const value = toText(item?.[key]);
+
     if (!value || seen.has(value)) return false;
+
     seen.add(value);
+    return true;
+  });
+};
+
+const uniqueRoutingRows = (rows) => {
+  const seen = new Set();
+
+  return rows.filter((row) => {
+    const bomIdValue = toText(row?.bom_id);
+    const routingIdValue = toText(row?.routing_id);
+
+    const resourceValue =
+      deriveResourceFromRoutingId(routingIdValue) || toText(row?.resource);
+
+    const key = [
+      bomIdValue.toUpperCase(),
+      routingIdValue.toUpperCase(),
+      resourceValue.toUpperCase(),
+    ].join("__");
+
+    if (!bomIdValue && !routingIdValue && !resourceValue) return false;
+
+    if (seen.has(key)) return false;
+
+    seen.add(key);
     return true;
   });
 };
@@ -268,9 +354,7 @@ export default function DeleteBomSummaryStep2() {
   const bomIds = useMemo(
     () =>
       Array.from(
-        new Set(
-          selectedRows.map((row) => toText(row.bomId)).filter(Boolean)
-        )
+        new Set(selectedRows.map((row) => toText(row.bomId)).filter(Boolean))
       ),
     [selectedRows]
   );
@@ -311,8 +395,8 @@ export default function DeleteBomSummaryStep2() {
         if (!response.ok) {
           throw new Error(
             payload?.details ||
-            payload?.error ||
-            "Failed to load delete BOM summary"
+              payload?.error ||
+              "Failed to load delete BOM summary"
           );
         }
 
@@ -322,12 +406,12 @@ export default function DeleteBomSummaryStep2() {
               ? payload.data.bomSummary
               : []
           );
+
           setRoutingRows(
             Array.isArray(payload?.data?.routingSummary)
               ? payload.data.routingSummary
               : []
           );
-
         }
       } catch (err) {
         if (!cancelled) {
@@ -351,9 +435,16 @@ export default function DeleteBomSummaryStep2() {
     () => uniqueByKey(summaryRows, "bom_id"),
     [summaryRows]
   );
+
+  const dedupedRoutingRows = useMemo(
+    () => uniqueRoutingRows(routingRows),
+    [routingRows]
+  );
+
   const handleBack = () => {
-    navigate("/delete-bom-dashboard/delete-existing-ibr"); // change if needed
+    navigate("/delete-bom-dashboard/delete-existing-ibr");
   };
+
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
@@ -384,8 +475,8 @@ export default function DeleteBomSummaryStep2() {
       if (!response.ok) {
         throw new Error(
           payload?.details ||
-          payload?.error ||
-          "Failed to delete selected BOM records"
+            payload?.error ||
+            "Failed to delete selected BOM records"
         );
       }
 
@@ -400,15 +491,12 @@ export default function DeleteBomSummaryStep2() {
 
   return (
     <div style={styles.page}>
-      <button
-        type="button"
-        onClick={handleBack}
-        style={styles.backButton}
-      >
-        <span style={styles.backArrow}>←</span>
-        <span>BACK</span>
-      </button>
       <div style={styles.shell}>
+        <button type="button" onClick={handleBack} style={styles.backButton}>
+          <span style={styles.backArrow}>←</span>
+          <span>BACK</span>
+        </button>
+
         <h1 style={styles.title}>Step 2: Deleted BOM Summary</h1>
 
         <div style={styles.warningBox}>
@@ -430,12 +518,21 @@ export default function DeleteBomSummaryStep2() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.summaryHeader}>
-                <th style={styles.th}>Produced Item</th>
-                <th style={styles.th}>Item Description</th>
-                <th style={styles.th}>Location</th>
-                <th style={styles.th}>BOM ID</th>
+                <th style={{ ...styles.th, ...styles.summaryProducedCol }}>
+                  Produced Item
+                </th>
+                <th style={{ ...styles.th, ...styles.summaryDescCol }}>
+                  Item Description
+                </th>
+                <th style={{ ...styles.th, ...styles.summaryLocationCol }}>
+                  Location
+                </th>
+                <th style={{ ...styles.th, ...styles.summaryBomCol }}>
+                  BOM ID
+                </th>
               </tr>
             </thead>
+
             <tbody>
               {!loading && dedupedSummaryRows.length === 0 ? (
                 <tr>
@@ -447,12 +544,18 @@ export default function DeleteBomSummaryStep2() {
 
               {dedupedSummaryRows.map((row) => (
                 <tr key={row.bom_id}>
-                  <td style={styles.td}>{toText(row.produced_item) || "-"}</td>
-                  <td style={styles.td}>
+                  <td style={{ ...styles.td, ...styles.summaryProducedCol }}>
+                    {toText(row.produced_item) || "-"}
+                  </td>
+                  <td style={{ ...styles.td, ...styles.summaryDescCol }}>
                     {toText(row.produced_item_desc) || "-"}
                   </td>
-                  <td style={styles.td}>{toText(row.location) || "-"}</td>
-                  <td style={styles.td}>{toText(row.bom_id) || "-"}</td>
+                  <td style={{ ...styles.td, ...styles.summaryLocationCol }}>
+                    {toText(row.location) || "-"}
+                  </td>
+                  <td style={{ ...styles.td, ...styles.summaryBomCol }}>
+                    {toText(row.bom_id) || "-"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -469,13 +572,18 @@ export default function DeleteBomSummaryStep2() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.routingHeader}>
-                <th style={styles.th}>BOM ID</th>
-                <th style={styles.th}>Resource</th>
-                <th style={styles.th}>Routing ID</th>
+                <th style={{ ...styles.th, ...styles.bomIdCol }}>BOM ID</th>
+                <th style={{ ...styles.th, ...styles.resourceCol }}>
+                  Resource
+                </th>
+                <th style={{ ...styles.th, ...styles.routingIdCol }}>
+                  Routing ID
+                </th>
               </tr>
             </thead>
+
             <tbody>
-              {!loading && routingRows.length === 0 ? (
+              {!loading && dedupedRoutingRows.length === 0 ? (
                 <tr>
                   <td colSpan={3} style={styles.emptyRow}>
                     No connected routing rows found.
@@ -483,17 +591,29 @@ export default function DeleteBomSummaryStep2() {
                 </tr>
               ) : null}
 
-              {routingRows.map((row, index) => (
-                <tr
-                  key={`${toText(row.bom_id)}__${toText(
-                    row.routing_id
-                  )}__${index}`}
-                >
-                  <td style={styles.td}>{toText(row.bom_id) || "-"}</td>
-                  <td style={styles.td}>{toText(row.resource) || "-"}</td>
-                  <td style={styles.td}>{toText(row.routing_id) || "-"}</td>
-                </tr>
-              ))}
+              {dedupedRoutingRows.map((row, index) => {
+                const bomIdValue = toText(row.bom_id);
+                const routingIdValue = toText(row.routing_id);
+                const resourceValue =
+                  deriveResourceFromRoutingId(routingIdValue) ||
+                  toText(row?.resource);
+
+                return (
+                  <tr
+                    key={`${bomIdValue}__${routingIdValue}__${resourceValue}__${index}`}
+                  >
+                    <td style={{ ...styles.td, ...styles.bomIdCol }}>
+                      {bomIdValue || "-"}
+                    </td>
+                    <td style={{ ...styles.td, ...styles.resourceCol }}>
+                      {resourceValue || "-"}
+                    </td>
+                    <td style={{ ...styles.td, ...styles.routingIdCol }}>
+                      {routingIdValue || "-"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -525,7 +645,7 @@ export default function DeleteBomSummaryStep2() {
           <button
             type="button"
             onClick={handleReturnToMainMenu}
-            style={styles.secondaryBtn}
+            style={styles.mainMenuButton}
           >
             <span style={{ fontSize: "13px" }}>⌂</span>
             <span>RETURN TO MAIN MENU</span>

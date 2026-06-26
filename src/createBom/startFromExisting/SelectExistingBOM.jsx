@@ -109,20 +109,52 @@ const SelectExistingBOM = () => {
     fetchRows();
   }, []);
 
-  const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-      const value1 = String(row[searchBy1] ?? "").toLowerCase();
-      const value2 = String(row[searchBy2] ?? "").toLowerCase();
 
-      const match1 =
-        !searchBy1 || !query1 || value1.includes(query1.toLowerCase());
+  const getSearchValue = (row, field) => {
+  switch (field) {
+    case "location":
+      return row.location ?? "";
 
-      const match2 =
-        !searchBy2 || !query2 || value2.includes(query2.toLowerCase());
+    case "produced_item":
+      return row.produced_item ?? "";
 
-      return match1 && match2; // AND logic
-    });
-  }, [rows, searchBy1, searchBy2, query1, query2]);
+    case "produced_item_desc":
+      return row.produced_item_desc ?? "";
+
+    case "bom_id":
+      return row.bom_id ?? "";
+
+    case "resource":
+      return row.resource ?? "";
+
+    case "item_release_flag":
+      return row.item_release_flag ?? "";
+
+    default:
+      return "";
+  }
+};
+
+const filteredRows = useMemo(() => {
+  const q1 = String(query1 ?? "").trim().toLowerCase();
+  const q2 = String(query2 ?? "").trim().toLowerCase();
+
+  return rows.filter((row) => {
+    const rowValue1 = String(getSearchValue(row, searchBy1) ?? "")
+      .trim()
+      .toLowerCase();
+
+    const rowValue2 = String(getSearchValue(row, searchBy2) ?? "")
+      .trim()
+      .toLowerCase();
+
+    const match1 = searchBy1 && q1 ? rowValue1 === q1 : true;
+    const match2 = searchBy2 && q2 ? rowValue2 === q2 : true;
+
+    return match1 && match2;
+  });
+}, [rows, searchBy1, searchBy2, query1, query2]);
+
 
   const handleRowClick = (row) => {
     setSelectedRowId(row.id);
@@ -210,46 +242,46 @@ const SelectExistingBOM = () => {
             <div>Location</div>
             <div>Produced Item</div>
             <div>Produced Item Description</div>
-            <div>BOM ID</div>
+            <div>BOMID</div>
             <div>Resource</div>
             <div>Item Release Flag</div>
           </div>
 
-          {!loading && filteredRows.length === 0 ? (
-            <div style={styles.emptyState}>No BOM records found.</div>
-          ) : (
-            filteredRows.map((row, index) => {
-              const safeKey =
-                row.id || `${row.bom_id}-${row.resource || "NORESOURCE"}-${index}`;
+       {!loading && filteredRows.length === 0 ? (
+  <div style={styles.emptyState}>No BOM records found.</div>
+) : (
+  filteredRows.map((row, index) => {
+    const safeKey =
+      row.id || `${row.bom_id}-${row.resource || "NORESOURCE"}-${index}`;
 
-              const isSelected = selectedRowId === row.id;
+    const isSelected = selectedRowId === row.id;
 
-              return (
-                <div
-                  key={safeKey}
-                  style={{
-                    ...styles.tableRow,
-                    ...(isSelected ? styles.tableRowSelected : {}),
-                  }}
-                  onClick={() => handleRowClick(row)}
-                >
-                  <div style={styles.cell}>{row.location || "-"}</div>
-                  <div style={styles.cell}>{row.produced_item || "-"}</div>
-                  <div style={styles.cell}>{row.produced_item_desc || "-"}</div>
-                  <div style={styles.cell}>{row.bom_id || "-"}</div>
-                  <div style={styles.cell}>{row.resource || "-"}</div>
-                  <div
-                    style={{
-                      ...styles.cell,
-                      ...getReleaseStyle(row.item_release_flag),
-                    }}
-                  >
-                    {row.item_release_flag || "-"}
-                  </div>
-                </div>
-              );
-            })
-          )}
+    return (
+      <div
+        key={safeKey}
+        style={{
+          ...styles.tableRow,
+          ...(isSelected ? styles.tableRowSelected : {}),
+        }}
+        onClick={() => handleRowClick(row)}
+      >
+        <div style={styles.cell}>{row.location || "-"}</div>
+        <div style={styles.cell}>{row.produced_item || "-"}</div>
+        <div style={styles.cell}>{row.produced_item_desc || "-"}</div>
+        <div style={styles.cell}>{row.bom_id || "-"}</div>
+        <div style={styles.cell}>{row.resource || "-"}</div>
+        <div
+          style={{
+            ...styles.cell,
+            ...getReleaseStyle(row.item_release_flag),
+          }}
+        >
+          {row.item_release_flag || "-"}
+        </div>
+      </div>
+    );
+  })
+)}
         </div>
       </div>
     </div>

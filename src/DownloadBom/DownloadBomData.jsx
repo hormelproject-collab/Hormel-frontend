@@ -3,9 +3,8 @@ import { useNavigate } from "react-router-dom";
 
 export default function DownloadBOM() {
   const navigate = useNavigate();
-  const [selectedTables, setSelectedTables] = useState([
-    "BOM Parameters",
-  ]);
+  const [selectedTables, setSelectedTables] = useState(["BOM Parameters"]);
+  const [loading, setLoading] = useState(false);
 
   const tableOptions = [
     "BOM Parameters",
@@ -29,53 +28,63 @@ export default function DownloadBOM() {
     "Item BOM Routing": "item_bom_routing",
   };
 
-
   async function downloadSelectedTablesCsv(selectedTablesLabels) {
+    try {
+      setLoading(true);
 
-    const tables = selectedTablesLabels
-      .map((label) => tableLabelToDbName[label])
-      .filter(Boolean);
+      const tables = selectedTablesLabels
+        .map((label) => tableLabelToDbName[label])
+        .filter(Boolean);
 
-    const response = await fetch(`http://localhost:3000/api/tables/download-bom-excel`, {
+      if (!tables.length) {
+        alert("Please select at least one table");
+        return;
+      }
 
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tables }),
-    });
+      const response = await fetch(
+        "http://localhost:3000/api/tables/download-bom-excel",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tables }),
+        }
+      );
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || "Download failed");
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || "Download failed");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "bom_tables.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download error:", error);
+      alert(error.message || "Failed to download Excel file");
+    } finally {
+      setLoading(false);
     }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "bom_tables.xlsx";
-
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    window.URL.revokeObjectURL(url);
   }
 
   return (
     <div style={styles.container}>
-      {/* Back */}
       <div style={styles.back} onClick={() => navigate(-1)}>
         ← BACK
       </div>
 
-      {/* Header */}
       <h1 style={styles.title}>Download BOM Data</h1>
       <p style={styles.subtitle}>
         Select the tables you would like to download
       </p>
 
-      {/* Select Tables Card */}
       <div style={styles.card}>
         <h2 style={styles.cardTitle}>Select Tables</h2>
 
@@ -92,7 +101,6 @@ export default function DownloadBOM() {
         ))}
       </div>
 
-      {/* Selected Tables Card */}
       <div style={styles.card}>
         <h2 style={styles.cardTitle}>
           Selected Tables ({selectedTables.length})
@@ -105,20 +113,19 @@ export default function DownloadBOM() {
         </ul>
       </div>
 
-      {/* Button */}
       <div style={styles.buttonContainer}>
         <button
           style={styles.button}
-          onClick={() => downloadSelectedTablesExcel(selectedTables)}>
-
-          ⬇ DOWNLOAD SELECTED TABLES
+          onClick={() => downloadSelectedTablesCsv(selectedTables)}
+          disabled={loading}
+        >
+          {loading ? "Downloading..." : "⬇ DOWNLOAD SELECTED TABLES"}
         </button>
       </div>
     </div>
   );
 }
 
-/* ================== STYLES ================== */
 const styles = {
   container: {
     padding: "30px",
@@ -196,11 +203,11 @@ const styles = {
     alignItems: "center",
     gap: "8px",
   },
+
   back: {
     color: "#2563eb",
     cursor: "pointer",
     marginBottom: "12px",
     fontSize: "14px",
   },
-
 };
