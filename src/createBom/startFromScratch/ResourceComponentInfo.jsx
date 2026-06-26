@@ -126,6 +126,39 @@ const ResourceComponentInfo = () => {
     );
   }, [dispatch, producedItems, locations]);
 
+  // Persist resourceComponentConfigs to localStorage for backup
+  useEffect(() => {
+    if (Object.keys(resourceComponentConfigs).length > 0) {
+      localStorage.setItem(
+        "resourceComponentConfigsBackup",
+        JSON.stringify(resourceComponentConfigs)
+      );
+    }
+  }, [resourceComponentConfigs]);
+
+  // Restore from localStorage if Redux state is empty but backup exists
+  useEffect(() => {
+    if (Object.keys(resourceComponentConfigs).length === 0 && producedItems.length > 0 && locations.length > 0) {
+      const backup = localStorage.getItem("resourceComponentConfigsBackup");
+      if (backup) {
+        try {
+          const restoredConfigs = JSON.parse(backup);
+          // Restore each config to Redux
+          Object.entries(restoredConfigs).forEach(([key, config]) => {
+            dispatch(
+              setResourceComponentConfig({
+                key,
+                config,
+              })
+            );
+          });
+        } catch (err) {
+          console.error("Failed to restore configs from localStorage", err);
+        }
+      }
+    }
+  }, [dispatch, producedItems, locations, resourceComponentConfigs]);
+
   useEffect(() => {
     producedItems.forEach((item) => {
       locations.forEach((loc) => {
@@ -390,6 +423,21 @@ const ResourceComponentInfo = () => {
     return "";
   };
 
+  useEffect(() => {
+    // Before navigating away, ensure all configs are saved
+    const handleBeforeUnload = () => {
+      if (Object.keys(resourceComponentConfigs).length > 0) {
+        localStorage.setItem(
+          "resourceComponentConfigsBackup",
+          JSON.stringify(resourceComponentConfigs)
+        );
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [resourceComponentConfigs]);
+
   const handleNext = () => {
     const validationMessage = validateAllConfigs();
     if (validationMessage) {
@@ -398,6 +446,12 @@ const ResourceComponentInfo = () => {
     }
 
     setPageError("");
+
+    // Save all configs to localStorage and Redux before navigation
+    localStorage.setItem(
+      "resourceComponentConfigsBackup",
+      JSON.stringify(resourceComponentConfigs)
+    );
 
     const summaryConfigSnapshot = producedItems.flatMap((item) =>
       locations.map((loc) => {

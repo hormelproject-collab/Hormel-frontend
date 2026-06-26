@@ -295,7 +295,7 @@ const styles = {
     flexDirection: "column",
     gap: 10,
     width: "100%",
-    maxWidth: 980,
+    // maxWidth: 980,
     marginBottom: 18,
   },
   searchRow: {
@@ -305,12 +305,13 @@ const styles = {
     width: "100%",
   },
   searchColLeft: {
-    width: 490,
-    maxWidth: "100%",
+    flex: 1,
+    minWidth: 0,
   },
   searchColRight: {
     flex: 1,
-    minWidth: 240,
+    minWidth: 0,
+    marginTop: "15px",
   },
   criteriaLabel: {
     fontSize: 10,

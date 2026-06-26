@@ -51,6 +51,37 @@ const SelectedLocation = () => {
     }
   }, [dispatch, selectedProducedItems]);
 
+  // Persist selectedIds to localStorage for Step 2 selections
+  useEffect(() => {
+    if (selectedIds.length > 0) {
+      localStorage.setItem(
+        "step2SelectedLocationIds",
+        JSON.stringify(selectedIds)
+      );
+    }
+  }, [selectedIds]);
+
+  // Restore selectedIds from localStorage if not already selected
+  useEffect(() => {
+    if (selectedIds.length === 0 && locations.length > 0) {
+      const backup = localStorage.getItem("step2SelectedLocationIds");
+      if (backup) {
+        try {
+          const restoredIds = JSON.parse(backup);
+          // Toggle each restored location
+          restoredIds.forEach((id) => {
+            const location = locations.find((x) => x.id === id);
+            if (location && isActiveLocation(location.status)) {
+              dispatch(toggleLocation(id));
+            }
+          });
+        } catch (err) {
+          console.error("Failed to restore Step 2 selections from localStorage", err);
+        }
+      }
+    }
+  }, [dispatch, locations, selectedIds.length]);
+
   // ✅ retain search behavior
   const filteredLocations = useMemo(() => {
     const q = search.trim().toLowerCase();

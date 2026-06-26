@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import { MdDelete } from "react-icons/md";
+import { setModifyExistingBomState, selectModifyExistingBomState } from "../../redux/bomSlice";
 
 const NEXT_ROUTE = "/summary";
 
@@ -209,6 +211,8 @@ const ModifyExistingBOM = () => {
     const navigate = useNavigate();
     const routerLocation = useLocation();
     const { id } = useParams();
+    const dispatch = useDispatch();
+    const reduxFormState = useSelector(selectModifyExistingBomState);
 
     const [selectedBom, setSelectedBom] = useState(
         normalizeSelectedBom(routerLocation?.state?.selectedBom)
@@ -327,7 +331,6 @@ const ModifyExistingBOM = () => {
                 const originalVersion = getOriginalBomVersion(baseBom.bom_id);
                 const nextVersion =
                     BOM_VERSION_OPTIONS.find((v) => v !== originalVersion) ?? "";
-                setBomVersion(nextVersion);
 
                 const selectedBomId = String(baseBom.bom_id ?? "").trim();
 
@@ -358,7 +361,17 @@ const ModifyExistingBOM = () => {
                     preselectedResources.push(resource);
                 });
 
-                setSelectedResources(preselectedResources);
+                const hasSavedState = Boolean(
+                    reduxFormState?.record &&
+                    (String(reduxFormState.record?.id ?? reduxFormState.record?.bom_id ?? "") === String(baseBom.id ?? baseBom.bom_id ?? ""))
+                );
+
+                const savedStateForBom = hasSavedState ? reduxFormState : null;
+
+                const initialSelectedResources = savedStateForBom?.selectedResources?.length
+                    ? savedStateForBom.selectedResources
+                    : preselectedResources;
+                setSelectedResources(initialSelectedResources);
 
                 const consumedForBom = (Array.isArray(bomConsumedRows) ? bomConsumedRows : []).filter(
                     (row) => String(row.bom_id ?? "").trim() === selectedBomId
@@ -375,7 +388,10 @@ const ModifyExistingBOM = () => {
                             "",
                     })
                 );
-                setComponentItems(prefilledComponents);
+                const initialComponentItems = savedStateForBom?.componentItems?.length
+                    ? savedStateForBom.componentItems
+                    : prefilledComponents;
+                setComponentItems(initialComponentItems);
 
                 const coProductRoutingRows = bomRoutingForBom.filter(
                     (row) => getCoProductAssociationValue(row) === 1
@@ -402,10 +418,17 @@ const ModifyExistingBOM = () => {
                     });
                 });
 
-                setCoProducts(prefilledCoProducts);
-                setProducedCoProduct(prefilledCoProducts.length > 0);
+                const initialCoProducts = savedStateForBom?.coProducts?.length
+                    ? savedStateForBom.coProducts
+                    : prefilledCoProducts;
+                setCoProducts(initialCoProducts);
 
-                const generatedRows = preselectedResources.map((resource) => ({
+                const initialProducedCoProduct =
+                    savedStateForBom?.producedCoProduct ?? prefilledCoProducts.length > 0;
+                setProducedCoProduct(initialProducedCoProduct);
+                setBomVersion(savedStateForBom?.bomVersion ?? nextVersion);
+
+                const generatedRows = initialSelectedResources.map((resource) => ({
                     resource,
                     resourceRelevancy: getResourceRelevancy(resourceMap, resource),
                     routingId: buildRoutingId(baseBom.produced_item, baseBom.location, resource),
@@ -420,6 +443,42 @@ const ModifyExistingBOM = () => {
 
         loadPage();
     }, [id, routerLocation?.state?.selectedBom]);
+
+    // Generate unique key for this BOM's form data
+    const bomStorageKey = useMemo(() => {
+        if (!selectedBom?.id) return null;
+        return `modifyBomData_${selectedBom.id}`;
+    }, [selectedBom?.id]);
+
+    useEffect(() => {
+        if (!selectedBom) return;
+
+        dispatch(
+            setModifyExistingBomState({
+                record: selectedBom,
+                bomVersion,
+                selectedResources,
+                componentItems,
+                coProducts,
+                producedCoProduct,
+            })
+        );
+    }, [dispatch, selectedBom, bomVersion, selectedResources, componentItems, coProducts, producedCoProduct]);
+
+    // Persist form data to localStorage whenever it changes
+    useEffect(() => {
+        if (!bomStorageKey) return;
+
+        const formData = {
+            bomVersion,
+            selectedResources,
+            componentItems,
+            coProducts,
+            producedCoProduct,
+        };
+
+        localStorage.setItem(bomStorageKey, JSON.stringify(formData));
+    }, [bomStorageKey, bomVersion, selectedResources, componentItems, coProducts, producedCoProduct]);
 
     useEffect(() => {
         if (!selectedBom) return;
@@ -717,13 +776,7 @@ const ModifyExistingBOM = () => {
                                         <button
                                             type="button"
                                             style={styles.deleteBtn}
-                                            onClick={() =>
-                                                removeCoProductRow(
-                                                    item.item,
-                                                    loc.location,
-                                                    row.id
-                                                )
-                                            }
+                                            onClick={() => removeComponent(row.id)}
                                         >
                                             <span style={styles.iconWrapper}>
                                                 <MdDelete />
@@ -813,13 +866,7 @@ const ModifyExistingBOM = () => {
                                             <button
                                                 type="button"
                                                 style={styles.deleteBtn}
-                                                onClick={() =>
-                                                    removeCoProductRow(
-                                                        item.item,
-                                                        loc.location,
-                                                        row.id
-                                                    )
-                                                }
+                                                onClick={() => removeCoProduct(row.id)}
                                             >
                                                 <span style={styles.iconWrapper}>
                                                     <MdDelete />

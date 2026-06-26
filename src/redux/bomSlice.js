@@ -286,6 +286,8 @@ const initialState = {
 
   modifyExistingBomState: {
     record: null,
+    bomVersion: "",
+    selectedResources: [],
     componentItems: [],
     initialComponentItems: [],
     coProducts: [],

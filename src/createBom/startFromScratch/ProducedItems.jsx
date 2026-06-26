@@ -48,6 +48,40 @@ const ProducedItems = () => {
     dispatch(fetchItemMaster());
   }, [dispatch]);
 
+  // Persist selectedIds to localStorage for Step 1 selections
+  useEffect(() => {
+    if (selectedIds.length > 0) {
+      localStorage.setItem(
+        "step1SelectedProducedItemIds",
+        JSON.stringify(selectedIds)
+      );
+    }
+  }, [selectedIds]);
+
+  // Restore selectedIds from localStorage if not already selected
+  useEffect(() => {
+    if (selectedIds.length === 0 && items.length > 0) {
+      const backup = localStorage.getItem("step1SelectedProducedItemIds");
+      if (backup) {
+        try {
+          const restoredIds = JSON.parse(backup);
+          // Toggle each restored item
+          restoredIds.forEach((id) => {
+            const item = items.find((x) => x.id === id);
+            if (item) {
+              const isInactive = getNormalizedStatus(item.status) === "INACTIVE";
+              if (!isInactive) {
+                dispatch(toggleProducedItem(id));
+              }
+            }
+          });
+        } catch (err) {
+          console.error("Failed to restore Step 1 selections from localStorage", err);
+        }
+      }
+    }
+  }, [dispatch, items, selectedIds.length]);
+
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
