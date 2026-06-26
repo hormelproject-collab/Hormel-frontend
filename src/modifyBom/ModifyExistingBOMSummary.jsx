@@ -353,23 +353,198 @@ const ModifyExistingBOMSummary = () => {
                 </tr>
               </thead>
               <tbody>
-                {finalExistingComponentItems.map((item, index) => (
-                  <tr
-                    key={index}
-                    style={
-                      item.hasStandardUsageChanged
-                        ? styles.changesAltRow
-                        : styles.changesRow
-                    }
-                  >
-                    <td style={styles.changesCell}>{item.component_item || "-"}</td>
-                    <td style={styles.changesCell}>{item.component_desc || "-"}</td>
-                    <td style={styles.changesCell}>{item.original_standard_usage || "-"}</td>
-                    <td style={styles.changesCell}>{item.updated_standard_usage || "-"}</td>
-                  </tr>
-                ))}
+                <tr style={styles.summaryHeaderRow}>
+                  <th style={styles.summaryHeader}>Field</th>
+                  <th style={styles.summaryHeader}>Value</th>
+                </tr>
+                <tr style={styles.summaryRow}>
+                  <td style={styles.summaryCell}>Location</td>
+                  <td style={styles.summaryCell}>{record.location || "-"}</td>
+                </tr>
+                <tr style={styles.summaryRow}>
+                  <td style={styles.summaryCell}>BOM ID</td>
+                  <td style={styles.summaryCell}>{record.bom_id || "-"}</td>
+                </tr>
+                <tr style={styles.summaryRow}>
+                  <td style={styles.summaryCell}>Produced Item</td>
+                  <td style={styles.summaryCell}>{record.produced_item || "-"}</td>
+                </tr>
+                <tr style={styles.summaryRow}>
+                  <td style={styles.summaryCell}>Produced Item Description</td>
+                  <td style={styles.summaryCell}>
+                    {record.produced_item_desc || record.component_desc || "-"}
+                  </td>
+                </tr>
+                <tr style={styles.summaryRow}>
+                  <td style={styles.summaryCell}>Item Release Flag</td>
+                  <td style={styles.summaryCell}>{record.item_release_flag || "-"}</td>
+                </tr>
               </tbody>
             </table>
+          </div>
+
+          <div style={styles.card}>
+            <h2 style={styles.sectionTitle}>Existing Component Item Values</h2>
+            {finalExistingComponentItems.length === 0 ? (
+              <div style={styles.emptyBox}>No existing component item values were changed.</div>
+            ) : (
+              <table style={styles.changesTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.changesHeader}>Component Item</th>
+                    <th style={styles.changesHeader}>Description</th>
+                    <th style={styles.changesHeader}>Original Standard Usage</th>
+                    <th style={styles.changesHeader}>Updated Standard Usage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {finalExistingComponentItems.map((item, index) => (
+                    <tr
+                      key={index}
+                      style={
+                        item.hasStandardUsageChanged
+                          ? styles.changesAltRow
+                          : styles.changesRow
+                      }
+                    >
+                      <td style={styles.changesCell}>{item.component_item || "-"}</td>
+                      <td style={styles.changesCell}>{item.component_desc || "-"}</td>
+                      <td style={styles.changesCell}>{item.original_standard_usage || "-"}</td>
+                      <td style={styles.changesCell}>{item.updated_standard_usage || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div style={styles.card}>
+            <h2 style={styles.sectionTitle}>Added Component Values</h2>
+            {addedComponentItems.length === 0 ? (
+              <div style={styles.emptyBox}>No new component items were added.</div>
+            ) : (
+              <table style={styles.changesTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.changesHeader}>Component Item</th>
+                    <th style={styles.changesHeader}>Description</th>
+                    <th style={styles.changesHeader}>Standard Usage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {addedComponentItems.map((item, index) => (
+                    <tr key={index} style={styles.changesAltRow}>
+                      <td style={styles.changesCell}>{item.component_item || "-"}</td>
+                      <td style={styles.changesCell}>{item.component_desc || "-"}</td>
+                      <td style={styles.changesCell}>{item.standard_usage || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div style={styles.card}>
+            <h2 style={styles.sectionTitle}>Existing Co-Product Values</h2>
+            {finalExistingCoProducts.length === 0 ? (
+              <div style={styles.emptyBox}>No existing co-product values were changed.</div>
+            ) : (
+              <table style={styles.changesTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.changesHeader}>Co-Product Item</th>
+                    <th style={styles.changesHeader}>Description</th>
+                    <th style={styles.changesHeader}>Original Qty Produced</th>
+                    <th style={styles.changesHeader}>Updated Qty Produced</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {finalExistingCoProducts.map((item, index) => (
+                    <tr
+                      key={index}
+                      style={
+                        item.hasQtyChanged
+                          ? styles.changesAltRow
+                          : styles.changesRow
+                      }
+                    >
+                      <td style={styles.changesCell}>{item.item || "-"}</td>
+                      <td style={styles.changesCell}>{item.desc || "-"}</td>
+                      <td style={styles.changesCell}>{item.original_qty || "-"}</td>
+                      <td style={styles.changesCell}>{item.updated_qty || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div style={styles.card}>
+            <h2 style={styles.sectionTitle}>Added Co-Product Values</h2>
+            {addedCoProducts.length === 0 ? (
+              <div style={styles.emptyBox}>No new co-product values were added.</div>
+            ) : (
+              <table style={styles.changesTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.changesHeader}>Co-Product Item</th>
+                    <th style={styles.changesHeader}>Description</th>
+                    <th style={styles.changesHeader}>Qty Produced</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {addedCoProducts.map((item, index) => (
+                    <tr key={index} style={styles.changesAltRow}>
+                      <td style={styles.changesCell}>{item.item || "-"}</td>
+                      <td style={styles.changesCell}>{item.desc || "-"}</td>
+                      <td style={styles.changesCell}>{item.qty || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div style={styles.card}>
+            <label style={styles.noteLabel}>Notes (Optional)</label>
+            <textarea
+              style={styles.textarea}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add any notes about the BOM changes"
+            />
+          </div>
+
+          <div style={styles.footer}>
+            
+            <button
+              type="button"
+              onClick={handleReturnToMainMenu}
+              style={styles.secondaryBtn}
+            >
+              <span style={{ fontSize: "13px" }}>⌂</span>
+              <span>RETURN TO MAIN MENU</span>
+            </button>
+
+            <button
+              style={styles.confirmBtn}
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "SUBMITTING..." : "✓ CONFIRM AND SUBMIT BOM CHANGES"}
+            </button>
+          </div>
+
+          {successMessage && (
+            <div
+              style={
+                successMessage.includes("✓")
+                  ? styles.successNotification
+                  : styles.errorNotification
+              }
+            >
+              {successMessage}
+            </div>
           )}
         </div>
 
@@ -635,6 +810,8 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     gap: "8px",
+    marginRight: "15px",
+    marginTop: "10px",
   },
   confirmBtn: {
     background: "#166534",

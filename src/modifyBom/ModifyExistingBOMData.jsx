@@ -483,15 +483,6 @@ const ModifyExistingBOMData = () => {
         setComponentItems((prev) => prev.filter((_, i) => i !== index));
     };
 
-    const getStandardUsageFieldError = (value) => {
-        const trimmed = String(value).trim();
-        if (trimmed === "") return "";
-        const num = Number(trimmed);
-        if (Number.isNaN(num)) return "Standard Usage must be numeric.";
-        if (num >= 1) return "Standard Usage must be less than 1.";
-        return "";
-    };
-
     const getQtyProducedFieldError = (value) => {
         const trimmed = String(value).trim();
         if (trimmed === "") return "";
@@ -501,25 +492,9 @@ const ModifyExistingBOMData = () => {
         return "";
     };
 
-    const getNumericFieldError = (value, label) => {
-        const trimmed = String(value).trim();
-        if (trimmed === "") return "";
-        const num = Number(trimmed);
-        if (Number.isNaN(num)) return `${label} must be numeric and less than 1.`;
-        if (num >= 1) return `${label} must be less than 1.`;
-        return "";
-    };
-
     const hasMissingStandardUsage = componentItems.some(
         (item) => String(item.standard_usage).trim() === ""
     );
-
-    const hasInvalidStandardUsage = componentItems.some((item) => {
-        const trimmed = String(item.standard_usage).trim();
-        if (trimmed === "") return false;
-        const num = Number(trimmed);
-        return !Number.isNaN(num) && num >= 1;
-    });
 
     const hasMissingCoProductFields = coProducts.some((cp) => {
         if (!producedCoProduct) return false;
@@ -536,7 +511,7 @@ const ModifyExistingBOMData = () => {
         return !Number.isNaN(num) && num >= 1;
     });
 
-    const hasInvalidNumericValues = hasInvalidStandardUsage || hasInvalidCoProductQty;
+    const hasInvalidNumericValues = hasInvalidCoProductQty;
 
     useEffect(() => {
         if (!hasMissingStandardUsage && !hasMissingCoProductFields && !hasInvalidNumericValues) {
@@ -561,7 +536,7 @@ const ModifyExistingBOMData = () => {
 
         if (hasInvalidNumericValues) {
             setValidationError(
-                "Standard Usage and Qty Produced values must be numeric and less than 1."
+                "Qty Produced values must be numeric and less than 1."
             );
             return;
         }
@@ -705,12 +680,12 @@ const ModifyExistingBOMData = () => {
                 <div style={styles.card}>
                     <div style={styles.grid}>
                         <div style={styles.field}>
-                            <label style={styles.label}>Produced Item</label>
+                            <label style={styles.label}>BOM ID</label>
                             <input
-                                value={record?.produced_item || ""}
+                                value={record?.bom_id || ""}
                                 readOnly
                                 style={styles.inputDisabled}
-                                placeholder="Produced Item"
+                                placeholder="BOM ID"
                             />
                         </div>
 
@@ -725,12 +700,12 @@ const ModifyExistingBOMData = () => {
                         </div>
 
                         <div style={styles.field}>
-                            <label style={styles.label}>BOM Version</label>
+                            <label style={styles.label}>Resource</label>
                             <input
-                                value={record?.bom_version || "PRIMARY"}
+                                value={record?.resource || ""}
                                 readOnly
                                 style={styles.inputDisabled}
-                                placeholder="BOM Version"
+                                placeholder="Resource"
                             />
                         </div>
 
@@ -786,23 +761,14 @@ const ModifyExistingBOMData = () => {
                                             readOnly
                                         />
 
-                                        <div style={styles.inputWithError}>
-                                            <input
-                                                style={
-                                                    getStandardUsageFieldError(item.standard_usage)
-                                                        ? styles.inputError
-                                                        : styles.input
-                                                }
-                                                placeholder="Standard Usage"
-                                                value={item.standard_usage}
-                                                onChange={(e) => {
-                                                    updateComponent(index, "standard_usage", e.target.value);
-                                                }}
-                                            />
-                                            <div style={styles.inlineError}>
-                                                {getStandardUsageFieldError(item.standard_usage)}
-                                            </div>
-                                        </div>
+                                        <input
+                                            style={styles.input}
+                                            placeholder="Standard Usage"
+                                            value={item.standard_usage}
+                                            onChange={(e) => {
+                                                updateComponent(index, "standard_usage", e.target.value);
+                                            }}
+                                        />
 
                                         <button
                                             style={styles.removeBtn}
@@ -877,7 +843,7 @@ const ModifyExistingBOMData = () => {
                                                     style={
                                                         getQtyProducedFieldError(cp.qty)
                                                             ? styles.inputError
-                                                            : styles.input
+                                                            : styles.input2
                                                     }
                                                     placeholder="Qty Produced"
                                                     value={cp.qty}
@@ -1130,6 +1096,41 @@ const styles = {
     },
 
     input: {
+        width: "100%",
+        height: "42px",
+        borderRadius: "4px",
+        border: "1px solid #d1d5db",
+        padding: "0 12px",
+        fontSize: "14px",
+        boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inputWithError: {
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        gap: "4px",
+    },
+
+    inputError: {
+        width: "100%",
+        height: "42px",
+        borderRadius: "4px",
+        border: "1px solid #ef4444",
+        padding: "0 12px",
+        fontSize: "14px",
+        boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inlineError: {
+        color: "#dc2626",
+        fontSize: "12px",
+        fontWeight: 600,
+        minHeight: "18px",
+    },
+        input2: {
         width: "100%",
         height: "42px",
         borderRadius: "4px",
