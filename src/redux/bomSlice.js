@@ -318,6 +318,17 @@ const initialState = {
   },
 
   resourceComponentConfigs: {},
+  itemBomRoutingForm: {
+    selectedBomId: "",
+    producedItem: "",
+    itemReleaseFlag: "",
+    location: "",
+    selectedResource: "",
+    resourceRelevancy: "",
+    routingPriority: "",
+    addConnectedCoProduct: false,
+    coProductRows: [],
+  },
 };
 
 const bomSlice = createSlice({
@@ -446,6 +457,28 @@ const bomSlice = createSlice({
       state.selectedLocationIds = [];
       state.resourceComponentConfigs = {};
     },
+
+    setItemBomRoutingForm: (state, action) => {
+      const payload = action.payload || {};
+      state.itemBomRoutingForm = {
+        ...state.itemBomRoutingForm,
+        ...payload,
+      };
+    },
+
+    clearItemBomRoutingForm: (state) => {
+      state.itemBomRoutingForm = {
+        selectedBomId: "",
+        producedItem: "",
+        itemReleaseFlag: "",
+        location: "",
+        selectedResource: "",
+        resourceRelevancy: "",
+        routingPriority: "",
+        addConnectedCoProduct: false,
+        coProductRows: [],
+      };
+    },
   },
 
   extraReducers: (builder) => {
@@ -527,6 +560,8 @@ export const {
   ensureResourceComponentConfig,
   replicateResourceComponentInfoToLocations,
   clearResourceComponentConfigs,
+  setItemBomRoutingForm,
+  clearItemBomRoutingForm,
 } = bomSlice.actions;
 
 export default bomSlice.reducer;
@@ -589,6 +624,8 @@ export const selectResourceOptionsByKey = (state) =>
   state.bom.resourceMeta.resourceOptionsByKey;
 export const selectResourceComponentConfigs = (state) =>
   state.bom.resourceComponentConfigs;
+export const selectItemBomRoutingForm = (state) =>
+  state.bom.itemBomRoutingForm;
 
 export const selectCheckoutSummary = createSelector(
   [

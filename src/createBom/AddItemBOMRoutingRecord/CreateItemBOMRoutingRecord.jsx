@@ -1,9 +1,12 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import { IoIosArrowBack, IoIosArrowDown, IoMdClose, IoMdTrash } from "react-icons/io";
+import { selectItemBomRoutingForm, setItemBomRoutingForm } from "../../redux/bomSlice";
 
 const API_BASE_URL = "http://localhost:3000";
+const FORM_STORAGE_KEY = "create-item-bom-routing-record-form";
 
 const createCoProductRow = () => ({
   id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -14,19 +17,26 @@ const createCoProductRow = () => ({
 
 const CreateItemBOMRoutingRecord = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const persistedForm = useSelector(selectItemBomRoutingForm);
+  const hasHydratedRef = useRef(false);
 
   const [bomOptions, setBomOptions] = useState([]);
   const [resourceOptions, setResourceOptions] = useState([]);
   const [coProductOptions, setCoProductOptions] = useState([]);
-  const [selectedBomId, setSelectedBomId] = useState("");
-  const [producedItem, setProducedItem] = useState("");
-  const [itemReleaseFlag, setItemReleaseFlag] = useState("");
-  const [location, setLocation] = useState("");
-  const [selectedResource, setSelectedResource] = useState("");
-  const [resourceRelevancy, setResourceRelevancy] = useState("");
-  const [routingPriority, setRoutingPriority] = useState("");
-  const [addConnectedCoProduct, setAddConnectedCoProduct] = useState(false);
-  const [coProductRows, setCoProductRows] = useState([createCoProductRow()]);
+  const [selectedBomId, setSelectedBomId] = useState(persistedForm?.selectedBomId ?? "");
+  const [producedItem, setProducedItem] = useState(persistedForm?.producedItem ?? "");
+  const [itemReleaseFlag, setItemReleaseFlag] = useState(persistedForm?.itemReleaseFlag ?? "");
+  const [location, setLocation] = useState(persistedForm?.location ?? "");
+  const [selectedResource, setSelectedResource] = useState(persistedForm?.selectedResource ?? "");
+  const [resourceRelevancy, setResourceRelevancy] = useState(persistedForm?.resourceRelevancy ?? "");
+  const [routingPriority, setRoutingPriority] = useState(persistedForm?.routingPriority ?? "");
+  const [addConnectedCoProduct, setAddConnectedCoProduct] = useState(persistedForm?.addConnectedCoProduct ?? false);
+  const [coProductRows, setCoProductRows] = useState(
+    Array.isArray(persistedForm?.coProductRows) && persistedForm.coProductRows.length > 0
+      ? persistedForm.coProductRows
+      : [createCoProductRow()]
+  );
 
   const [loading, setLoading] = useState({
     initial: false,
@@ -90,6 +100,98 @@ const CreateItemBOMRoutingRecord = () => {
       location: parts.slice(2).join("_") || "",
     };
   };
+
+  useEffect(() => {
+    if (!hasHydratedRef.current) {
+      hasHydratedRef.current = true;
+      try {
+        const stored = sessionStorage.getItem(FORM_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === "object") {
+            dispatch(setItemBomRoutingForm(parsed));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to restore routing form from session", err);
+      }
+    }
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (!hasHydratedRef.current) return;
+
+    const payload = {
+      selectedBomId,
+      producedItem,
+      itemReleaseFlag,
+      location,
+      selectedResource,
+      resourceRelevancy,
+      routingPriority,
+      addConnectedCoProduct,
+      coProductRows,
+    };
+
+    dispatch(setItemBomRoutingForm(payload));
+    sessionStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(payload));
+  }, [
+    dispatch,
+    selectedBomId,
+    producedItem,
+    itemReleaseFlag,
+    location,
+    selectedResource,
+    resourceRelevancy,
+    routingPriority,
+    addConnectedCoProduct,
+    coProductRows,
+  ]);
+
+  useEffect(() => {
+    if (hasHydratedRef.current) return;
+    hasHydratedRef.current = true;
+
+    const hasReduxFormValues =
+      Boolean(persistedForm?.selectedBomId) ||
+      Boolean(persistedForm?.producedItem) ||
+      Boolean(persistedForm?.itemReleaseFlag) ||
+      Boolean(persistedForm?.location) ||
+      Boolean(persistedForm?.selectedResource) ||
+      Boolean(persistedForm?.resourceRelevancy) ||
+      Boolean(persistedForm?.routingPriority) ||
+      Boolean(persistedForm?.addConnectedCoProduct) ||
+      (Array.isArray(persistedForm?.coProductRows) && persistedForm.coProductRows.length > 0);
+
+    if (hasReduxFormValues) {
+      return;
+    }
+
+    try {
+      const stored = sessionStorage.getItem(FORM_STORAGE_KEY);
+      if (!stored) return;
+
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object") return;
+
+      setSelectedBomId(parsed.selectedBomId ?? "");
+      setProducedItem(parsed.producedItem ?? "");
+      setItemReleaseFlag(parsed.itemReleaseFlag ?? "");
+      setLocation(parsed.location ?? "");
+      setSelectedResource(parsed.selectedResource ?? "");
+      setResourceRelevancy(parsed.resourceRelevancy ?? "");
+      setRoutingPriority(parsed.routingPriority ?? "");
+      setAddConnectedCoProduct(parsed.addConnectedCoProduct ?? false);
+      setCoProductRows(
+        Array.isArray(parsed.coProductRows) && parsed.coProductRows.length > 0
+          ? parsed.coProductRows
+          : [createCoProductRow()]
+      );
+      dispatch(setItemBomRoutingForm(parsed));
+    } catch (err) {
+      console.error("Failed to restore routing form from session", err);
+    }
+  }, [dispatch, persistedForm]);
 
   useEffect(() => {
     const loadInitialData = async () => {
