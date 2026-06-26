@@ -108,65 +108,48 @@ const SelectExistingBOM = () => {
 
     fetchRows();
   }, []);
-const getSearchValue = (row, field) => {
+
+
+  const getSearchValue = (row, field) => {
   switch (field) {
     case "location":
-      return row.location || "";
+      return row.location ?? "";
 
-    case "item":
     case "produced_item":
-      return row.item || row.produced_item || row.producedItem || "";
+      return row.produced_item ?? "";
 
-    case "item_description":
-    case "produced_item_description":
-      return (
-        row.item_description ||
-        row.produced_item_description ||
-        row.itemDescription ||
-        row.producedItemDescription ||
-        ""
-      );
-
-    case "item_release_flag":
-      return row.item_release_flag || row.itemReleaseFlag || "";
+    case "produced_item_desc":
+      return row.produced_item_desc ?? "";
 
     case "bom_id":
-    case "bomId":
-      return row.bom_id || row.bomId || "";
+      return row.bom_id ?? "";
 
     case "resource":
-      return row.resource || "";
+      return row.resource ?? "";
 
-    case "routing_id":
-    case "routingId":
-      return row.routing_id || row.routingId || "";
+    case "item_release_flag":
+      return row.item_release_flag ?? "";
 
     default:
       return "";
   }
 };
-``
 
 const filteredRows = useMemo(() => {
+  const q1 = String(query1 ?? "").trim().toLowerCase();
+  const q2 = String(query2 ?? "").trim().toLowerCase();
+
   return rows.filter((row) => {
-    const value1 = String(getSearchValue(row, searchBy1) ?? "")
+    const rowValue1 = String(getSearchValue(row, searchBy1) ?? "")
       .trim()
       .toLowerCase();
 
-    const value2 = String(getSearchValue(row, searchBy2) ?? "")
+    const rowValue2 = String(getSearchValue(row, searchBy2) ?? "")
       .trim()
       .toLowerCase();
 
-    const search1 = String(query1 ?? "")
-      .trim()
-      .toLowerCase();
-
-    const search2 = String(query2 ?? "")
-      .trim()
-      .toLowerCase();
-
-    const match1 = !searchBy1 || !search1 ? true : value1 === search1;
-    const match2 = !searchBy2 || !search2 ? true : value2 === search2;
+    const match1 = searchBy1 && q1 ? rowValue1 === q1 : true;
+    const match2 = searchBy2 && q2 ? rowValue2 === q2 : true;
 
     return match1 && match2;
   });
@@ -259,46 +242,46 @@ const filteredRows = useMemo(() => {
             <div>Location</div>
             <div>Produced Item</div>
             <div>Produced Item Description</div>
-            <div>BOM ID</div>
+            <div>BOMID</div>
             <div>Resource</div>
             <div>Item Release Flag</div>
           </div>
 
-          {!loading && filteredRows.length === 0 ? (
-            <div style={styles.emptyState}>No BOM records found.</div>
-          ) : (
-            filteredRows.map((row, index) => {
-              const safeKey =
-                row.id || `${row.bom_id}-${row.resource || "NORESOURCE"}-${index}`;
+       {!loading && filteredRows.length === 0 ? (
+  <div style={styles.emptyState}>No BOM records found.</div>
+) : (
+  filteredRows.map((row, index) => {
+    const safeKey =
+      row.id || `${row.bom_id}-${row.resource || "NORESOURCE"}-${index}`;
 
-              const isSelected = selectedRowId === row.id;
+    const isSelected = selectedRowId === row.id;
 
-              return (
-                <div
-                  key={safeKey}
-                  style={{
-                    ...styles.tableRow,
-                    ...(isSelected ? styles.tableRowSelected : {}),
-                  }}
-                  onClick={() => handleRowClick(row)}
-                >
-                  <div style={styles.cell}>{row.location || "-"}</div>
-                  <div style={styles.cell}>{row.produced_item || "-"}</div>
-                  <div style={styles.cell}>{row.produced_item_desc || "-"}</div>
-                  <div style={styles.cell}>{row.bom_id || "-"}</div>
-                  <div style={styles.cell}>{row.resource || "-"}</div>
-                  <div
-                    style={{
-                      ...styles.cell,
-                      ...getReleaseStyle(row.item_release_flag),
-                    }}
-                  >
-                    {row.item_release_flag || "-"}
-                  </div>
-                </div>
-              );
-            })
-          )}
+    return (
+      <div
+        key={safeKey}
+        style={{
+          ...styles.tableRow,
+          ...(isSelected ? styles.tableRowSelected : {}),
+        }}
+        onClick={() => handleRowClick(row)}
+      >
+        <div style={styles.cell}>{row.location || "-"}</div>
+        <div style={styles.cell}>{row.produced_item || "-"}</div>
+        <div style={styles.cell}>{row.produced_item_desc || "-"}</div>
+        <div style={styles.cell}>{row.bom_id || "-"}</div>
+        <div style={styles.cell}>{row.resource || "-"}</div>
+        <div
+          style={{
+            ...styles.cell,
+            ...getReleaseStyle(row.item_release_flag),
+          }}
+        >
+          {row.item_release_flag || "-"}
+        </div>
+      </div>
+    );
+  })
+)}
         </div>
       </div>
     </div>

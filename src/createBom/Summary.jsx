@@ -185,14 +185,24 @@ const buildDuplicatePriorityValidationEntries = (summaryGroups, priorityMap) => 
 
   summaryGroups.forEach((group) => {
     const routingRows = Array.isArray(group.routingRows) ? group.routingRows : [];
+
     const normalized = routingRows
       .filter((row) => row.routingId && row.routingId !== "-")
-      .map((row) => ({
-        routingId: row.routingId,
-        resource: row.resource ?? "",
-        priority: Number(priorityMap[row.routingId] ?? row.defaultPriority ?? 1),
-      }))
-      .filter((row) => Number.isFinite(row.priority));
+      .map((row) => {
+        const rawPriority = String(priorityMap[row.routingId] ?? "").trim();
+
+        return {
+          routingId: row.routingId,
+          resource: row.resource ?? "",
+          priorityText: rawPriority,
+          priority: Number(rawPriority),
+        };
+      })
+      .filter(
+        (row) =>
+          row.priorityText !== "" &&
+          Number.isFinite(row.priority)
+      );
 
     const byPriority = new Map();
 
@@ -208,8 +218,8 @@ const buildDuplicatePriorityValidationEntries = (summaryGroups, priorityMap) => 
         errors.push({
           code: "1020",
           desc: "Check duplicate priority",
-          error: `Duplicate priority ${priority} found for Item "${group.producedItem}" at Location "${group.location}". `,
-          rm: "Assign different routing priorities for each resource within the same item and location.",
+          error: `Duplicate priority ${priority} found for BOM ID "${group.bomId}" / Item "${group.producedItem}" at Location "${group.location}".`,
+          rm: "Assign different routing priorities for each resource within the same BOM ID.",
         });
       }
     }
@@ -443,13 +453,26 @@ export default function SummaryPage() {
   ]);
 
   useEffect(() => {
-    const nextPriorityMap = {};
-    summaryGroups.forEach((group) => {
-      group.routingRows.forEach((row) => {
-        nextPriorityMap[row.routingId] = row.defaultPriority;
+    setPriorityMap((prev) => {
+      const nextPriorityMap = {};
+
+      summaryGroups.forEach((group) => {
+        group.routingRows.forEach((row) => {
+          if (!row.routingId || row.routingId === "-") return;
+
+          nextPriorityMap[row.routingId] =
+            prev[row.routingId] !== undefined
+              ? prev[row.routingId]
+              : String(row.defaultPriority ?? 1);
+        });
       });
+
+      if (shallowEqualObject(prev, nextPriorityMap)) {
+        return prev;
+      }
+
+      return nextPriorityMap;
     });
-    setPriorityMap(nextPriorityMap);
   }, [summaryGroups]);
 
   useEffect(() => {
@@ -458,7 +481,7 @@ export default function SummaryPage() {
 
       summaryGroups.forEach((group) => {
         if (typeof next[group.key] === "undefined") {
-          next[group.key] = true; // auto expand by default
+          next[group.key] = true;
         }
       });
 
@@ -467,6 +490,10 @@ export default function SummaryPage() {
           delete next[key];
         }
       });
+
+      if (shallowEqualObject(prev, next)) {
+        return prev;
+      }
 
       return next;
     });
@@ -571,12 +598,18 @@ export default function SummaryPage() {
   const successEcNumber = useMemo(() => {
     return getSuccessEcNumber(validationResult, previousState);
   }, [validationResult, previousState]);
+  const shallowEqualObject = (obj1, obj2) => {
+    const keys1 = Object.keys(obj1 || {});
+    const keys2 = Object.keys(obj2 || {});
 
+    if (keys1.length !== keys2.length) return false;
+
+    return keys1.every((key) => obj1[key] === obj2[key]);
+  };
   const handlePriorityChange = (routingId, value) => {
-    const safeValue = value === "" ? "" : Math.max(1, Number(value) || 1);
     setPriorityMap((prev) => ({
       ...prev,
-      [routingId]: safeValue,
+      [routingId]: value,
     }));
   };
 
@@ -589,6 +622,7 @@ export default function SummaryPage() {
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
+
   const submitBOMs = async () => {
     if (actualPayload.length === 0) {
       setValidationResult({
@@ -747,20 +781,16 @@ export default function SummaryPage() {
                               </div>
                             ) : (
                               <div key={row.key} style={styles.priorityLine}>
+
                                 <input
-                                  type="number"
-                                  min="1"
-                                  value={
-                                    priorityMap[row.routingId] ?? row.defaultPriority
-                                  }
+                                  type="text"
+                                  value={priorityMap[row.routingId] ?? ""}
                                   onChange={(e) =>
-                                    handlePriorityChange(
-                                      row.routingId,
-                                      e.target.value
-                                    )
+                                    handlePriorityChange(row.routingId, e.target.value)
                                   }
                                   style={styles.priorityInput}
                                 />
+
                               </div>
                             )
                           )}
@@ -962,7 +992,7 @@ export default function SummaryPage() {
           <button
             type="button"
             onClick={handleReturnToMainMenu}
-            style={styles.secondaryBtn}
+            style={styles.mainMenuButton}
           >
             <span style={{ fontSize: "13px" }}>⌂</span>
             <span>RETURN TO MAIN MENU</span>
@@ -1299,6 +1329,19 @@ const styles = {
     verticalAlign: "top",
     whiteSpace: "pre-wrap",
     lineHeight: 1.5,
+  }, mainMenuButton: {
+    height: "46px",
+    border: "1px solid #6da0e1",
+    borderRadius: "4px",
+    background: "#ffffff",
+    color: "#1e63b5",
+    fontSize: "13px",
+    fontWeight: 600,
+    padding: "0 16px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
   }, secondaryBtn: {
     border: "1px solid #6da0e1",
     borderRadius: "3px",

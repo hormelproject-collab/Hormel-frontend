@@ -3,7 +3,6 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { MdDelete } from "react-icons/md";
 
 const NEXT_ROUTE = "/summary";
-
 const BOM_VERSION_OPTIONS = [
     "PRIMARY",
     ...Array.from({ length: 20 }, (_, i) => `BOM${i + 1}`),
@@ -83,12 +82,14 @@ const makeComponentRow = (seed = {}) => ({
     id:
         seed.id ??
         `component-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    componentItem: seed.componentItem ?? seed.item ?? "",
-    description: seed.description ?? "",
+    componentItem: seed.componentItem ?? seed.item ?? seed.component_item ?? "",
+    description:
+        seed.description ?? seed.item_description ?? seed.component_description ?? "",
     standardUsage:
         seed.standardUsage ??
         seed.erp_bom_quantity_consumed_per ??
         seed.qtyConsumedPer ??
+        seed.standard_usage ??
         "",
 });
 
@@ -96,28 +97,22 @@ const makeCoProductRow = (seed = {}) => ({
     id:
         seed.id ??
         `coproduct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    coProductItem: seed.coProductItem ?? seed.item ?? "",
-    description: seed.description ?? "",
+    coProductItem: seed.coProductItem ?? seed.item ?? seed.co_product_item ?? "",
+    description:
+        seed.description ?? seed.item_description ?? seed.co_product_description ?? "",
     qtyProduced:
         seed.qtyProduced ??
         seed.qtyProducedPer ??
         seed.erp_bom_qty_produced_per ??
+        seed.qty_produced_per ??
         "",
 });
-
-const getCoProductAssociationValue = (row) => {
-    return Number(
-        row?.erp_co_product_association ??
-        row?.coProductAssociation ??
-        row?.co_product_association ??
-        0
-    );
-};
 
 const MultiSelectDropdown = ({
     options,
     selectedValues,
     onChange,
+    onOpen,
     placeholder = "Select resource(s)",
 }) => {
     const [open, setOpen] = useState(false);
@@ -129,12 +124,20 @@ const MultiSelectDropdown = ({
                 setOpen(false);
             }
         };
-
         document.addEventListener("mousedown", onDocClick);
         return () => document.removeEventListener("mousedown", onDocClick);
     }, []);
 
     const selectedSet = new Set(selectedValues.map((v) => String(v)));
+
+    const toggleDropdown = async () => {
+        const nextOpen = !open;
+        setOpen(nextOpen);
+
+        if (nextOpen && onOpen) {
+            await onOpen();
+        }
+    };
 
     const toggleValue = (value) => {
         const strValue = String(value);
@@ -152,10 +155,7 @@ const MultiSelectDropdown = ({
 
     return (
         <div style={styles.multiWrap} ref={ref}>
-            <div
-                style={styles.multiControl}
-                onClick={() => setOpen((prev) => !prev)}
-            >
+            <div style={styles.multiControl} onClick={toggleDropdown}>
                 <div style={styles.chipWrap}>
                     {selectedValues.length === 0 ? (
                         <span style={styles.placeholderText}>{placeholder}</span>
@@ -216,15 +216,117 @@ const ModifyExistingBOM = () => {
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
     const [bomVersion, setBomVersion] = useState("");
+
     const [selectedResources, setSelectedResources] = useState([]);
     const [componentItems, setComponentItems] = useState([]);
     const [coProducts, setCoProducts] = useState([]);
     const [producedCoProduct, setProducedCoProduct] = useState(false);
     const [routingRows, setRoutingRows] = useState([]);
+
+    // Lazy-loaded GCP option states
     const [allResourceOptions, setAllResourceOptions] = useState([]);
     const [allItemOptions, setAllItemOptions] = useState([]);
     const [itemMasterMap, setItemMasterMap] = useState(new Map());
     const [resourceMasterMap, setResourceMasterMap] = useState(new Map());
+
+    const [resourceOptionsLoaded, setResourceOptionsLoaded] = useState(false);
+    const [itemOptionsLoaded, setItemOptionsLoaded] = useState(false);
+    const [loadingResourceOptions, setLoadingResourceOptions] = useState(false);
+    const [loadingItemOptions, setLoadingItemOptions] = useState(false);
+
+    const loadGcpResourceOptions = async () => {
+        if (resourceOptionsLoaded || loadingResourceOptions) return;
+
+        setLoadingResourceOptions(true);
+        try {
+            const [routingResconsRows, resourceMasterRows] = await Promise.all([
+                fetchJsonNoLimit("http://localhost:3000/api/bigquery/table/routing_rescons"),
+                fetchJsonNoLimit("http://localhost:3000/api/bigquery/table/resource_master"),
+            ]);
+
+            const resourceMap = new Map();
+            (Array.isArray(resourceMasterRows) ? resourceMasterRows : []).forEach((row) => {
+                const resourceKey = String(row.resource ?? "").trim().toUpperCase();
+                if (!resourceKey) return;
+
+                resourceMap.set(resourceKey, {
+                    resourceRelevancy:
+                        row.resource_planning_relevance ??
+                        row.resource_relevancy ??
+                        row.relevancy ??
+                        "",
+                });
+            });
+
+            const resourceOptions = [];
+            const seenResources = new Set();
+
+            (Array.isArray(routingResconsRows) ? routingResconsRows : []).forEach((row) => {
+                const resource = String(row.resource ?? "").trim();
+                if (!resource) return;
+
+                const key = resource.toUpperCase();
+                if (seenResources.has(key)) return;
+
+                seenResources.add(key);
+                resourceOptions.push({
+                    resource,
+                    resourceRelevancy: resourceMap.get(key)?.resourceRelevancy ?? "",
+                });
+            });
+
+            setResourceMasterMap(resourceMap);
+            setAllResourceOptions(resourceOptions);
+            setResourceOptionsLoaded(true);
+        } catch (e) {
+            console.error("Error fetching GCP resource options:", e);
+        } finally {
+            setLoadingResourceOptions(false);
+        }
+    };
+
+    const loadGcpItemOptions = async () => {
+        if (itemOptionsLoaded || loadingItemOptions) return;
+
+        setLoadingItemOptions(true);
+        try {
+            const itemMasterRows = await fetchJsonNoLimit("http://localhost:3000/api/bigquery/table/item_master");
+
+            const itemMap = new Map();
+            const itemOptions = [];
+            const seenItems = new Set();
+
+            (Array.isArray(itemMasterRows) ? itemMasterRows : []).forEach((row) => {
+                const itemValue = String(row.item ?? "").trim();
+                const itemKey = itemValue.toUpperCase();
+                if (!itemKey) return;
+
+                const description =
+                    row.item_desc ?? row.item_description ?? row.description ?? "";
+
+                itemMap.set(itemKey, {
+                    description,
+                    status: row.item_status ?? row.status ?? "",
+                });
+
+                if (!seenItems.has(itemKey)) {
+                    seenItems.add(itemKey);
+                    itemOptions.push({
+                        item: itemValue,
+                        description,
+                    });
+                }
+            });
+
+            setItemMasterMap(itemMap);
+            setAllItemOptions(itemOptions);
+            setItemOptionsLoaded(true);
+        } catch (e) {
+            console.error("Error fetching GCP item options:", e);
+        } finally {
+            setLoadingItemOptions(false);
+        }
+    };
 
     useEffect(() => {
         const loadPage = async () => {
@@ -234,11 +336,90 @@ const ModifyExistingBOM = () => {
             try {
                 let baseBom = normalizeSelectedBom(routerLocation?.state?.selectedBom);
 
+                // Fallback: if page reload occurred and route state is missing,
+                // rely on id param only if backend can resolve it.
                 if (!baseBom && id) {
-                    const one = await fetchJsonNoLimit(
-                        `/api/bigquery/table/item_bom_routing/${encodeURIComponent(id)}`
+                    const detailsById = await fetchJsonNoLimit(
+                        `http://localhost:3000/api/tables/existing-bom-details-by-id/${encodeURIComponent(id)}`
                     );
-                    baseBom = normalizeSelectedBom(one);
+
+                    baseBom = normalizeSelectedBom(
+                        detailsById?.selectedBom ?? detailsById?.bomHeader ?? detailsById
+                    );
+
+                    if (detailsById && baseBom) {
+                        setSelectedBom(baseBom);
+
+                        const originalVersion = getOriginalBomVersion(baseBom.bom_id);
+                        const nextVersion =
+                            BOM_VERSION_OPTIONS.find((v) => v !== originalVersion) ?? "";
+                        setBomVersion(nextVersion);
+
+                        const resourceRows = Array.isArray(detailsById?.resources)
+                            ? detailsById.resources
+                            : [];
+                        const componentRows = Array.isArray(detailsById?.components)
+                            ? detailsById.components
+                            : [];
+                        const coProductRows = Array.isArray(detailsById?.coProducts)
+                            ? detailsById.coProducts
+                            : [];
+
+                        const preselectedResources = resourceRows
+                            .map((row) => String(row.resource ?? "").trim())
+                            .filter(Boolean);
+
+                        setSelectedResources(preselectedResources);
+
+                        setComponentItems(
+                            componentRows.map((row) =>
+                                makeComponentRow({
+                                    id: row.id ?? row.rec_id,
+                                    componentItem: row.component_item ?? row.item ?? "",
+                                    description:
+                                        row.description ?? row.item_description ?? "",
+                                    standardUsage:
+                                        row.standard_usage ??
+                                        row.erp_bom_quantity_consumed_per ??
+                                        row.qtyConsumedPer ??
+                                        "",
+                                })
+                            )
+                        );
+
+                        setCoProducts(
+                            coProductRows.map((row) =>
+                                makeCoProductRow({
+                                    id: row.id ?? row.rec_id,
+                                    coProductItem: row.co_product_item ?? row.item ?? "",
+                                    description:
+                                        row.description ?? row.item_description ?? "",
+                                    qtyProduced:
+                                        row.qty_produced_per ??
+                                        row.erp_bom_qty_produced_per ??
+                                        row.qtyProducedPer ??
+                                        "",
+                                })
+                            )
+                        );
+
+                        setProducedCoProduct(coProductRows.length > 0);
+
+                        setRoutingRows(
+                            preselectedResources.map((resource) => ({
+                                resource,
+                                resourceRelevancy: "",
+                                routingId: buildRoutingId(
+                                    baseBom.produced_item,
+                                    baseBom.location,
+                                    resource
+                                ),
+                            }))
+                        );
+
+                        setLoading(false);
+                        return;
+                    }
                 }
 
                 if (!baseBom) {
@@ -247,170 +428,78 @@ const ModifyExistingBOM = () => {
 
                 setSelectedBom(baseBom);
 
-                const [
-                    routingResconsRows,
-                    resourceMasterRows,
-                    itemMasterRows,
-                    bomConsumedRows,
-                    itemBomRoutingRows,
-                    bomProducedRows,
-                ] = await Promise.all([
-                    fetchJsonNoLimit("/api/bigquery/table/routing_rescons"),
-                    fetchJsonNoLimit("/api/bigquery/table/resource_master"),
-                    fetchJsonNoLimit("/api/bigquery/table/item_master"),
-                    fetchJsonNoLimit("/api/bigquery/table/bom_consumed"),
-                    fetchJsonNoLimit("/api/bigquery/table/item_bom_routing"),
-                    fetchJsonNoLimit("/api/bigquery/table/bom_produced"),
-                ]);
-
-                const itemMap = new Map();
-                const itemOptions = [];
-                const seenItems = new Set();
-
-                (Array.isArray(itemMasterRows) ? itemMasterRows : []).forEach((row) => {
-                    const itemValue = String(row.item ?? "").trim();
-                    const itemKey = itemValue.toUpperCase();
-                    if (!itemKey) return;
-
-                    const description =
-                        row.item_desc ?? row.item_description ?? row.description ?? "";
-
-                    itemMap.set(itemKey, {
-                        description,
-                        status: row.item_status ?? row.status ?? "",
-                    });
-
-                    if (!seenItems.has(itemKey)) {
-                        seenItems.add(itemKey);
-                        itemOptions.push({
-                            item: itemValue,
-                            description,
-                        });
-                    }
-                });
-
-                setItemMasterMap(itemMap);
-                setAllItemOptions(itemOptions);
-
-                const resourceMap = new Map();
-                (Array.isArray(resourceMasterRows) ? resourceMasterRows : []).forEach((row) => {
-                    const resourceKey = String(row.resource ?? "").trim().toUpperCase();
-                    if (!resourceKey) return;
-
-                    resourceMap.set(resourceKey, {
-                        resourceRelevancy:
-                            row.resource_planning_relevance ??
-                            row.resource_relevancy ??
-                            row.relevancy ??
-                            "",
-                    });
-                });
-                setResourceMasterMap(resourceMap);
-
-                const resourceOptions = [];
-                const seenResources = new Set();
-                (Array.isArray(routingResconsRows) ? routingResconsRows : []).forEach((row) => {
-                    const resource = String(row.resource ?? "").trim();
-                    if (!resource) return;
-
-                    const key = resource.toUpperCase();
-                    if (seenResources.has(key)) return;
-                    seenResources.add(key);
-
-                    resourceOptions.push({
-                        resource,
-                        resourceRelevancy: resourceMap.get(key)?.resourceRelevancy ?? "",
-                    });
-                });
-                setAllResourceOptions(resourceOptions);
+                // PostgreSQL-only initial load
+                const details = await fetchJsonNoLimit(
+                    `http://localhost:3000/api/tables/existing-bom-details?bomId=${encodeURIComponent(
+                        baseBom.bom_id
+                    )}&location=${encodeURIComponent(
+                        baseBom.location
+                    )}&producedItem=${encodeURIComponent(baseBom.produced_item)}`
+                );
 
                 const originalVersion = getOriginalBomVersion(baseBom.bom_id);
                 const nextVersion =
                     BOM_VERSION_OPTIONS.find((v) => v !== originalVersion) ?? "";
+
                 setBomVersion(nextVersion);
 
-                const selectedBomId = String(baseBom.bom_id ?? "").trim();
+                const resourceRows = Array.isArray(details?.resources) ? details.resources : [];
+                const componentRows = Array.isArray(details?.components)
+                    ? details.components
+                    : [];
+                const coProductRows = Array.isArray(details?.coProducts)
+                    ? details.coProducts
+                    : [];
 
-                const bomRoutingForBom = (Array.isArray(itemBomRoutingRows) ? itemBomRoutingRows : []).filter(
-                    (row) => String(row.bom_id ?? "").trim() === selectedBomId
-                );
-
-                const bomRoutingIds = new Set(
-                    bomRoutingForBom
-                        .map((row) => String(row.routing_id ?? row.routingId ?? "").trim())
-                        .filter(Boolean)
-                );
-
-                const preselectedResources = [];
-                const seenSelectedResources = new Set();
-
-                (Array.isArray(routingResconsRows) ? routingResconsRows : []).forEach((row) => {
-                    const routingId = String(row.routing_id ?? row.routingId ?? "").trim();
-                    const resource = String(row.resource ?? "").trim();
-
-                    if (!routingId || !resource) return;
-                    if (!bomRoutingIds.has(routingId)) return;
-
-                    const key = resource.toUpperCase();
-                    if (seenSelectedResources.has(key)) return;
-
-                    seenSelectedResources.add(key);
-                    preselectedResources.push(resource);
-                });
+                const preselectedResources = resourceRows
+                    .map((row) => String(row.resource ?? "").trim())
+                    .filter(Boolean);
 
                 setSelectedResources(preselectedResources);
 
-                const consumedForBom = (Array.isArray(bomConsumedRows) ? bomConsumedRows : []).filter(
-                    (row) => String(row.bom_id ?? "").trim() === selectedBomId
+                setComponentItems(
+                    componentRows.map((row) =>
+                        makeComponentRow({
+                            id: row.id ?? row.rec_id,
+                            componentItem: row.component_item ?? row.item ?? "",
+                            description: row.description ?? row.item_description ?? "",
+                            standardUsage:
+                                row.standard_usage ??
+                                row.erp_bom_quantity_consumed_per ??
+                                row.qtyConsumedPer ??
+                                "",
+                        })
+                    )
                 );
 
-                const prefilledComponents = consumedForBom.map((row) =>
-                    makeComponentRow({
-                        componentItem: row.item ?? row.component_item ?? "",
-                        description: getItemDescription(itemMap, row.item ?? row.component_item),
-                        standardUsage:
-                            row.erp_bom_quantity_consumed_per ??
-                            row.standard_usage ??
-                            row.qtyConsumedPer ??
-                            "",
-                    })
-                );
-                setComponentItems(prefilledComponents);
-
-                const coProductRoutingRows = bomRoutingForBom.filter(
-                    (row) => getCoProductAssociationValue(row) === 1
+                setCoProducts(
+                    coProductRows.map((row) =>
+                        makeCoProductRow({
+                            id: row.id ?? row.rec_id,
+                            coProductItem: row.co_product_item ?? row.item ?? "",
+                            description: row.description ?? row.item_description ?? "",
+                            qtyProduced:
+                                row.qty_produced_per ??
+                                row.erp_bom_qty_produced_per ??
+                                row.qtyProducedPer ??
+                                "",
+                        })
+                    )
                 );
 
-                const producedForBom = (Array.isArray(bomProducedRows) ? bomProducedRows : []).filter(
-                    (row) => String(row.bom_id ?? "").trim() === selectedBomId
+                setProducedCoProduct(coProductRows.length > 0);
+
+                setRoutingRows(
+                    preselectedResources.map((resource) => ({
+                        resource,
+                        resourceRelevancy: "",
+                        routingId: buildRoutingId(
+                            baseBom.produced_item,
+                            baseBom.location,
+                            resource
+                        ),
+                    }))
                 );
-
-                const prefilledCoProducts = coProductRoutingRows.map((routeRow) => {
-                    const item = routeRow.item ?? "";
-                    const producedMatch = producedForBom.find(
-                        (p) => String(p.item ?? "").trim() === String(item ?? "").trim()
-                    );
-
-                    return makeCoProductRow({
-                        coProductItem: item,
-                        description: getItemDescription(itemMap, item),
-                        qtyProduced:
-                            producedMatch?.erp_bom_qty_produced_per ??
-                            producedMatch?.qtyProducedPer ??
-                            producedMatch?.qty_produced_per ??
-                            "",
-                    });
-                });
-
-                setCoProducts(prefilledCoProducts);
-                setProducedCoProduct(prefilledCoProducts.length > 0);
-
-                const generatedRows = preselectedResources.map((resource) => ({
-                    resource,
-                    resourceRelevancy: getResourceRelevancy(resourceMap, resource),
-                    routingId: buildRoutingId(baseBom.produced_item, baseBom.location, resource),
-                }));
-                setRoutingRows(generatedRows);
             } catch (e) {
                 setErr(e?.message ?? "Failed to load existing BOM details");
             } finally {
@@ -562,7 +651,7 @@ const ModifyExistingBOM = () => {
                     ← BACK
                 </div>
 
-                <h1 style={styles.h1}>Step 2: Modify Existing BOM Data</h1>
+                <h1 style={styles.h1}>Step 2: Create BOM From Existing BOM Data</h1>
                 <p style={styles.sub}>Modify the BOM record details</p>
 
                 <div style={styles.card}>
@@ -616,10 +705,16 @@ const ModifyExistingBOM = () => {
                                 options={allResourceOptions}
                                 selectedValues={selectedResources}
                                 onChange={setSelectedResources}
-                                placeholder="Select resource(s)"
+                                onOpen={loadGcpResourceOptions}
+                                placeholder={
+                                    loadingResourceOptions
+                                        ? "Loading resources..."
+                                        : "Select resource(s)"
+                                }
                             />
                             <div style={styles.helperText}>
-                                If desired resource is not found, please check Oracle work definitions.
+                                If desired resource is not found, please check Oracle work
+                                definitions.
                             </div>
                         </div>
 
@@ -647,7 +742,10 @@ const ModifyExistingBOM = () => {
                                 <div style={styles.innerEmptyState}>No resources selected.</div>
                             ) : (
                                 routingRows.map((row, index) => (
-                                    <div key={`${row.resource}-${index}`} style={styles.innerTableRow}>
+                                    <div
+                                        key={`${row.resource}-${index}`}
+                                        style={styles.innerTableRow}
+                                    >
                                         <div>{row.resource ?? "-"}</div>
                                         <div>{row.resourceRelevancy ?? "-"}</div>
                                         <div>{row.routingId ?? "-"}</div>
@@ -661,7 +759,11 @@ const ModifyExistingBOM = () => {
                 <div style={{ ...styles.card, marginTop: 14 }}>
                     <div style={styles.sectionHeaderRow}>
                         <div style={styles.sectionTitle}>Component Items</div>
-                        <button type="button" style={styles.secondaryBtn} onClick={addComponent}>
+                        <button
+                            type="button"
+                            style={styles.secondaryBtn}
+                            onClick={addComponent}
+                        >
                             + ADD COMPONENT
                         </button>
                     </div>
@@ -683,12 +785,21 @@ const ModifyExistingBOM = () => {
                                 <div key={row.id} style={styles.editTableRow}>
                                     <select
                                         value={row.componentItem}
+                                        onFocus={loadGcpItemOptions}
                                         onChange={(e) =>
-                                            updateComponent(row.id, "componentItem", e.target.value)
+                                            updateComponent(
+                                                row.id,
+                                                "componentItem",
+                                                e.target.value
+                                            )
                                         }
                                         style={styles.tableInput}
                                     >
-                                        <option value="">Component Item</option>
+                                        <option value="">
+                                            {loadingItemOptions
+                                                ? "Loading items..."
+                                                : "Component Item"}
+                                        </option>
                                         {allItemOptions.map((option) => (
                                             <option key={option.item} value={option.item}>
                                                 {option.item}
@@ -702,28 +813,28 @@ const ModifyExistingBOM = () => {
                                         disabled
                                         placeholder="Item Description"
                                     />
+
                                     <input
                                         type="number"
                                         min="0"
                                         step="any"
                                         value={row.standardUsage}
                                         onChange={(e) =>
-                                            updateComponent(row.id, "standardUsage", e.target.value)
+                                            updateComponent(
+                                                row.id,
+                                                "standardUsage",
+                                                e.target.value
+                                            )
                                         }
                                         style={styles.tableInput}
                                         placeholder="Standard Usage"
                                     />
+
                                     <div style={styles.deleteBtnContainer}>
                                         <button
                                             type="button"
                                             style={styles.deleteBtn}
-                                            onClick={() =>
-                                                removeCoProductRow(
-                                                    item.item,
-                                                    loc.location,
-                                                    row.id
-                                                )
-                                            }
+                                            onClick={() => removeComponent(row.id)}
                                         >
                                             <span style={styles.iconWrapper}>
                                                 <MdDelete />
@@ -757,7 +868,11 @@ const ModifyExistingBOM = () => {
                     <div style={{ ...styles.card, marginTop: 14 }}>
                         <div style={styles.sectionHeaderRow}>
                             <div style={styles.sectionTitle}>Co-Product Items</div>
-                            <button type="button" style={styles.secondaryBtn} onClick={addCoProduct}>
+                            <button
+                                type="button"
+                                style={styles.secondaryBtn}
+                                onClick={addCoProduct}
+                            >
                                 + ADD CO-PRODUCT
                             </button>
                         </div>
@@ -779,12 +894,21 @@ const ModifyExistingBOM = () => {
                                     <div key={row.id} style={styles.editTableRow}>
                                         <select
                                             value={row.coProductItem}
+                                            onFocus={loadGcpItemOptions}
                                             onChange={(e) =>
-                                                updateCoProduct(row.id, "coProductItem", e.target.value)
+                                                updateCoProduct(
+                                                    row.id,
+                                                    "coProductItem",
+                                                    e.target.value
+                                                )
                                             }
                                             style={styles.tableInput}
                                         >
-                                            <option value="">Co-Product Item</option>
+                                            <option value="">
+                                                {loadingItemOptions
+                                                    ? "Loading items..."
+                                                    : "Co-Product Item"}
+                                            </option>
                                             {allItemOptions.map((option) => (
                                                 <option key={option.item} value={option.item}>
                                                     {option.item}
@@ -798,28 +922,28 @@ const ModifyExistingBOM = () => {
                                             disabled
                                             placeholder="Item Description"
                                         />
+
                                         <input
                                             type="number"
                                             min="0"
                                             step="any"
                                             value={row.qtyProduced}
                                             onChange={(e) =>
-                                                updateCoProduct(row.id, "qtyProduced", e.target.value)
+                                                updateCoProduct(
+                                                    row.id,
+                                                    "qtyProduced",
+                                                    e.target.value
+                                                )
                                             }
                                             style={styles.tableInput}
                                             placeholder="Qty Produced Per"
                                         />
+
                                         <div style={styles.deleteBtnContainer}>
                                             <button
                                                 type="button"
                                                 style={styles.deleteBtn}
-                                                onClick={() =>
-                                                    removeCoProductRow(
-                                                        item.item,
-                                                        loc.location,
-                                                        row.id
-                                                    )
-                                                }
+                                                onClick={() => removeCoProduct(row.id)}
                                             >
                                                 <span style={styles.iconWrapper}>
                                                     <MdDelete />

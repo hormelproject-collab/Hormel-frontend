@@ -87,6 +87,8 @@ const normalizeModifiedComparison = (value) => {
           old_value:
             item.old_value ??
             item.oldValue ??
+            item.original_value ??
+            item.originalValue ??
             item.previous_value ??
             item.previousValue ??
             "",
@@ -96,6 +98,8 @@ const normalizeModifiedComparison = (value) => {
             item.updated_value ??
             item.updatedValue ??
             "",
+          bom_id: item.bom_id || item.bomId || "",
+          change_date: item.change_date || item.changeDate || "",
         };
       }
 
@@ -104,6 +108,8 @@ const normalizeModifiedComparison = (value) => {
         field: "",
         old_value: "",
         new_value: String(item),
+        bom_id: "",
+        change_date: "",
       };
     });
   }
@@ -122,6 +128,8 @@ const normalizeModifiedComparison = (value) => {
           old_value:
             diff.old_value ??
             diff.oldValue ??
+            diff.original_value ??
+            diff.originalValue ??
             diff.previous_value ??
             diff.previousValue ??
             "",
@@ -131,13 +139,18 @@ const normalizeModifiedComparison = (value) => {
             diff.updated_value ??
             diff.updatedValue ??
             "",
+          bom_id: diff.bom_id || diff.bomId || "",
+          change_date: diff.change_date || diff.changeDate || "",
         };
       }
+
       return {
         section: "",
         field,
         old_value: "",
         new_value: String(diff),
+        bom_id: "",
+        change_date: "",
       };
     });
   }
@@ -148,6 +161,8 @@ const normalizeModifiedComparison = (value) => {
       field: "",
       old_value: "",
       new_value: String(value),
+      bom_id: "",
+      change_date: "",
     },
   ];
 };
@@ -241,10 +256,10 @@ const normalizeLogRecord = (item, index) => {
     item.id ||
     `EC-${index + 1}`;
 
-const changeDate =
-  item.change_date ??
-  item.changeDate ??
-  "";
+  const changeDate =
+    item.change_date ??
+    item.changeDate ??
+    "";
 
   const changeType =
     item.change_type ||
@@ -328,12 +343,14 @@ const changeDate =
     [];
 
   const producedItem =
-    item.produced_item ||
-    item.producedItem ||
-    item.item ||
-    item.parent_item ||
-    item.parentItem ||
-    "";
+  item.produced_item ||
+  item.producedItem ||
+  item.main_item ||
+  item.mainItem ||
+  item.item ||
+  item.parent_item ||
+  item.parentItem ||
+  "";
 
   const normalizedComponentDetails = normalizeDetailList(componentDetails);
   const normalizedCoProductDetails = normalizeDetailList(coProductDetails);
@@ -349,7 +366,17 @@ const changeDate =
     )
     .filter(Boolean);
 
-  const coProductItems = normalizedCoProductDetails
+    const summaryCoProductItems = splitCsvish(
+  item.co_product_item ||
+    item.coProductItem ||
+    item.co_product_items ||
+    item.coProductItems ||
+    ""
+);
+
+const coProductItems = uniqueSorted([
+  ...summaryCoProductItems,
+  ...normalizedCoProductDetails
     .map(
       (detail) =>
         detail.co_product_item ||
@@ -358,7 +385,8 @@ const changeDate =
         detail.co_product ||
         ""
     )
-    .filter(Boolean);
+    .filter(Boolean),
+]);
 
   const locations = splitCsvish(locationsRaw);
   const bomIds = splitCsvish(bomIdsRaw);
@@ -455,6 +483,7 @@ const buildExportSheets = (rows) => {
       "Resource(s)": row.resourcesDisplay,
       User: row.user,
       "Change Summary": row.changeSummary,
+      Notes: row.raw?.summarynotes || row.raw?.notes || "",
     })),
     {
       "Engineering Change #": "",
@@ -465,200 +494,229 @@ const buildExportSheets = (rows) => {
       "Resource(s)": "",
       User: "",
       "Change Summary": "No filtered data available",
+      Notes: "",
     }
   );
 
   const mainBomDetails = createRowIfEmpty(
-    rows.flatMap((row) => {
-      if (!row.mainBomDetails.length) {
-        return [
-          {
-            "Engineering Change #": row.engineeringChangeNumber,
-            "Change Type": row.changeType,
-            "Change Date": row.changeDateDisplay,
-            "BOM ID": row.bomIdsDisplay,
-            Location: row.locationsDisplay,
-            Resource: row.resourcesDisplay,
-            User: row.user,
-            Detail: "",
-          },
-        ];
-      }
-
-      return row.mainBomDetails.map((detail) => ({
+    rows.flatMap((row) =>
+      row.mainBomDetails.map((detail) => ({
         "Engineering Change #": row.engineeringChangeNumber,
-        "Change Type": row.changeType,
         "Change Date": row.changeDateDisplay,
+        "Change Type": row.changeType,
+        "Produced Item":
+          detail.produced_item ||
+          detail.producedItem ||
+          row.producedItem ||
+          "",
+        "Item Description":
+          detail.item_description ||
+          detail.itemDescription ||
+          "",
+        "Item Release Flag":
+          detail.item_release_flag ||
+          detail.itemReleaseFlag ||
+          "",
+        Location:
+          detail.location ||
+          row.locationsDisplay ||
+          "",
         "BOM ID":
           detail.bom_id ||
           detail.bomId ||
-          detail.main_bom_id ||
-          detail.mainBomId ||
-          row.bomIdsDisplay,
-        Location:
-          detail.location ||
-          detail.location_name ||
-          row.locationsDisplay,
+          row.bomIdsDisplay ||
+          "",
+        "BOM Version":
+          detail.bom_version ||
+          detail.bomVersion ||
+          "",
         Resource:
           detail.resource ||
-          detail.resource_name ||
-          row.resourcesDisplay,
-        User: row.user,
-        Detail: typeof detail === "object" ? JSON.stringify(detail) : String(detail),
-      }));
-    }),
+          row.resourcesDisplay ||
+          "",
+        "Resource Relevancy":
+          detail.resource_relevancy ||
+          detail.resourceRelevancy ||
+          "",
+        "Routing ID":
+          detail.routing_id ||
+          detail.routingId ||
+          "",
+        "Item BOM Routing Priority":
+          detail.item_bom_routing_priority ??
+          detail.itemBomRoutingPriority ??
+          detail.erp_item_bom_routing_priority ??
+          "",
+      }))
+    ),
     {
       "Engineering Change #": "",
-      "Change Type": "",
       "Change Date": "",
-      "BOM ID": "",
+      "Change Type": "",
+      "Produced Item": "",
+      "Item Description": "",
+      "Item Release Flag": "",
       Location: "",
+      "BOM ID": "",
+      "BOM Version": "",
       Resource: "",
-      User: "",
-      Detail: "No filtered data available",
+      "Resource Relevancy": "",
+      "Routing ID": "",
+      "Item BOM Routing Priority": "",
     }
   );
 
   const componentDetails = createRowIfEmpty(
-    rows.flatMap((row) => {
-      if (!row.componentDetails.length) {
-        return [
-          {
-            "Engineering Change #": row.engineeringChangeNumber,
-            "Parent BOM ID": row.bomIdsDisplay,
-            Location: row.locationsDisplay,
-            "Component Item": "",
-            Resource: row.resourcesDisplay,
-            User: row.user,
-            Detail: "",
-          },
-        ];
-      }
-
-      return row.componentDetails.map((detail) => ({
+    rows.flatMap((row) =>
+      row.componentDetails.map((detail) => ({
         "Engineering Change #": row.engineeringChangeNumber,
-        "Parent BOM ID":
-          detail.parent_bom_id ||
-          detail.parentBomId ||
+        "Change Date": row.changeDateDisplay,
+        "Change Type": row.changeType,
+        "Produced Item":
+          detail.produced_item ||
+          detail.producedItem ||
+          row.producedItem ||
+          "",
+        "BOM ID":
           detail.bom_id ||
           detail.bomId ||
-          row.bomIdsDisplay,
-        Location:
-          detail.location ||
-          detail.location_name ||
-          row.locationsDisplay,
+          row.bomIdsDisplay ||
+          "",
+        "Component Item #":
+          detail.component_item_number ??
+          detail.componentItemNumber ??
+          detail.component_item_no ??
+          detail.line_number ??
+          "",
         "Component Item":
           detail.component_item ||
           detail.componentItem ||
-          detail.item ||
           detail.component ||
+          detail.item ||
           "",
-        Resource:
-          detail.resource ||
-          detail.resource_name ||
-          row.resourcesDisplay,
-        User: row.user,
-        Detail: typeof detail === "object" ? JSON.stringify(detail) : String(detail),
-      }));
-    }),
+        "Component Item Description":
+          detail.component_item_description ||
+          detail.componentItemDescription ||
+          detail.item_description ||
+          detail.itemDescription ||
+          "",
+        "Standard Usage":
+          detail.standard_usage ??
+          detail.standardUsage ??
+          detail.erp_bom_quantity_consumed_per ??
+          detail.erp_bom_standard_usage ??
+          "",
+      }))
+    ),
     {
       "Engineering Change #": "",
-      "Parent BOM ID": "",
-      Location: "",
+      "Change Date": "",
+      "Change Type": "",
+      "Produced Item": "",
+      "BOM ID": "",
+      "Component Item #": "",
       "Component Item": "",
-      Resource: "",
-      User: "",
-      Detail: "No filtered data available",
+      "Component Item Description": "",
+      "Standard Usage": "",
     }
   );
 
   const coProductDetails = createRowIfEmpty(
-    rows.flatMap((row) => {
-      if (!row.coProductDetails.length) {
-        return [
-          {
-            "Engineering Change #": row.engineeringChangeNumber,
-            "Parent BOM ID": row.bomIdsDisplay,
-            Location: row.locationsDisplay,
-            "Co-Product Item": "",
-            Resource: row.resourcesDisplay,
-            User: row.user,
-            Detail: "",
-          },
-        ];
-      }
-
-      return row.coProductDetails.map((detail) => ({
+    rows.flatMap((row) =>
+      row.coProductDetails.map((detail) => ({
         "Engineering Change #": row.engineeringChangeNumber,
-        "Parent BOM ID":
-          detail.parent_bom_id ||
-          detail.parentBomId ||
+        "Change Date": row.changeDateDisplay,
+        "Change Type": row.changeType,
+        "Produced Item":
+          detail.produced_item ||
+          detail.producedItem ||
+          row.producedItem ||
+          "",
+        "BOM ID":
           detail.bom_id ||
           detail.bomId ||
-          row.bomIdsDisplay,
-        Location:
-          detail.location ||
-          detail.location_name ||
-          row.locationsDisplay,
+          row.bomIdsDisplay ||
+          "",
+        "Co-Product #":
+          detail.co_product_number ??
+          detail.coProductNumber ??
+          detail.co_product_item_number ??
+          detail.line_number ??
+          "",
         "Co-Product Item":
           detail.co_product_item ||
           detail.coProductItem ||
-          detail.item ||
           detail.co_product ||
+          detail.item ||
           "",
-        Resource:
-          detail.resource ||
-          detail.resource_name ||
-          row.resourcesDisplay,
-        User: row.user,
-        Detail: typeof detail === "object" ? JSON.stringify(detail) : String(detail),
-      }));
-    }),
+        "Co-Product Item Description":
+          detail.co_product_item_description ||
+          detail.coProductItemDescription ||
+          detail.item_description ||
+          detail.itemDescription ||
+          "",
+        "Co-Product Quantity Produced":
+          detail.co_product_quantity_produced ??
+          detail.coProductQuantityProduced ??
+          detail.erp_bom_qty_produced_per ??
+          detail.qty_produced ??
+          "",
+      }))
+    ),
     {
       "Engineering Change #": "",
-      "Parent BOM ID": "",
-      Location: "",
+      "Change Date": "",
+      "Change Type": "",
+      "Produced Item": "",
+      "BOM ID": "",
+      "Co-Product #": "",
       "Co-Product Item": "",
-      Resource: "",
-      User: "",
-      Detail: "No filtered data available",
+      "Co-Product Item Description": "",
+      "Co-Product Quantity Produced": "",
     }
   );
 
   const modifiedFieldComparison = createRowIfEmpty(
-    rows.flatMap((row) => {
-      if (!row.modifiedFieldComparison.length) {
-        return [
-          {
-            "Engineering Change #": row.engineeringChangeNumber,
-            Section: "",
-            Field: "",
-            "Old Value": "",
-            "New Value": "",
-            User: row.user,
-            "Change Date": row.changeDateDisplay,
-          },
-        ];
-      }
-
-      return row.modifiedFieldComparison.map((detail) => ({
+    rows.flatMap((row) =>
+      row.modifiedFieldComparison.map((detail) => ({
         "Engineering Change #": row.engineeringChangeNumber,
-        Section: detail.section || "",
-        Field: detail.field || "",
-        "Old Value": detail.old_value ?? "",
-        "New Value": detail.new_value ?? "",
-        User: row.user,
-        "Change Date": row.changeDateDisplay,
-      }));
-    }),
+        "Change Date":
+          detail.change_date ||
+          detail.changeDate ||
+          row.changeDateDisplay,
+        "BOM ID":
+          detail.bom_id ||
+          detail.bomId ||
+          row.bomIdsDisplay ||
+          "",
+        Field:
+          detail.field ||
+          detail.column ||
+          detail.name ||
+          "",
+        "Original Value":
+          detail.original_value ??
+          detail.originalValue ??
+          detail.old_value ??
+          detail.oldValue ??
+          detail.previous_value ??
+          detail.previousValue ??
+          "",
+        "Updated Value":
+          detail.updated_value ??
+          detail.updatedValue ??
+          detail.new_value ??
+          detail.newValue ??
+          "",
+      }))
+    ),
     {
       "Engineering Change #": "",
-      Section: "",
-      Field: "",
-      "Old Value": "",
-      "New Value": "",
-      User: "",
       "Change Date": "",
+      "BOM ID": "",
+      Field: "",
+      "Original Value": "",
+      "Updated Value": "",
     }
   );
 

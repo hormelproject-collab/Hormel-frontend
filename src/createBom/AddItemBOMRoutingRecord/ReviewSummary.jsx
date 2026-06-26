@@ -1,3 +1,4 @@
+
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { IoIosArrowBack } from "react-icons/io";
@@ -5,10 +6,12 @@ import { MdCheck } from "react-icons/md";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
+const safeArray = (value) => (Array.isArray(value) ? value : []);
+const toText = (value) => (value == null ? "" : String(value));
+
 const ReviewSummary = () => {
   const navigate = useNavigate();
   const locationHook = useLocation();
-
   const state = locationHook.state || {};
 
   const {
@@ -18,18 +21,38 @@ const ReviewSummary = () => {
     location = "",
     resource = "",
     resourceRelevancy = "",
-    routingPriority = "", // NEW FIELD
+    routingPriority = "",
     routingId = "",
     addConnectedCoProduct = false,
     coProductItem = "",
+    coProducts: passedCoProducts = [],
   } = state;
+
+  const coProducts = safeArray(passedCoProducts).filter(
+    (row) =>
+      String(row?.coProductItem || "").trim() ||
+      String(row?.itemDescription || "").trim() ||
+      String(row?.qtyProduced || "").trim()
+  );
+
+  const fallbackSingleCoProductRows =
+    addConnectedCoProduct && !coProducts.length && coProductItem
+      ? [
+        {
+          coProductItem,
+          itemDescription: "",
+          qtyProduced: "",
+        },
+      ]
+      : [];
+
+  const displayCoProducts = coProducts.length ? coProducts : fallbackSingleCoProductRows;
 
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successData, setSuccessData] = useState(null);
 
-  // TODO: replace with your actual logged-in user source if available
   const currentUser = useMemo(() => {
     return {
       userId:
@@ -48,12 +71,14 @@ const ReviewSummary = () => {
     !!producedItem &&
     !!location &&
     !!resource &&
-    !!routingPriority && // NEW REQUIRED FIELD
+    !!routingPriority &&
     !!routingId &&
     !submitting;
+
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
+
   const handleSubmit = async () => {
     if (!canSubmit) return;
 
@@ -69,10 +94,31 @@ const ReviewSummary = () => {
         location,
         resource,
         resourceRelevancy,
-        routingPriority, // NEW FIELD SENT TO BACKEND
+        routingPriority,
         routingId,
         addConnectedCoProduct,
-        coProductItem: addConnectedCoProduct ? coProductItem : "",
+
+        // main item explicitly sent
+        mainItem: {
+          item: producedItem,
+          erp_co_product_association: 0,
+        },
+
+        // backward compatibility
+        coProductItem: addConnectedCoProduct
+          ? (displayCoProducts[0]?.coProductItem ?? coProductItem ?? "")
+          : "",
+
+        // all co-products explicitly marked
+        coProducts: addConnectedCoProduct
+          ? displayCoProducts.map((row) => ({
+            coProductItem: row.coProductItem ?? "",
+            itemDescription: row.itemDescription ?? "",
+            qtyProduced: row.qtyProduced ?? "",
+            erp_co_product_association: 1,
+          }))
+          : [],
+
         notes,
         changeType: "Added",
         user: {
@@ -90,7 +136,6 @@ const ReviewSummary = () => {
       });
 
       const json = await res.json();
-
       if (!res.ok) {
         throw new Error(
           json?.details ||
@@ -136,19 +181,12 @@ const ReviewSummary = () => {
           <div style={styles.summaryRow}>
             <strong>Item Release Flag:</strong> <span>{itemReleaseFlag || "-"}</span>
           </div>
+
           <div style={styles.summaryRow}>
-            <strong>Location:</strong> <span>{location || "-"}</span>
+            <strong>Item BOM Routing Priority:</strong> <span>{routingPriority || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
-            <strong>Resource:</strong> <span>{resource || "-"}</span>
-          </div>
-          <div style={styles.summaryRow}>
-            <strong>Item BOM Routing Priority:</strong>{" "}
-            <span>{routingPriority || "-"}</span>
-          </div>
-          <div style={styles.summaryRow}>
-            <strong>Resource Relevancy:</strong>{" "}
-            <span>{resourceRelevancy || "-"}</span>
+            <strong>Resource Relevancy:</strong> <span>{resourceRelevancy || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
             <strong>Routing ID:</strong> <span>{routingId || "-"}</span>
@@ -156,15 +194,50 @@ const ReviewSummary = () => {
           <div style={styles.summaryRow}>
             <strong>BOM ID:</strong> <span>{bomId || "-"}</span>
           </div>
-          <div style={styles.summaryRow}>
-            <strong>Connected Co-Product:</strong>{" "}
-            <span>{addConnectedCoProduct ? "Yes" : "No"}</span>
-          </div>
+
+
           {addConnectedCoProduct ? (
-            <div style={styles.summaryRow}>
-              <strong>Co-Product Item:</strong> <span>{coProductItem || "-"}</span>
+            <div style={styles.coProductSection}>
+              <div style={styles.coProductNote}>
+                Note: An additional record will be added to BOM Produced and Item BOM Routing for these Co-Products
+              </div>
+
+              <div style={styles.coProductSectionTitle}>Co-Product Information</div>
+
+              {displayCoProducts.length ? (
+                <table style={styles.coProductTable}>
+                  <thead>
+                    <tr>
+                      <th style={styles.coProductTh}>Co-Product Item</th>
+                      <th style={styles.coProductTh}>Item Description</th>
+                      <th style={styles.coProductTh}>Qty Produced</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayCoProducts.map((row, index) => (
+                      <tr key={`${row.coProductItem || "coprod"}_${index}`}>
+                        <td style={styles.coProductTd}>
+                          {toText(row.coProductItem).trim() || "-"}
+                        </td>
+                        <td style={styles.coProductTd}>
+                          {toText(row.itemDescription).trim() || "-"}
+                        </td>
+                        <td style={styles.coProductTd}>
+                          {toText(row.qtyProduced).trim() || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={styles.noCoProductText}>No co-product details selected.</div>
+              )}
             </div>
-          ) : null}
+          ) : (
+            <div style={styles.summaryRow}>
+              <strong>Connected Co-Product:</strong> <span>No</span>
+            </div>
+          )}
         </div>
 
         <div style={styles.noteBox}>
@@ -185,7 +258,6 @@ const ReviewSummary = () => {
             <span style={{ fontSize: "13px" }}>⌂</span>
             <span>RETURN TO MAIN MENU</span>
           </button>
-
           <button
             style={{
               ...styles.submitButton,
@@ -247,12 +319,58 @@ const styles = {
     padding: "20px 24px",
     minHeight: "220px",
   },
+coProductNote: {
+  marginBottom: "12px",
+  padding: "10px 12px",
+  borderRadius: "4px",
+  backgroundColor: "#fff7ed",
+  border: "1px solid #fed7aa",
+  color: "#9a3412",
+  fontSize: "14px",
+  fontWeight: 500,
+},
+
   summaryRow: {
     display: "flex",
     gap: "8px",
     marginBottom: "12px",
     fontSize: "16px",
     color: "#111827",
+  },
+  coProductSection: {
+    marginTop: "20px",
+  },
+  coProductSectionTitle: {
+    fontSize: "16px",
+    fontWeight: 700,
+    color: "#111827",
+    marginBottom: "10px",
+  },
+  coProductTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    border: "1px solid #d1d5db",
+    backgroundColor: "#ffffff",
+  },
+  coProductTh: {
+    textAlign: "left",
+    padding: "10px 12px",
+    fontSize: "14px",
+    fontWeight: 700,
+    color: "#111827",
+    backgroundColor: "#e5e7eb",
+    borderBottom: "1px solid #d1d5db",
+  },
+  coProductTd: {
+    padding: "10px 12px",
+    fontSize: "14px",
+    color: "#111827",
+    borderTop: "1px solid #e5e7eb",
+    verticalAlign: "top",
+  },
+  noCoProductText: {
+    fontSize: "14px",
+    color: "#6b7280",
   },
   noteBox: {
     marginTop: "0",

@@ -319,7 +319,7 @@ const normalizeRoutingRecord = (row, index) => {
     ]);
 
     const coProductAssociation =
-        String(rawCoProductAssociation).trim() === "1" ? 1 : 0;
+        Number(String(rawCoProductAssociation || "0").trim()) >= 1 ? 1 : 0;
 
     return {
         id: recId || `${bomId}__${routingId}__${item}__${index}`,
@@ -391,12 +391,22 @@ export default function DeleteExistingItemBomRoutingStep1() {
                 if (!response.ok) {
                     throw new Error(
                         result?.details ||
-                            result?.error ||
-                            "Failed to fetch item BOM routing records"
+                        result?.error ||
+                        "Failed to fetch item BOM routing records"
                     );
                 }
 
                 const list = Array.isArray(result?.data) ? result.data : [];
+
+                console.table(
+                    list.map((row) => ({
+                        bom_id: row.bom_id,
+                        item: row.item,
+                        routing_id: row.routing_id,
+                        erp_co_product_association: row.erp_co_product_association,
+                    }))
+                );
+
                 const normalized = list.map((row, index) =>
                     normalizeRoutingRecord(row, index)
                 );
@@ -424,22 +434,48 @@ export default function DeleteExistingItemBomRoutingStep1() {
     }, []);
 
     const filteredRows = useMemo(() => {
-        return rows.filter((row) => {
-            const value1 = String(getCriteriaValue(row, criteria1Field) ?? "")
-                .trim()
-                .toLowerCase();
-            const value2 = String(getCriteriaValue(row, criteria2Field) ?? "")
-                .trim()
-                .toLowerCase();
+        return rows
+            .filter((row) => {
+                const value1 = String(getCriteriaValue(row, criteria1Field) ?? "")
+                    .trim()
+                    .toLowerCase();
+                const value2 = String(getCriteriaValue(row, criteria2Field) ?? "")
+                    .trim()
+                    .toLowerCase();
 
-            const search1 = String(criteria1Value ?? "").trim().toLowerCase();
-            const search2 = String(criteria2Value ?? "").trim().toLowerCase();
+                const search1 = String(criteria1Value ?? "").trim().toLowerCase();
+                const search2 = String(criteria2Value ?? "").trim().toLowerCase();
 
-            const match1 = !criteria1Field || !search1 ? true : value1 === search1;
-            const match2 = !criteria2Field || !search2 ? true : value2 === search2;
+                const match1 = !criteria1Field || !search1 ? true : value1 === search1;
+                const match2 = !criteria2Field || !search2 ? true : value2 === search2;
 
-            return match1 && match2;
-        });
+                return match1 && match2;
+            })
+            .sort((a, b) => {
+                const bomCompare = String(a.bomId || "").localeCompare(
+                    String(b.bomId || "")
+                );
+
+                if (bomCompare !== 0) return bomCompare;
+
+                const aAssociation = Number(a.coProductAssociation || 0);
+                const bAssociation = Number(b.coProductAssociation || 0);
+
+                const aPriority = aAssociation < 1 ? 0 : 1;
+                const bPriority = bAssociation < 1 ? 0 : 1;
+
+                if (aPriority !== bPriority) {
+                    return aPriority - bPriority;
+                }
+
+                const routingCompare = String(a.routingId || "").localeCompare(
+                    String(b.routingId || "")
+                );
+
+                if (routingCompare !== 0) return routingCompare;
+
+                return String(a.item || "").localeCompare(String(b.item || ""));
+            });
     }, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
 
     const selectedCount = selectedIds.length;
@@ -665,9 +701,8 @@ export default function DeleteExistingItemBomRoutingStep1() {
                                                     checked={isSelected}
                                                     onChange={() => handleToggleRow(row.id)}
                                                     style={styles.checkbox}
-                                                    aria-label={`Select routing record ${
-                                                        row.routingId || row.id
-                                                    }`}
+                                                    aria-label={`Select routing record ${row.routingId || row.id
+                                                        }`}
                                                 />
                                             </td>
                                             <td style={{ ...styles.td, ...(highlighted || {}) }}>

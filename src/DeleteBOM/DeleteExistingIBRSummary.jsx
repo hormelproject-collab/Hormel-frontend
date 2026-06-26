@@ -91,15 +91,15 @@ const styles = {
     cursor: "pointer",
     boxShadow: "0 2px 4px rgba(0,0,0,0.14)",
   },
-  mainMenuBtn: {
-    height: "28px",
+  mainMenuButton: {
+    height: "46px",
     border: "1px solid #6da0e1",
-    borderRadius: "3px",
+    borderRadius: "4px",
     background: "#ffffff",
     color: "#1e63b5",
-    fontSize: "12px",
-    fontWeight: 500,
-    padding: "0 12px",
+    fontSize: "13px",
+    fontWeight: 600,
+    padding: "0 16px",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -416,7 +416,7 @@ export default function DeleteItemBomRoutingSummaryStep2() {
           <button
             type="button"
             onClick={handleReturnToMainMenu}
-            style={styles.mainMenuBtn}
+            style={styles.mainMenuButton}
           >
             <span style={{ fontSize: "13px" }}>⌂</span>
             <span>RETURN TO MAIN MENU</span>

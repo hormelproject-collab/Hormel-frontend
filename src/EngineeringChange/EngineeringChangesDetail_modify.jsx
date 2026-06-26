@@ -9,9 +9,19 @@ const toText = (value) => {
   return String(value);
 };
 
+const safeArray = (value) => (Array.isArray(value) ? value : []);
+
+const normalizeSpace = (value) => toText(value).trim().replace(/\s+/g, " ");
+
+const isBlank = (value) => normalizeSpace(value) === "";
+
+const dashIfBlank = (value, fallback = "-") => {
+  const text = toText(value).trim();
+  return text ? text : fallback;
+};
+
 const formatDisplayDate = (value) => {
   if (!value) return "-";
-
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return toText(value) || "-";
@@ -20,7 +30,6 @@ const formatDisplayDate = (value) => {
   const yyyy = parsed.getFullYear();
   const dd = String(parsed.getDate()).padStart(2, "0");
   const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-
   let hours = parsed.getHours();
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
@@ -31,22 +40,21 @@ const formatDisplayDate = (value) => {
   if (hours === 0) hours = 12;
 
   const hh = String(hours).padStart(2, "0");
-
   return `${yyyy}-${mm}-${dd} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
 };
 
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "#f2f2f2",
+    background: "#f3f4f6",
     padding: "24px 32px 40px 32px",
     fontFamily: "Segoe UI, Arial, sans-serif",
-    color: "#000",
+    color: "#111827",
   },
   backLink: {
     border: "none",
     background: "none",
-    color: "#0f62fe",
+    color: "#2563eb",
     fontSize: "14px",
     cursor: "pointer",
     padding: 0,
@@ -57,20 +65,21 @@ const styles = {
   },
   title: {
     fontSize: "24px",
-    fontWeight: 600,
+    fontWeight: 700,
     margin: "0 0 8px 0",
-    color: "#000",
+    color: "#111827",
   },
   subtitle: {
     fontSize: "14px",
-    color: "#555",
+    color: "#4b5563",
     margin: "0 0 18px 0",
   },
   infoCard: {
     background: "#dcedf8",
     border: "1px solid #cbdde9",
+    borderRadius: "4px",
     padding: "14px 18px",
-    marginBottom: "28px",
+    marginBottom: "24px",
   },
   infoLine: {
     fontSize: "14px",
@@ -81,57 +90,63 @@ const styles = {
     gap: "6px",
   },
   infoLabel: {
-    fontWeight: 600,
+    fontWeight: 700,
   },
-  section: {
-    marginBottom: "28px",
+  sectionCard: {
+    background: "#ffffff",
+    border: "1px solid #d9d9d9",
+    borderRadius: "4px",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+    padding: "22px 26px",
+    marginBottom: "22px",
   },
   sectionTitle: {
     fontSize: "18px",
-    fontWeight: 600,
-    margin: "0 0 12px 0",
-    color: "#000",
+    fontWeight: 700,
+    margin: "0 0 16px 0",
+    color: "#111827",
   },
   tableWrapper: {
-    background: "#fff",
-    border: "1px solid #d9d9d9",
-    borderRadius: "2px",
-    overflow: "hidden",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+    width: "100%",
+    overflowX: "auto",
   },
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    tableLayout: "fixed",
+    background: "#ffffff",
   },
   th: {
-    background: "#f3f3f3",
-    color: "#222",
+    background: "#f3f4f6",
+    color: "#1f2937",
     textAlign: "left",
     fontSize: "14px",
-    fontWeight: 500,
-    padding: "12px",
-    borderBottom: "1px solid #d9d9d9",
+    fontWeight: 700,
+    padding: "14px 18px",
+    borderBottom: "1px solid #d1d5db",
   },
   td: {
     fontSize: "14px",
-    color: "#111",
-    padding: "12px",
-    borderBottom: "1px solid #e6e6e6",
-    verticalAlign: "middle",
+    color: "#111827",
+    padding: "16px 18px",
+    borderBottom: "1px solid #e5e7eb",
+    verticalAlign: "top",
     wordBreak: "break-word",
   },
-  changedRow: {
-    background: "#f6f2dd",
-  },
   updatedValueChanged: {
-    color: "#0f62fe",
+    color: "#111827",
     fontWeight: 600,
   },
-  empty: {
-    textAlign: "center",
-    color: "#777",
-    padding: "24px",
+  removedValue: {
+    color: "#b42318",
+    fontWeight: 700,
+  },
+  emptyBox: {
+    border: "1px dashed #d1d5db",
+    borderRadius: "4px",
+    padding: "18px 20px",
+    color: "#475467",
+    background: "#fafafa",
+    fontSize: "14px",
   },
   loadingBox: {
     background: "#fff",
@@ -148,50 +163,32 @@ const styles = {
   },
 };
 
-const ChangeTable = ({ title, rows }) => {
-  return (
-    <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>{title}</h2>
+const EmptySection = ({ message }) => <div style={styles.emptyBox}>{message}</div>;
 
+const DetailsTable = ({ title, rows }) => {
+  return (
+    <div style={styles.sectionCard}>
+      <h2 style={styles.sectionTitle}>{title}</h2>
       <div style={styles.tableWrapper}>
         <table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Field</th>
-              <th style={styles.th}>Original Value</th>
-              <th style={styles.th}>Updated Value</th>
+              <th style={styles.th}>Value</th>
             </tr>
           </thead>
           <tbody>
             {rows?.length ? (
-              rows.map((row, index) => {
-                const baseCellStyle = row.changed
-                  ? { ...styles.td, ...styles.changedRow }
-                  : styles.td;
-
-                return (
-                  <tr key={`${row.field}-${index}`}>
-                    <td style={baseCellStyle}>{row.field || "-"}</td>
-                    <td style={baseCellStyle}>{row.originalValue || "-"}</td>
-                    <td
-                      style={
-                        row.changed
-                          ? {
-                              ...baseCellStyle,
-                              ...styles.updatedValueChanged,
-                            }
-                          : baseCellStyle
-                      }
-                    >
-                      {row.updatedValue || "-"}
-                    </td>
-                  </tr>
-                );
-              })
+              rows.map((row, index) => (
+                <tr key={`${row.field}-${index}`}>
+                  <td style={styles.td}>{dashIfBlank(row.field)}</td>
+                  <td style={styles.td}>{dashIfBlank(row.value)}</td>
+                </tr>
+              ))
             ) : (
               <tr>
-                <td style={{ ...styles.td, ...styles.empty }} colSpan={3}>
-                  No data available
+                <td style={styles.td} colSpan={2}>
+                  <EmptySection message="No data available" />
                 </td>
               </tr>
             )}
@@ -200,6 +197,159 @@ const ChangeTable = ({ title, rows }) => {
       </div>
     </div>
   );
+};
+
+const ExistingValuesTable = ({
+  title,
+  rows,
+  itemLabel,
+  quantityLabel,
+  emptyMessage,
+}) => {
+  return (
+    <div style={styles.sectionCard}>
+      <h2 style={styles.sectionTitle}>{title}</h2>
+      {rows?.length ? (
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>{itemLabel}</th>
+                <th style={styles.th}>Description</th>
+                <th style={styles.th}>{`Original ${quantityLabel}`}</th>
+                <th style={styles.th}>{`Updated ${quantityLabel}`}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => {
+                const isRemoved = /item removed/i.test(toText(row.updatedValue));
+                const updatedCellStyle = isRemoved
+                  ? { ...styles.td, ...styles.removedValue }
+                  : row.changed
+                    ? { ...styles.td, ...styles.updatedValueChanged }
+                    : styles.td;
+
+                return (
+                  <tr key={`${row.item}-${index}`}>
+                    <td style={styles.td}>{dashIfBlank(row.item)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.description)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.originalValue)}</td>
+                    <td style={updatedCellStyle}>{dashIfBlank(row.updatedValue)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptySection message={emptyMessage} />
+      )}
+    </div>
+  );
+};
+
+const AddedValuesTable = ({
+  title,
+  rows,
+  itemLabel,
+  quantityLabel,
+  emptyMessage,
+}) => {
+  return (
+    <div style={styles.sectionCard}>
+      <h2 style={styles.sectionTitle}>{title}</h2>
+      {rows?.length ? (
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>{itemLabel}</th>
+                <th style={styles.th}>Description</th>
+                <th style={styles.th}>{quantityLabel}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={`${row.item}-${index}`}>
+                  <td style={styles.td}>{dashIfBlank(row.item)}</td>
+                  <td style={styles.td}>{dashIfBlank(row.description)}</td>
+                  <td style={{ ...styles.td, ...styles.updatedValueChanged }}>
+                    {dashIfBlank(row.value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptySection message={emptyMessage} />
+      )}
+    </div>
+  );
+};
+
+const findNextValueRow = (rows, startIndex, targetFields) => {
+  for (let i = startIndex; i < rows.length; i += 1) {
+    const field = normalizeSpace(rows[i]?.field).toLowerCase();
+    if (targetFields.includes(field)) return rows[i];
+  }
+  return null;
+};
+
+const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldNames }) => {
+  const normalizedRows = safeArray(rows);
+  const existingRows = [];
+  const addedRows = [];
+
+  for (let index = 0; index < normalizedRows.length; index += 1) {
+    const currentRow = normalizedRows[index] || {};
+    const currentField = normalizeSpace(currentRow.field).toLowerCase();
+
+    if (!itemFieldNames.includes(currentField)) {
+      continue;
+    }
+
+    const itemOriginal = toText(currentRow.originalValue).trim();
+    const itemUpdated = toText(currentRow.updatedValue).trim();
+    const valueRow = findNextValueRow(normalizedRows, index + 1, valueFieldNames) || {};
+    const originalValue = toText(valueRow.originalValue).trim();
+    const updatedValueRaw = toText(valueRow.updatedValue).trim();
+
+    const existsInOg = itemOriginal !== "";
+    const existsInMain = itemUpdated !== "";
+
+    if (existsInOg && existsInMain) {
+      existingRows.push({
+        item: itemOriginal || itemUpdated,
+        description: "",
+        originalValue: originalValue || "",
+        updatedValue: updatedValueRaw || "",
+        changed: normalizeSpace(originalValue) !== normalizeSpace(updatedValueRaw),
+      });
+      continue;
+    }
+
+    if (!existsInOg && existsInMain) {
+      addedRows.push({
+        item: itemUpdated,
+        description: "",
+        value: updatedValueRaw || originalValue || "",
+      });
+      continue;
+    }
+
+    if (existsInOg && !existsInMain) {
+      existingRows.push({
+        item: itemOriginal,
+        description: "",
+        originalValue: originalValue || "",
+        updatedValue: "Item removed",
+        changed: true,
+      });
+    }
+  }
+
+  return { existingRows, addedRows };
 };
 
 const EngineeringChangeDetailModify = () => {
@@ -257,14 +407,12 @@ const EngineeringChangeDetailModify = () => {
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
-
     if (engineeringChangeId) params.append("engineeringChangeId", engineeringChangeId);
     if (bomId) params.append("bomId", bomId);
     if (locationName) params.append("location", locationName);
     if (resource) params.append("resource", resource);
     if (producedItem) params.append("producedItem", producedItem);
     if (componentItem) params.append("componentItem", componentItem);
-
     return params.toString();
   }, [engineeringChangeId, bomId, locationName, resource, producedItem, componentItem]);
 
@@ -272,7 +420,6 @@ const EngineeringChangeDetailModify = () => {
     const fetchDetail = async () => {
       setLoading(true);
       setApiError("");
-
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/tables/engineering-changes-detail-modify?${queryString}`,
@@ -285,7 +432,6 @@ const EngineeringChangeDetailModify = () => {
         );
 
         const result = await response.json();
-
         if (!response.ok || !result?.success) {
           throw new Error(
             result?.message ||
@@ -311,29 +457,9 @@ const EngineeringChangeDetailModify = () => {
   }, [queryString]);
 
   const header = useMemo(() => detail?.header || {}, [detail]);
-  const rawBomRecordDetails = useMemo(
-    () => detail?.bomRecordDetails || [],
-    [detail]
-  );
-const componentItemChanges = useMemo(() => {
-  const rows = detail?.componentItemChanges || [];
-
-  return rows.filter((row) => {
-    const field = String(row.field || "").toLowerCase();
-
-    return (
-      !field.includes("start date") &&
-      !field.includes("end date") &&
-      !field.includes("start_date") &&
-      !field.includes("end_date")
-    );
-  });
-}, [detail]);
-
-  const coProductChanges = useMemo(
-    () => detail?.coProductChanges || [],
-    [detail]
-  );
+  const rawBomRecordDetails = useMemo(() => detail?.bomRecordDetails || [], [detail]);
+  const componentItemChanges = useMemo(() => safeArray(detail?.componentItemChanges), [detail]);
+  const coProductChanges = useMemo(() => safeArray(detail?.coProductChanges), [detail]);
 
   const bomRecordDetails = useMemo(() => {
     const valueMap = {};
@@ -349,38 +475,26 @@ const componentItemChanges = useMemo(() => {
     return [
       {
         field: "Location",
-        value:
-          valueMap["location"] ||
-          locationName ||
-          header.location ||
-          "-",
+        value: valueMap["location"] || locationName || header.location || "-",
       },
       {
         field: "BOM ID",
         value:
-          valueMap["bom id"] ||
-          valueMap["bom_id"] ||
-          bomId ||
-          header.bomId ||
-          "-",
+          valueMap["bom id"] || valueMap["bom_id"] || bomId || header.bomId || "-",
       },
       {
         field: "Produced Item",
         value:
           valueMap["produced item"] ||
-          valueMap["item"] ||
           valueMap["produced_item"] ||
+          valueMap["item"] ||
           producedItem ||
           header.producedItem ||
           "-",
       },
       {
         field: "Routing ID",
-        value:
-          valueMap["routing id"] ||
-          valueMap["routing_id"] ||
-          header.routingId ||
-          "-",
+        value: valueMap["routing id"] || valueMap["routing_id"] || header.routingId || "-",
       },
       {
         field: "Item BOM Routing Priority",
@@ -389,11 +503,30 @@ const componentItemChanges = useMemo(() => {
           valueMap["item_bom_routing_priority"] ||
           valueMap["priority"] ||
           header.itemBomRoutingPriority ||
-          header.priority ||
           "-",
       },
     ];
   }, [rawBomRecordDetails, locationName, bomId, producedItem, header]);
+
+  const { existingRows: existingComponentRows, addedRows: addedComponentRows } = useMemo(
+    () =>
+      buildExistingAddedFromChangeRows({
+        rows: componentItemChanges,
+        itemFieldNames: ["component item"],
+        valueFieldNames: ["standard usage"],
+      }),
+    [componentItemChanges]
+  );
+
+  const { existingRows: existingCoProductRows, addedRows: addedCoProductRows } = useMemo(
+    () =>
+      buildExistingAddedFromChangeRows({
+        rows: coProductChanges,
+        itemFieldNames: ["co-product item", "coproduct item"],
+        valueFieldNames: ["standard usage", "qty produced", "quantity produced"],
+      }),
+    [coProductChanges]
+  );
 
   if (loading) {
     return (
@@ -403,50 +536,12 @@ const componentItemChanges = useMemo(() => {
     );
   }
 
-  const DetailsTable = ({ title, rows }) => {
-    return (
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>{title}</h2>
-        <div style={styles.tableWrapper}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Field</th>
-                <th style={styles.th}>Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows?.length ? (
-                rows.map((row, index) => (
-                  <tr key={`${row.field}-${index}`}>
-                    <td style={styles.td}>{row.field || "-"}</td>
-                    <td style={styles.td}>{row.value || "-"}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td style={{ ...styles.td, ...styles.empty }} colSpan={2}>
-                    No data available
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
-
   if (apiError) {
     return (
       <div style={styles.page}>
-        <button
-          style={styles.backLink}
-          onClick={() => navigate("/change-log")}
-        >
+        <button style={styles.backLink} onClick={() => navigate("/change-log")}>
           ← BACK TO ENGINEERING CHANGE SUMMARY
         </button>
-
         <div style={styles.errorBox}>{apiError}</div>
       </div>
     );
@@ -454,10 +549,7 @@ const componentItemChanges = useMemo(() => {
 
   return (
     <div style={styles.page}>
-      <button
-        style={styles.backLink}
-        onClick={() => navigate("/change-log")}
-      >
+      <button style={styles.backLink} onClick={() => navigate("/change-log")}>
         ← BACK TO ENGINEERING CHANGE SUMMARY
       </button>
 
@@ -481,26 +573,44 @@ const componentItemChanges = useMemo(() => {
           <span style={styles.infoLabel}>Change Type:</span>
           <span>{toText(header.changeType) || "Modified"}</span>
         </div>
-
         <div style={styles.infoLine}>
           <span style={styles.infoLabel}>Notes:</span>
-          <span>{header.summaryNotes || "-"}</span>
+          <span>{dashIfBlank(header.summaryNotes)}</span>
         </div>
       </div>
 
-      <DetailsTable
-        title="BOM Record Details"
-        rows={bomRecordDetails}
+      <DetailsTable title="Existing BOM Values" rows={bomRecordDetails} />
+
+      <ExistingValuesTable
+        title="Existing Component Item Values"
+        rows={existingComponentRows}
+        itemLabel="Component Item"
+        quantityLabel="Standard Usage"
+        emptyMessage="No existing component item values were changed."
       />
 
-      <ChangeTable
-        title="Component Item Changes"
-        rows={componentItemChanges}
+      <AddedValuesTable
+        title="Added Component Values"
+        rows={addedComponentRows}
+        itemLabel="Component Item"
+        quantityLabel="Standard Usage"
+        emptyMessage="No new component items were added."
       />
 
-      <ChangeTable
-        title="Co-Product Changes"
-        rows={coProductChanges}
+      <ExistingValuesTable
+        title="Existing Co-Product Values"
+        rows={existingCoProductRows}
+        itemLabel="Co-Product Item"
+        quantityLabel="Qty Produced"
+        emptyMessage="No existing co-product values were changed."
+      />
+
+      <AddedValuesTable
+        title="Added Co-Product Values"
+        rows={addedCoProductRows}
+        itemLabel="Co-Product Item"
+        quantityLabel="Qty Produced"
+        emptyMessage="No new co-product items were added."
       />
     </div>
   );

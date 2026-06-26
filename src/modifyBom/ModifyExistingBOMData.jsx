@@ -1,19 +1,107 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { MdDelete } from "react-icons/md";
 
+import {
+    selectModifyExistingBomState,
+    setModifyExistingBomState,
+} from "../redux/bomSlice";
+
 const ModifyExistingBOMData = () => {
-    const [coProducts, setCoProducts] = useState([]);
-    const [producedCoProduct, setProducedCoProduct] = useState(false);
+
+    // Simple in-file searchable select component to avoid new deps
+    const SearchableSelect = ({ options = [], value = "", onChange, disabled = false, placeholder = "Select item" }) => {
+        const [query, setQuery] = useState("");
+        const [open, setOpen] = useState(false);
+        const wrapperRef = useRef(null);
+
+        useEffect(() => {
+            const handler = (e) => {
+                if (!wrapperRef.current) return;
+                if (!wrapperRef.current.contains(e.target)) setOpen(false);
+            };
+            document.addEventListener("click", handler);
+            return () => document.removeEventListener("click", handler);
+        }, []);
+
+        useEffect(() => {
+            const selected = options.find((o) => String(o.value) === String(value));
+            setQuery(selected ? selected.label : value || "");
+        }, [value, options]);
+
+        const filtered = options.filter((o) =>
+            String(o.label).toLowerCase().includes(String(query).toLowerCase()) || String(o.value).toLowerCase().includes(String(query).toLowerCase())
+        );
+
+        return (
+            <div ref={wrapperRef} style={{ position: "relative" }}>
+                <input
+                    style={disabled ? styles.selectDisabled : styles.searchInput}
+                    value={query}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    onChange={(e) => {
+                        setQuery(e.target.value);
+                        setOpen(true);
+                        if (!disabled && onChange && e.target.value === "") onChange("");
+                    }}
+                    onFocus={() => setOpen(true)}
+                />
+                {open && !disabled && (
+                    <div style={styles.dropdownList}>
+                        {filtered.length === 0 ? (
+                            <div style={styles.dropdownItem}>No matches</div>
+                        ) : (
+                            filtered.map((opt) => (
+                                <div
+                                    key={opt.value}
+                                    style={styles.dropdownItem}
+                                    onMouseDown={() => {
+                                        // use onMouseDown to avoid blur before click
+                                        onChange && onChange(opt.value);
+                                        setQuery(opt.label);
+                                        setOpen(false);
+                                    }}
+                                >
+                                    {opt.label}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+    const dispatch = useDispatch();
+    const persistedBomState = useSelector(selectModifyExistingBomState);
+    const [coProducts, setCoProducts] = useState(
+        (persistedBomState?.coProducts || []).map((c) => ({ ...c }))
+    );
+    const [initialCoProducts, setInitialCoProducts] = useState(
+        (persistedBomState?.initialCoProducts || []).map((c) => ({ ...c }))
+    );
+    const [producedCoProduct, setProducedCoProduct] = useState(
+        persistedBomState?.producedCoProduct || false
+    );
     const navigate = useNavigate();
     const { state } = useLocation();
     const { id } = useParams();
 
-    const [record, setRecord] = useState(state?.record || null);
-    const [loading, setLoading] = useState(!state?.record);
+    const [record, setRecord] = useState(
+        state?.record || (persistedBomState?.record ? { ...persistedBomState.record } : null) || null
+    );
+    const [loading, setLoading] = useState(
+        !state?.record && !persistedBomState?.record
+    );
     const [error, setError] = useState("");
 
-    const [componentItems, setComponentItems] = useState([]);
+    const [componentItems, setComponentItems] = useState(
+        (persistedBomState?.componentItems || []).map((c) => ({ ...c }))
+    );
+    const [initialComponentItems, setInitialComponentItems] = useState(
+        (persistedBomState?.initialComponentItems || []).map((c) => ({ ...c }))
+    );
     const [validationError, setValidationError] = useState("");
 
     // State for fetched items
@@ -70,6 +158,12 @@ const ModifyExistingBOMData = () => {
                     itemMasterLookup[row.component_item] || "",
             }))
         );
+        setInitialComponentItems((prev) =>
+            prev.map((row) => ({
+                ...row,
+                component_desc: itemMasterLookup[row.component_item] || "",
+            }))
+        );
 
         setCoProducts((prev) =>
             prev.map((row) => ({
@@ -78,11 +172,18 @@ const ModifyExistingBOMData = () => {
                     itemMasterLookup[row.item] || "",
             }))
         );
+        setInitialCoProducts((prev) =>
+            prev.map((row) => ({
+                ...row,
+                desc: itemMasterLookup[row.item] || "",
+            }))
+        );
     }, [itemMasterLookup]);
 
     // fallback API fetch if page is opened directly / refreshed
     useEffect(() => {
         if (record) return;
+        if (persistedBomState?.record) return;
 
         const fetchRecord = async () => {
             try {
@@ -152,6 +253,14 @@ const ModifyExistingBOMData = () => {
             record?.bomId;
         if (!bomId) return;
 
+        if (
+            persistedBomState?.record &&
+            (persistedBomState?.initialComponentItems?.length > 0 ||
+                persistedBomState?.initialCoProducts?.length > 0)
+        ) {
+            return;
+        }
+
 
 
 
@@ -193,6 +302,28 @@ const ModifyExistingBOMData = () => {
             };
         };
 
+        const parseNumericValue = (value) => {
+            const num = Number(String(value).trim());
+            return Number.isFinite(num) ? num : NaN;
+        };
+
+        const hasQtyLessThanOne = (row) => {
+            const value = parseNumericValue(
+                row.erp_bom_qty_produced_per ??
+                row.ERPItemBOMRoutingPriority ??
+                row.qty_produced_per ??
+                row.qtyProducedPer ??
+                row.qty ??
+                row.erp_bom_quantity_consumed_per ??
+                row.ERPBOMQuantityConsumedPer ??
+                row.standard_usage ??
+                row.qty_consumed_per ??
+                row.qtyConsumedPer ??
+                ""
+            );
+            return !Number.isNaN(value) && value < 1;
+        };
+
         const filterRowsByBomId = (rows, bomIdValue) => {
             const normalizedBomId = String(bomIdValue ?? "").trim().toLowerCase();
             return rows.filter((row) => {
@@ -222,18 +353,24 @@ const ModifyExistingBOMData = () => {
                     `http://localhost:3000/api/tables/bom_consumed/${encodeURIComponent(bomId)}`,
                     `http://localhost:3000/api/tables/bom_consumed`,
                 );
-                const filteredComponentRows = filterRowsByBomId(componentRows, bomId);
+                const filteredComponentRows = filterRowsByBomId(componentRows, bomId)
+                    .filter(hasQtyLessThanOne);
+                const builtComponentRows = filteredComponentRows.map(buildComponentRow);
                 setComponentItemOptions(filteredComponentRows.map(buildOption));
-                setComponentItems(filteredComponentRows.map(buildComponentRow));
+                setComponentItems(builtComponentRows);
+                setInitialComponentItems(builtComponentRows);
                 
                 // Fetch Co-Products
                 const coProductRows = await fetchRows(
                     `http://localhost:3000/api/tables/bom_produced/${encodeURIComponent(bomId)}`,
                     `http://localhost:3000/api/tables/bom_produced`,
                 );
-                const filteredCoProductRows = filterRowsByBomId(coProductRows, bomId);
+                const filteredCoProductRows = filterRowsByBomId(coProductRows, bomId)
+                    .filter(hasQtyLessThanOne);
+                const builtCoProductRows = filteredCoProductRows.map(buildCoProductRow);
                 setCoProductOptions(filteredCoProductRows.map(buildOption));
-                setCoProducts(filteredCoProductRows.map(buildCoProductRow));
+                setCoProducts(builtCoProductRows);
+                setInitialCoProducts(builtCoProductRows);
                 setProducedCoProduct(filteredCoProductRows.length > 0);
             } catch (e) {
                 console.error("Error fetching items:", e.message);
@@ -244,6 +381,27 @@ const ModifyExistingBOMData = () => {
 
         fetchItems();
     }, [state?.record?.bom_id, record?.bom_id]);
+
+        useEffect(() => {
+            dispatch(
+                setModifyExistingBomState({
+                    record,
+                    componentItems,
+                    initialComponentItems,
+                    coProducts,
+                    initialCoProducts,
+                    producedCoProduct,
+                })
+            );
+        }, [
+            dispatch,
+            record,
+            componentItems,
+            initialComponentItems,
+            coProducts,
+            initialCoProducts,
+            producedCoProduct,
+        ]);
 
     useEffect(() => {
         const fetchDropdownData = async () => {
@@ -325,20 +483,85 @@ const ModifyExistingBOMData = () => {
         setComponentItems((prev) => prev.filter((_, i) => i !== index));
     };
 
+    const getStandardUsageFieldError = (value) => {
+        const trimmed = String(value).trim();
+        if (trimmed === "") return "";
+        const num = Number(trimmed);
+        if (Number.isNaN(num)) return "Standard Usage must be numeric.";
+        if (num >= 1) return "Standard Usage must be less than 1.";
+        return "";
+    };
+
+    const getQtyProducedFieldError = (value) => {
+        const trimmed = String(value).trim();
+        if (trimmed === "") return "";
+        const num = Number(trimmed);
+        if (Number.isNaN(num)) return "Qty Produced must be numeric.";
+        if (num >= 1) return "Qty Produced must be less than 1.";
+        return "";
+    };
+
+    const getNumericFieldError = (value, label) => {
+        const trimmed = String(value).trim();
+        if (trimmed === "") return "";
+        const num = Number(trimmed);
+        if (Number.isNaN(num)) return `${label} must be numeric and less than 1.`;
+        if (num >= 1) return `${label} must be less than 1.`;
+        return "";
+    };
+
     const hasMissingStandardUsage = componentItems.some(
         (item) => String(item.standard_usage).trim() === ""
     );
 
+    const hasInvalidStandardUsage = componentItems.some((item) => {
+        const trimmed = String(item.standard_usage).trim();
+        if (trimmed === "") return false;
+        const num = Number(trimmed);
+        return !Number.isNaN(num) && num >= 1;
+    });
+
+    const hasMissingCoProductFields = coProducts.some((cp) => {
+        if (!producedCoProduct) return false;
+        const missingItem = String(cp.item ?? "").trim() === "";
+        const missingQty = String(cp.qty ?? "").trim() === "";
+        return missingItem || missingQty;
+    });
+
+    const hasInvalidCoProductQty = coProducts.some((cp) => {
+        if (!producedCoProduct) return false;
+        const trimmed = String(cp.qty ?? "").trim();
+        if (trimmed === "") return false;
+        const num = Number(trimmed);
+        return !Number.isNaN(num) && num >= 1;
+    });
+
+    const hasInvalidNumericValues = hasInvalidStandardUsage || hasInvalidCoProductQty;
+
     useEffect(() => {
-        if (!hasMissingStandardUsage) {
+        if (!hasMissingStandardUsage && !hasMissingCoProductFields && !hasInvalidNumericValues) {
             setValidationError("");
         }
-    }, [hasMissingStandardUsage]);
+    }, [hasMissingStandardUsage, hasMissingCoProductFields, hasInvalidNumericValues]);
 
     const validateAndNavigate = () => {
         if (hasMissingStandardUsage) {
             setValidationError(
                 "Please fill in Standard Usage for all component rows before moving forward."
+            );
+            return;
+        }
+
+        if (hasMissingCoProductFields) {
+            setValidationError(
+                "Please fill in Item and Qty Produced for all co-product rows before moving forward."
+            );
+            return;
+        }
+
+        if (hasInvalidNumericValues) {
+            setValidationError(
+                "Standard Usage and Qty Produced values must be numeric and less than 1."
             );
             return;
         }
@@ -360,16 +583,49 @@ const ModifyExistingBOMData = () => {
 
         setValidationError("");
 
+        // detect removed original component items (present in initial fetch but not in current list)
+        const removedComponentItems = initialComponentItems
+            .filter((orig) => {
+                const key = String(orig.original_component_item || orig.component_item || "").trim();
+                if (!key) return false;
+                return !componentItems.some((ci) => String(ci.original_component_item || ci.component_item || "").trim() === key);
+            })
+            .map((it) => ({
+                ...it,
+                removed: true,
+                component_desc: it.component_desc || itemMasterLookup[it.original_component_item || it.component_item] || "",
+            }));
+
+        const removedCoProducts = initialCoProducts
+            .filter((orig) => {
+                const key = String(orig.original_item || orig.item || "").trim();
+                if (!key) return false;
+                return !coProducts.some((cp) => String(cp.original_item || cp.item || "").trim() === key);
+            })
+            .map((it) => ({
+                ...it,
+                removed: true,
+                desc: it.desc || itemMasterLookup[it.original_item || it.item] || "",
+            }));
+
         navigate("/review-changes", {
             state: {
                 record: normalizedRecord,
                 componentItems,
                 coProducts,
+                removedComponentItems,
+                removedCoProducts,
+                initialComponentItems,
+                initialCoProducts,
             },
         });
     };
 
-    const canProceed = !!record && !hasMissingStandardUsage;
+    const canProceed =
+        !!record &&
+        !hasMissingStandardUsage &&
+        !hasMissingCoProductFields &&
+        !hasInvalidNumericValues;
 
     if (loading) {
         return <div style={styles.page}><div style={styles.wrapper}>Loading...</div></div>;
@@ -416,12 +672,21 @@ const ModifyExistingBOMData = () => {
 
     const updateCoProduct = (index, field, value) => {
         const updated = [...coProducts];
-        updated[index][field] = value;
+        updated[index] = { ...updated[index], [field]: value };
         setCoProducts(updated);
     };
 
     const removeCoProduct = (index) => {
         setCoProducts(coProducts.filter((_, i) => i !== index));
+    };
+
+    const handleProducedCoProductToggle = (checked) => {
+        setProducedCoProduct(checked);
+        if (!checked) {
+            // User disabled co-products: clear any current co-product entries.
+            // Keep `initialCoProducts` so they are treated as "removed" in review.
+            setCoProducts([]);
+        }
     };
 
     return (
@@ -506,23 +771,13 @@ const ModifyExistingBOMData = () => {
                             <div style={styles.componentList}>
                                 {componentItems.map((item, index) => (
                                     <div key={index} style={styles.componentRow}>
-                                        <select
-                                            style={styles.select}
+                                        <SearchableSelect
+                                            options={item.isNew ? allComponentOptions : componentItemOptions}
                                             value={item.component_item}
-                                            onChange={(e) =>
-                                                handleComponentItemChange(index, e.target.value)
-                                            }
-                                        >
-                                            <option value="">Select item</option>
-                                            {(item.isNew
-                                                ? allComponentOptions
-                                                : componentItemOptions
-                                            ).map((opt) => (
-                                                <option key={opt.value} value={opt.value}>
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            onChange={(val) => handleComponentItemChange(index, val)}
+                                            disabled={!item.isNew}
+                                            placeholder="Select item"
+                                        />
 
                                         <input
                                             style={styles.inputDisabled}
@@ -531,14 +786,23 @@ const ModifyExistingBOMData = () => {
                                             readOnly
                                         />
 
-                                        <input
-                                            style={styles.input}
-                                            placeholder="Standard Usage"
-                                            value={item.standard_usage}
-                                            onChange={(e) =>
-                                                updateComponent(index, "standard_usage", e.target.value)
-                                            }
-                                        />
+                                        <div style={styles.inputWithError}>
+                                            <input
+                                                style={
+                                                    getStandardUsageFieldError(item.standard_usage)
+                                                        ? styles.inputError
+                                                        : styles.input
+                                                }
+                                                placeholder="Standard Usage"
+                                                value={item.standard_usage}
+                                                onChange={(e) => {
+                                                    updateComponent(index, "standard_usage", e.target.value);
+                                                }}
+                                            />
+                                            <div style={styles.inlineError}>
+                                                {getStandardUsageFieldError(item.standard_usage)}
+                                            </div>
+                                        </div>
 
                                         <button
                                             style={styles.removeBtn}
@@ -561,7 +825,7 @@ const ModifyExistingBOMData = () => {
                         <input
                             type="checkbox"
                             checked={producedCoProduct}
-                            onChange={(e) => setProducedCoProduct(e.target.checked)}
+                            onChange={(e) => handleProducedCoProductToggle(e.target.checked)}
                             style={styles.checkbox}
                         />
                         <span style={styles.coProductText}>Produced Co-Product?</span>
@@ -595,37 +859,36 @@ const ModifyExistingBOMData = () => {
                                 <div style={styles.componentList}>
                                     {coProducts.map((cp, index) => (
                                         <div key={index} style={styles.componentRow}>
-                                            <select
-                                                style={styles.select}
+                                            <SearchableSelect
+                                                options={cp.isNew ? allCoProductOptions : coProductOptions}
                                                 value={cp.item}
-                                                onChange={(e) =>
-                                                    handleCoProductItemChange(index, e.target.value)
-                                                }
-                                            >
-                                                <option value="">Select item</option>
-                                                {(cp.isNew
-                                                    ? allCoProductOptions
-                                                    : coProductOptions
-                                                ).map((opt) => (
-                                                    <option key={opt.value} value={opt.value}>
-                                                        {opt.label}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                                onChange={(val) => handleCoProductItemChange(index, val)}
+                                                disabled={!cp.isNew}
+                                                placeholder="Select item"
+                                            />
                                             <input
                                                 style={styles.inputDisabled}
                                                 placeholder="Description"
                                                 value={cp.desc}
                                                 readOnly
                                             />
-                                            <input
-                                                style={styles.input}
-                                                placeholder="Qty Produced"
-                                                value={cp.qty}
-                                                onChange={(e) =>
-                                                    updateCoProduct(index, "qty", e.target.value)
-                                                }
-                                            />
+                                            <div style={styles.inputWithError}>
+                                                <input
+                                                    style={
+                                                        getQtyProducedFieldError(cp.qty)
+                                                            ? styles.inputError
+                                                            : styles.input
+                                                    }
+                                                    placeholder="Qty Produced"
+                                                    value={cp.qty}
+                                                    onChange={(e) => {
+                                                        updateCoProduct(index, "qty", e.target.value);
+                                                    }}
+                                                />
+                                                <div style={styles.inlineError}>
+                                                    {getQtyProducedFieldError(cp.qty)}
+                                                </div>
+                                            </div>
                                             <button
                                                 style={styles.removeBtn}
                                                 onClick={() => removeCoProduct(index)}
@@ -642,10 +905,6 @@ const ModifyExistingBOMData = () => {
                     </div>
                 )}
 
-                {/* Footer */}
-                {validationError && (
-                    <div style={styles.error}>{validationError}</div>
-                )}
                 <div style={styles.footer}>
                     <button
                         disabled={!canProceed}
@@ -831,6 +1090,44 @@ const styles = {
         background: "#fff",
         boxSizing: "border-box",
     },
+    selectDisabled: {
+        width: "100%",
+        height: "42px",
+        borderRadius: "4px",
+        border: "1px solid #d1d5db",
+        padding: "0 12px",
+        fontSize: "14px",
+        background: "#f9fafb",
+        color: "#9ca3af",
+        boxSizing: "border-box",
+        cursor: "not-allowed",
+    },
+    searchInput: {
+        width: "100%",
+        height: "42px",
+        borderRadius: "4px",
+        border: "1px solid #d1d5db",
+        padding: "0 12px",
+        fontSize: "14px",
+        boxSizing: "border-box",
+    },
+    dropdownList: {
+        position: "absolute",
+        top: "46px",
+        left: 0,
+        right: 0,
+        maxHeight: "220px",
+        overflow: "auto",
+        border: "1px solid #e5e7eb",
+        borderRadius: "6px",
+        background: "#fff",
+        zIndex: 50,
+        boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+    },
+    dropdownItem: {
+        padding: "8px 12px",
+        cursor: "pointer",
+    },
 
     input: {
         width: "100%",
@@ -840,6 +1137,32 @@ const styles = {
         padding: "0 12px",
         fontSize: "14px",
         boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inputWithError: {
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        gap: "4px",
+    },
+
+    inputError: {
+        width: "100%",
+        height: "42px",
+        borderRadius: "4px",
+        border: "1px solid #ef4444",
+        padding: "0 12px",
+        fontSize: "14px",
+        boxSizing: "border-box",
+        marginTop: "20px"
+    },
+
+    inlineError: {
+        color: "#dc2626",
+        fontSize: "12px",
+        fontWeight: 600,
+        minHeight: "18px",
     },
 
     removeBtn: {
@@ -891,5 +1214,15 @@ const styles = {
         color: "#b91c1c",
         fontWeight: 600,
         marginTop: "16px",
+    },
+    validationBanner: {
+        background: "#fee2e2",
+        color: "#b91c1c",
+        border: "1px solid #fca5a5",
+        borderRadius: "6px",
+        padding: "14px 16px",
+        margin: "16px 0",
+        fontSize: "14px",
+        fontWeight: 600,
     },
 };
