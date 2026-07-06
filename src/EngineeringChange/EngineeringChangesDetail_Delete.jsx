@@ -312,6 +312,24 @@ export default function EngineeringChangeDetailDeleteBOM() {
       marginBottom: "12px",
       maxWidth: "960px",
     },
+          legendRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        marginTop: "12px",
+        marginBottom: "12px",
+        fontSize: "12px",
+        color: "#374151",
+        maxWidth: "1150px",
+    },
+        legendColor: {
+        width: "18px",
+        height: "14px",
+        background: "#fef08a",
+        border: "1px solid #d1d5db",
+        borderRadius: "2px",
+        flexShrink: 0,
+    },
   };
 
   return (
@@ -431,6 +449,10 @@ export default function EngineeringChangeDetailDeleteBOM() {
               </tbody>
             </table>
           </div>
+                <div style={styles.legendRow}>
+                    <span style={styles.legendColor} />
+                    <span>Yellow color code represents co-products.</span>
+                </div>  
 
           {showConnectedRoutingTable && (
             <>
@@ -466,6 +488,7 @@ export default function EngineeringChangeDetailDeleteBOM() {
                     )}
                   </tbody>
                 </table>
+                
               </div>
             </>
           )}

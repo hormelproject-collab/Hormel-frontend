@@ -8,7 +8,7 @@ const SEARCH_FIELDS = [
   { label: "Produced Item", value: "produced_item" },
   { label: "Produced Item Description", value: "produced_item_desc" },
   { label: "BOM ID", value: "bom_id" },
-  { label: "Resource", value: "resource" },
+  // { label: "Resource", value: "resource" },
   { label: "Item Release Flag", value: "item_release_flag" },
 ];
 
@@ -218,7 +218,7 @@ const ModifySelectExistingBOM = () => {
                 <div>Produced Item</div>
                 <div>Produced Item Description</div>
                 <div>BOM ID</div>
-                <div>Resource</div>
+                {/* <div>Resource</div> */}
                 <div>Item Release Flag</div>
               </div>
 
@@ -244,7 +244,7 @@ const ModifySelectExistingBOM = () => {
                   <div>{r.produced_item}</div>
                   <div>{r.produced_item_desc}</div>
                   <div>{r.bom_id}</div>
-                  <div>{r.resource}</div>
+                  {/* <div>{r.resource}</div> */}
                   <div style={getReleaseStyle(r.item_release_flag)}>
                     {r.item_release_flag}
                     {String(r.item_release_flag || "").includes("3") && " ⚠️"}
@@ -351,13 +351,13 @@ const styles = {
   },
   header: {
     display: "grid",
-    gridTemplateColumns: "0.5fr 0.6fr 1.5fr 1.5fr 2fr 1fr",
+    gridTemplateColumns: "0.5fr 0.6fr 1.5fr 1.5fr 1fr",
     background: "#e5e7eb",
     padding: 10,
   },
   row: {
     display: "grid",
-    gridTemplateColumns: "0.5fr 0.6fr 1.5fr 1.5fr 2fr 1fr",
+    gridTemplateColumns: "0.5fr 0.6fr 1.5fr 1.5fr 1fr",
     padding: 10,
     borderTop: "1px solid #eee",
     cursor: "pointer",
