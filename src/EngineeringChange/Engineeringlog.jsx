@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL = "http://localhost:3000";
+const API_BASE_URL = "";
 
 /* ----------------------------- Helper Functions ----------------------------- */
 
@@ -100,6 +100,12 @@ const normalizeModifiedComparison = (value) => {
             "",
           bom_id: item.bom_id || item.bomId || "",
           change_date: item.change_date || item.changeDate || "",
+          change_type: item.change_type || item.changeType || "",
+          produced_item: item.produced_item || item.producedItem || "",
+          resource: item.resource || "",
+          action: item.action || "",
+          item: item.item || item.component_item || item.co_product_item || "",
+          user_name: item.user_name || item.user || "",
         };
       }
 
@@ -481,9 +487,9 @@ const buildExportSheets = (rows) => {
       "Location(s)": row.locationsDisplay,
       "BOM ID(s)": row.bomIdsDisplay,
       "Resource(s)": row.resourcesDisplay,
-      User: row.user,
       "Change Summary": row.changeSummary,
       Notes: row.raw?.summarynotes || row.raw?.notes || "",
+      User: row.user,
     })),
     {
       "Engineering Change #": "",
@@ -492,9 +498,9 @@ const buildExportSheets = (rows) => {
       "Location(s)": "",
       "BOM ID(s)": "",
       "Resource(s)": "",
-      User: "",
       "Change Summary": "No filtered data available",
       Notes: "",
+      User: "",
     }
   );
 
@@ -547,6 +553,7 @@ const buildExportSheets = (rows) => {
           detail.itemBomRoutingPriority ??
           detail.erp_item_bom_routing_priority ??
           "",
+        User: detail.user_name || detail.user || row.user || "",
       }))
     ),
     {
@@ -563,6 +570,7 @@ const buildExportSheets = (rows) => {
       "Resource Relevancy": "",
       "Routing ID": "",
       "Item BOM Routing Priority": "",
+      User: "",
     }
   );
 
@@ -582,12 +590,6 @@ const buildExportSheets = (rows) => {
           detail.bomId ||
           row.bomIdsDisplay ||
           "",
-        "Component Item #":
-          detail.component_item_number ??
-          detail.componentItemNumber ??
-          detail.component_item_no ??
-          detail.line_number ??
-          "",
         "Component Item":
           detail.component_item ||
           detail.componentItem ||
@@ -606,6 +608,7 @@ const buildExportSheets = (rows) => {
           detail.erp_bom_quantity_consumed_per ??
           detail.erp_bom_standard_usage ??
           "",
+        User: detail.user_name || detail.user || row.user || "",
       }))
     ),
     {
@@ -614,10 +617,10 @@ const buildExportSheets = (rows) => {
       "Change Type": "",
       "Produced Item": "",
       "BOM ID": "",
-      "Component Item #": "",
       "Component Item": "",
       "Component Item Description": "",
       "Standard Usage": "",
+      User: "",
     }
   );
 
@@ -637,12 +640,6 @@ const buildExportSheets = (rows) => {
           detail.bomId ||
           row.bomIdsDisplay ||
           "",
-        "Co-Product #":
-          detail.co_product_number ??
-          detail.coProductNumber ??
-          detail.co_product_item_number ??
-          detail.line_number ??
-          "",
         "Co-Product Item":
           detail.co_product_item ||
           detail.coProductItem ||
@@ -661,6 +658,7 @@ const buildExportSheets = (rows) => {
           detail.erp_bom_qty_produced_per ??
           detail.qty_produced ??
           "",
+        User: detail.user_name || detail.user || row.user || "",
       }))
     ),
     {
@@ -669,10 +667,10 @@ const buildExportSheets = (rows) => {
       "Change Type": "",
       "Produced Item": "",
       "BOM ID": "",
-      "Co-Product #": "",
       "Co-Product Item": "",
       "Co-Product Item Description": "",
       "Co-Product Quantity Produced": "",
+      User: "",
     }
   );
 
@@ -684,11 +682,17 @@ const buildExportSheets = (rows) => {
           detail.change_date ||
           detail.changeDate ||
           row.changeDateDisplay,
+        "Change Type": detail.change_type || detail.changeType || row.changeType || "",
+        "Produced Item": detail.produced_item || detail.producedItem || row.producedItem || "",
         "BOM ID":
           detail.bom_id ||
           detail.bomId ||
           row.bomIdsDisplay ||
           "",
+        Resource: detail.resource || row.resourcesDisplay || "",
+        Section: detail.section || detail.entity || "",
+        Action: detail.action || "",
+        Item: detail.item || detail.component_item || detail.co_product_item || "",
         Field:
           detail.field ||
           detail.column ||
@@ -708,15 +712,23 @@ const buildExportSheets = (rows) => {
           detail.new_value ??
           detail.newValue ??
           "",
+        User: detail.user_name || detail.user || row.user || "",
       }))
     ),
     {
       "Engineering Change #": "",
       "Change Date": "",
+      "Change Type": "",
+      "Produced Item": "",
       "BOM ID": "",
+      Resource: "",
+      Section: "",
+      Action: "",
+      Item: "",
       Field: "",
       "Original Value": "",
       "Updated Value": "",
+      User: "",
     }
   );
 
@@ -875,7 +887,7 @@ export default function Engineeringlog() {
 
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/tables/engineering-change-log`,
+          `/api/tables/engineering-change-log`,
           {
             method: "GET",
             headers: {

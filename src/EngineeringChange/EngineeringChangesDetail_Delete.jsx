@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:3000";
+const API_BASE_URL = "";
 
 const toText = (value) => {
   if (value == null) return "";
@@ -40,10 +37,13 @@ const formatDisplayDate = (value) => {
 const safeArray = (value) => (Array.isArray(value) ? value : []);
 
 const isCoProductRow = (row) => {
+  if (row?.isCoProduct === true) return true;
+
   const value = String(
     row?.coProductAssociation ??
     row?.co_product_association ??
     row?.co_prod_association ??
+    row?.erp_co_product_association ??
     ""
   ).trim();
 
@@ -117,7 +117,6 @@ export default function EngineeringChangeDetailDeleteBOM() {
     locationName,
     isConsolidatedDeleteFlow,
   ]);
-  ``
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -407,10 +406,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Produced Item</th>
+                  <th style={styles.th}>Item</th>
                   <th style={styles.th}>Item Description</th>
                   <th style={styles.th}>Location</th>
                   <th style={styles.th}>BOM ID</th>
+                  <th style={styles.th}>Resource</th>
                   {showRoutingInDeletedTable && (
                     <th style={styles.th}>Routing ID</th>
                   )}
@@ -420,7 +420,7 @@ export default function EngineeringChangeDetailDeleteBOM() {
                 {rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={showRoutingInDeletedTable ? 5 : 4}
+                      colSpan={showRoutingInDeletedTable ? 6 : 5}
                       style={styles.emptyRow}
                     >
                       No deleted BOM records found.
@@ -435,10 +435,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
                         key={`${toText(row.recId || row.postgresqlRecId || row.bomId)}__${index}`}
                         style={highlighted ? styles.coProductRow : undefined}
                       >
-                        <td style={styles.td}>{toText(row.producedItem) || "-"}</td>
+                        <td style={styles.td}>{toText(row.item || row.producedItem) || "-"}</td>
                         <td style={styles.td}>{toText(row.itemDescription) || "-"}</td>
                         <td style={styles.td}>{toText(row.location) || "-"}</td>
                         <td style={styles.td}>{toText(row.bomId) || "-"}</td>
+                        <td style={styles.td}>{toText(row.resource) || "-"}</td>
                         {showRoutingInDeletedTable && (
                           <td style={styles.td}>{toText(row.routingId) || "-"}</td>
                         )}
@@ -465,6 +466,7 @@ export default function EngineeringChangeDetailDeleteBOM() {
                 <table style={styles.table}>
                   <thead>
                     <tr>
+                      <th style={styles.neutralTh}>Item</th>
                       <th style={styles.neutralTh}>BOM ID</th>
                       <th style={styles.neutralTh}>Resource</th>
                       <th style={styles.neutralTh}>Routing ID</th>
@@ -473,18 +475,25 @@ export default function EngineeringChangeDetailDeleteBOM() {
                   <tbody>
                     {connectedRoutingRows.length === 0 ? (
                       <tr>
-                        <td colSpan={3} style={styles.emptyRow}>
+                        <td colSpan={4} style={styles.emptyRow}>
                           No connected routing records found.
                         </td>
                       </tr>
                     ) : (
-                      connectedRoutingRows.map((row, index) => (
-                        <tr key={`${toText(row.bomId)}__${toText(row.routingId)}__${index}`}>
-                          <td style={styles.td}>{toText(row.bomId) || "-"}</td>
-                          <td style={styles.td}>{toText(row.resource) || "-"}</td>
-                          <td style={styles.td}>{toText(row.routingId) || "-"}</td>
-                        </tr>
-                      ))
+                      connectedRoutingRows.map((row, index) => {
+                        const highlighted = isCoProductRow(row);
+                        return (
+                          <tr
+                            key={`${toText(row.item || row.bomId)}__${toText(row.routingId)}__${index}`}
+                            style={highlighted ? styles.coProductRow : undefined}
+                          >
+                            <td style={styles.td}>{toText(row.item || row.producedItem) || "-"}</td>
+                            <td style={styles.td}>{toText(row.bomId) || "-"}</td>
+                            <td style={styles.td}>{toText(row.resource) || "-"}</td>
+                            <td style={styles.td}>{toText(row.routingId) || "-"}</td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
