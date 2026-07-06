@@ -9,7 +9,17 @@ import {
   selectHasInactiveSelected,
   selectItemsLoading,
   selectItemsError,
+  selectItemsPagination,
 } from "../../redux/bomSlice";
+
+const ITEMS_PER_PAGE = 50;
+
+const FILTER_OPTIONS = [
+  { value: "item", label: "Item" },
+  { value: "item_description", label: "Item Description" },
+  { value: "status", label: "Status" },
+  { value: "releaseflag", label: "Release Flag" },
+];
 
 const useWindowWidth = () => {
   const [w, setW] = useState(window.innerWidth);
@@ -34,7 +44,10 @@ const ProducedItems = () => {
   const dispatch = useDispatch();
   const width = useWindowWidth();
 
+  const [filterBy, setFilterBy] = useState("item");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [showInactiveWarning, setShowInactiveWarning] = useState(false);
 
   const items = useSelector(selectAllItemMaster);
@@ -42,59 +55,47 @@ const ProducedItems = () => {
   const hasInactiveSelected = useSelector(selectHasInactiveSelected);
   const loading = useSelector(selectItemsLoading);
   const error = useSelector(selectItemsError);
+  const pagination = useSelector(selectItemsPagination);
 
   useEffect(() => {
-    // fetch ALL records
-    dispatch(fetchItemMaster());
-  }, [dispatch]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setCurrentPage(1);
+    }, 350);
 
-  // Persist selectedIds to localStorage for Step 1 selections
+    return () => clearTimeout(timer);
+  }, [search, filterBy]);
+
   useEffect(() => {
-    if (selectedIds.length > 0) {
-      localStorage.setItem(
-        "step1SelectedProducedItemIds",
-        JSON.stringify(selectedIds)
-      );
-    }
-  }, [selectedIds]);
+    dispatch(
+      fetchItemMaster({
+        page: currentPage,
+        pageSize: ITEMS_PER_PAGE,
+        search: debouncedSearch,
+        filterBy,
+      })
+    );
+  }, [dispatch, currentPage, debouncedSearch, filterBy]);
 
-  // Restore selectedIds from localStorage if not already selected
-  useEffect(() => {
-    if (selectedIds.length === 0 && items.length > 0) {
-      const backup = localStorage.getItem("step1SelectedProducedItemIds");
-      if (backup) {
-        try {
-          const restoredIds = JSON.parse(backup);
-          // Toggle each restored item
-          restoredIds.forEach((id) => {
-            const item = items.find((x) => x.id === id);
-            if (item) {
-              const isInactive = getNormalizedStatus(item.status) === "INACTIVE";
-              if (!isInactive) {
-                dispatch(toggleProducedItem(id));
-              }
-            }
-          });
-        } catch (err) {
-          console.error("Failed to restore Step 1 selections from localStorage", err);
-        }
-      }
-    }
-  }, [dispatch, items, selectedIds.length]);
+  const totalPages = Math.max(1, Number(pagination?.totalPages || 1));
+  const totalItems = Number(pagination?.total || 0);
+  const pageStart = totalItems ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0;
+  const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalItems);
 
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
+  const searchPlaceholder = useMemo(() => {
+    const selected = FILTER_OPTIONS.find((option) => option.value === filterBy);
+    return `Search by ${selected?.label || "Item"}`;
+  }, [filterBy]);
 
-    return items.filter((x) => {
-      return (
-        String(x.item || "").toLowerCase().includes(q) ||
-        String(x.desc || "").toLowerCase().includes(q) ||
-        String(x.status || "").toLowerCase().includes(q) ||
-        String(x.itemReleaseFlag || "").toLowerCase().includes(q)
-      );
-    });
-  }, [items, search]);
+  const goPrev = () => {
+    if (currentPage <= 1 || loading) return;
+    setCurrentPage((page) => Math.max(1, page - 1));
+  };
+
+  const goNext = () => {
+    if (currentPage >= totalPages || loading) return;
+    setCurrentPage((page) => Math.min(totalPages, page + 1));
+  };
 
   const onToggle = (row) => {
     const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
@@ -105,13 +106,14 @@ const ProducedItems = () => {
     }
 
     setShowInactiveWarning(false);
-    dispatch(toggleProducedItem(row.id));
+    dispatch(toggleProducedItem(row));
   };
 
   const gridCols =
-    width < 700
-      ? "44px 1.2fr 1fr 1fr"
-      : "44px 1.2fr 2fr 1fr 1.2fr";
+    width < 700 ? "44px 1.2fr 1fr 1fr" : "44px 1.2fr 2fr 1fr 1.2fr";
+
+  const isNextDisabled = selectedIds.length === 0 || hasInactiveSelected;
+  const visibleItems = useMemo(() => items || [], [items]);
 
   return (
     <div style={styles.page}>
@@ -123,125 +125,151 @@ const ProducedItems = () => {
         <h1 style={styles.title}>Step 1: Produced Item(s)</h1>
         <div style={styles.subTitle}>Select one or more items to produce</div>
 
-        <input
-          type="text"
-          placeholder="Search Item Number"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={styles.search}
-        />
+        <div style={styles.searchRow}>
+          <select
+            value={filterBy}
+            onChange={(e) => {
+              setFilterBy(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={styles.filterSelect}
+          >
+            {FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="text"
+            value={search}
+            placeholder={searchPlaceholder}
+            onChange={(e) => setSearch(e.target.value)}
+            style={styles.search}
+          />
+        </div>
 
         {loading && <div style={styles.info}>Loading items...</div>}
         {error && <div style={styles.error}>Error: {String(error)}</div>}
 
+        {!error && (
+          <div style={styles.recordsInfo}>
+            Showing {pageStart}-{pageEnd} of {totalItems} item(s)
+          </div>
+        )}
+
         <div style={styles.table}>
-          <div
-            style={{
-              ...styles.headerRow,
-              gridTemplateColumns: gridCols,
-            }}
-          >
-            <div style={styles.checkboxCell}>
-              <input type="checkbox" disabled />
-            </div>
+          <div style={{ ...styles.headerRow, gridTemplateColumns: gridCols }}>
+            <div />
             <div>Item</div>
             {width >= 700 && <div>Item Description</div>}
             <div>Item Status</div>
             <div>Item Release Flag</div>
           </div>
 
-          {filteredItems.map((row) => {
-            const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
-            const checked = selectedIds.includes(row.id);
+          {visibleItems.length === 0 && !loading ? (
+            <div style={styles.emptyRow}>No items found.</div>
+          ) : (
+            visibleItems.map((row) => {
+              const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
+              const checked = selectedIds.includes(row.id);
+              const normalizedReleaseFlag = getNormalizedReleaseFlag(
+                row.itemReleaseFlag
+              );
+              const isRelease3 = normalizedReleaseFlag === "RELEASE3";
 
-            const normalizedReleaseFlag = getNormalizedReleaseFlag(
-              row.itemReleaseFlag
-            );
-            const isRelease3 = normalizedReleaseFlag === "RELEASE3";
-
-            return (
-              <div
-                key={row.id}
-                style={{
-                  ...styles.dataRow,
-                  gridTemplateColumns: gridCols,
-                  backgroundColor: isInactive ? "#f9eded" : "#ffffff",
-                }}
-              >
-                <div style={styles.checkboxCell}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={isInactive}
-                    onChange={() => onToggle(row)}
-                    style={{ cursor: isInactive ? "not-allowed" : "pointer" }}
-                  />
-                </div>
-
-                <div style={styles.itemCell}>
-                  <div>{row.item}</div>
-                  {width < 700 && (
-                    <div style={styles.mobileDesc}>{row.desc || "-"}</div>
-                  )}
-                </div>
-
-                {width >= 700 && <div>{row.desc || "-"}</div>}
-
+              return (
                 <div
-                  style={{
-                    color: isInactive ? "#ff0000" : "#0a9f32",
-                    fontWeight: 500,
-                  }}
+                  key={row.id}
+                  style={{ ...styles.dataRow, gridTemplateColumns: gridCols }}
                 >
-                  {isInactive ? "Inactive" : "Active"}
-                </div>
+                  <div style={styles.checkboxCell}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isInactive}
+                      onChange={() => onToggle(row)}
+                      style={{ cursor: isInactive ? "not-allowed" : "pointer" }}
+                    />
+                  </div>
 
-                <div
-                  style={{
-                    color: isRelease3 ? "#ff0000" : "#111827",
-                    fontWeight: isRelease3 ? 500 : 400,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                  }}
-                >
-                  <span>{row.itemReleaseFlag || "-"}</span>
-                  {isRelease3 && (
-                    <span style={styles.warningIcon} title="Release3 warning">
-                      ⚠
-                    </span>
-                  )}
+                  <div style={styles.itemCell}>
+                    <div>{row.item || "-"}</div>
+                    {width < 700 && (
+                      <div style={styles.mobileDesc}>{row.desc || "-"}</div>
+                    )}
+                  </div>
+
+                  {width >= 700 && <div>{row.desc || "-"}</div>}
+
+                  <div>{isInactive ? "Inactive" : "Active"}</div>
+
+                  <div style={styles.releaseFlagCell}>
+                    <span>{row.itemReleaseFlag || "-"}</span>
+                    {isRelease3 && <span style={styles.warningIcon}>⚠</span>}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
+        </div>
+
+        <div style={styles.paginationBar}>
+          <button
+            type="button"
+            onClick={goPrev}
+            disabled={currentPage === 1 || loading}
+            style={{
+              ...styles.pageButton,
+              ...(currentPage === 1 || loading
+                ? styles.pageButtonDisabled
+                : styles.pageButtonEnabled),
+            }}
+          >
+            ← Prev
+          </button>
+
+          <span style={styles.pageText}>
+            Page {currentPage} of {totalPages}
+          </span>
+
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={currentPage === totalPages || loading}
+            style={{
+              ...styles.pageButton,
+              ...(currentPage === totalPages || loading
+                ? styles.pageButtonDisabled
+                : styles.pageButtonEnabled),
+            }}
+          >
+            Next →
+          </button>
         </div>
 
         {(showInactiveWarning || hasInactiveSelected) && (
           <div style={styles.warningBox}>
-            Warning: Inactive items cannot be selected. Please select only active items.
+            Warning: Inactive items cannot be selected. Please select only active
+            items.
           </div>
         )}
 
         <div style={styles.bottomBar}>
-          <div style={styles.selectedCount}>
-            {selectedIds.length} item(s) selected
-          </div>
-
+          <div style={styles.selectedCount}>{selectedIds.length} item(s) selected</div>
 
           <button
+            type="button"
+            disabled={isNextDisabled}
+            onClick={() => navigate("/select-location")}
             style={{
               ...styles.nextBtn,
-              ...(selectedIds.length === 0
-                ? styles.nextBtnDisabled
-                : styles.nextBtnEnabled),
+              ...(isNextDisabled ? styles.nextBtnDisabled : styles.nextBtnEnabled),
             }}
-            disabled={selectedIds.length === 0}
-            onClick={() => navigate("/select-location")}
           >
             NEXT: SELECT LOCATIONS →
           </button>
-
         </div>
       </div>
     </div>
@@ -280,6 +308,23 @@ const styles = {
     fontSize: "15px",
     marginBottom: "24px",
   },
+  searchRow: {
+    display: "grid",
+    gridTemplateColumns: "210px 1fr",
+    gap: "10px",
+    marginBottom: "12px",
+  },
+  filterSelect: {
+    width: "100%",
+    padding: "0 12px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    fontSize: "14px",
+    outline: "none",
+    boxSizing: "border-box",
+    backgroundColor: "#ffffff",
+    height: "44px",
+  },
   search: {
     width: "100%",
     padding: "12px 14px",
@@ -287,9 +332,13 @@ const styles = {
     borderRadius: "4px",
     fontSize: "14px",
     outline: "none",
-    marginBottom: "18px",
     boxSizing: "border-box",
     backgroundColor: "#ffffff",
+  },
+  recordsInfo: {
+    marginBottom: "12px",
+    color: "#374151",
+    fontSize: "13px",
   },
   info: {
     marginBottom: "12px",
@@ -330,6 +379,12 @@ const styles = {
     fontSize: "14px",
     color: "#111827",
   },
+  emptyRow: {
+    padding: "18px 14px",
+    fontSize: "14px",
+    color: "#6b7280",
+    textAlign: "center",
+  },
   checkboxCell: {
     display: "flex",
     alignItems: "center",
@@ -344,12 +399,48 @@ const styles = {
     fontSize: "12px",
     color: "#6b7280",
   },
+  releaseFlagCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+  },
   warningIcon: {
     color: "#ff0000",
     fontSize: "14px",
     lineHeight: 1,
     display: "inline-flex",
     alignItems: "center",
+  },
+  paginationBar: {
+    marginTop: "18px",
+    marginBottom: "10px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "16px",
+    flexWrap: "wrap",
+  },
+  pageButton: {
+    padding: "8px 14px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: 500,
+  },
+  pageButtonEnabled: {
+    backgroundColor: "#ffffff",
+    color: "#111827",
+    cursor: "pointer",
+  },
+  pageButtonDisabled: {
+    backgroundColor: "#f3f4f6",
+    color: "#9ca3af",
+    cursor: "not-allowed",
+  },
+  pageText: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#111827",
   },
   warningBox: {
     marginTop: "16px",
@@ -379,19 +470,15 @@ const styles = {
     fontSize: "13px",
     fontWeight: 500,
     letterSpacing: "0.2px",
+  },
+  nextBtnEnabled: {
+    backgroundColor: "#2563eb",
+    color: "#ffffff",
     cursor: "pointer",
   },
- 
-nextBtnEnabled: {
-  backgroundColor: "#2563eb",
-  color: "#ffffff",
-  cursor: "pointer",
-},
-
-nextBtnDisabled: {
-  backgroundColor: "#e5e7eb",
-  color: "#9ca3af",
-  cursor: "not-allowed",
-},
-
+  nextBtnDisabled: {
+    backgroundColor: "#e5e7eb",
+    color: "#9ca3af",
+    cursor: "not-allowed",
+  },
 };

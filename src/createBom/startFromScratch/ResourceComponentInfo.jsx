@@ -1,20 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IoIosArrowDown, IoIosArrowUp } from "react-icons/io";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { MdDelete } from "react-icons/md";
 import {
-  fetchItemMaster,
   fetchLocationMaster,
   fetchResourceComponentMetadata,
-  selectAllItemMaster,
   selectAllLocations,
   selectSelectedProducedItemIds,
   selectSelectedLocationIds,
   selectSelectedProducedItems,
   selectSelectedLocations,
-  selectItemsLoading,
-  selectItemsError,
   selectLocationsLoading,
   selectLocationsError,
   selectHasInactiveSelected,
@@ -22,7 +18,6 @@ import {
   selectResourceMetaLoading,
   selectResourceMetaError,
   selectBomVersions,
-  selectResourceItemOptions,
   selectResourceOptionsByKey,
   selectResourceComponentConfigs,
   ensureResourceComponentConfig,
@@ -54,6 +49,43 @@ const cloneCoProductRows = (rows = []) =>
     qtyProduced: row.qtyProduced ?? "",
   }));
 
+const searchItemMasterOptions = async ({ search = "", page = 1, pageSize = 50 }) => {
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("pageSize", String(pageSize));
+  params.set("filterBy", "item");
+  params.set("search", String(search || "").trim());
+
+  const response = await fetch(
+    `/api/bigquery/table/item-master-with-releaseflag?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const payload = await response.json();
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+
+  return {
+    rows: rows.map((row) => ({
+      item: row.item ?? row.item_id ?? "",
+      item_desc:
+        row.item_desc ??
+        row.item_description ??
+        row.description ??
+        "",
+    })),
+    pagination: payload?.pagination || {
+      page,
+      pageSize,
+      total: rows.length,
+      totalPages: 1,
+      hasNext: false,
+    },
+  };
+};
+
 const ResourceComponentInfo = () => {
   const navigate = useNavigate();
   const routerLocation = useLocation();
@@ -63,10 +95,7 @@ const ResourceComponentInfo = () => {
   const locations = useSelector(selectSelectedLocations);
   const producedItemIds = useSelector(selectSelectedProducedItemIds);
   const locationIds = useSelector(selectSelectedLocationIds);
-  const allItems = useSelector(selectAllItemMaster);
   const allLocations = useSelector(selectAllLocations);
-  const itemsLoading = useSelector(selectItemsLoading);
-  const itemsError = useSelector(selectItemsError);
   const locationsLoading = useSelector(selectLocationsLoading);
   const locationsError = useSelector(selectLocationsError);
   const resourceMetaLoading = useSelector(selectResourceMetaLoading);
@@ -74,7 +103,6 @@ const ResourceComponentInfo = () => {
   const hasInactiveItems = useSelector(selectHasInactiveSelected);
   const hasInactiveLocs = useSelector(selectHasInactiveLocationsSelected);
   const bomVersions = useSelector(selectBomVersions);
-  const itemOptions = useSelector(selectResourceItemOptions);
   const resourceOptionsByKey = useSelector(selectResourceOptionsByKey);
   const resourceComponentConfigs = useSelector(selectResourceComponentConfigs);
 
@@ -83,21 +111,23 @@ const ResourceComponentInfo = () => {
   const [resourceDropdownKey, setResourceDropdownKey] = useState(null);
   const [resourceSearchByKey, setResourceSearchByKey] = useState({});
   const [pageError, setPageError] = useState("");
+  const metadataFetchKeyRef = useRef("");
+  const itemSearchTimerRef = useRef({});
+  const itemSearchCacheRef = useRef({});
+  const [activeItemDropdownKey, setActiveItemDropdownKey] = useState(null);
+  const [itemSearchByKey, setItemSearchByKey] = useState({});
+  const [itemOptionsByKey, setItemOptionsByKey] = useState({});
+  const [itemLoadingByKey, setItemLoadingByKey] = useState({});
+  const [itemPaginationByKey, setItemPaginationByKey] = useState({});
 
   useEffect(() => {
-    if (producedItemIds.length > 0 && allItems.length === 0 && !itemsLoading) {
-      dispatch(fetchItemMaster());
-    }
     if (locationIds.length > 0 && allLocations.length === 0 && !locationsLoading) {
       dispatch(fetchLocationMaster());
     }
   }, [
     dispatch,
-    producedItemIds.length,
     locationIds.length,
-    allItems.length,
     allLocations.length,
-    itemsLoading,
     locationsLoading,
   ]);
 
@@ -118,6 +148,14 @@ const ResourceComponentInfo = () => {
   useEffect(() => {
     if (producedItems.length === 0 || locations.length === 0) return;
 
+    const metadataKey = JSON.stringify({
+      items: producedItems.map((x) => x.item).sort(),
+      locations: locations.map((x) => x.location).sort(),
+    });
+
+    if (metadataFetchKeyRef.current === metadataKey) return;
+    metadataFetchKeyRef.current = metadataKey;
+
     dispatch(
       fetchResourceComponentMetadata({
         items: producedItems.map((x) => x.item),
@@ -125,39 +163,6 @@ const ResourceComponentInfo = () => {
       })
     );
   }, [dispatch, producedItems, locations]);
-
-  // Persist resourceComponentConfigs to localStorage for backup
-  useEffect(() => {
-    if (Object.keys(resourceComponentConfigs).length > 0) {
-      localStorage.setItem(
-        "resourceComponentConfigsBackup",
-        JSON.stringify(resourceComponentConfigs)
-      );
-    }
-  }, [resourceComponentConfigs]);
-
-  // Restore from localStorage if Redux state is empty but backup exists
-  useEffect(() => {
-    if (Object.keys(resourceComponentConfigs).length === 0 && producedItems.length > 0 && locations.length > 0) {
-      const backup = localStorage.getItem("resourceComponentConfigsBackup");
-      if (backup) {
-        try {
-          const restoredConfigs = JSON.parse(backup);
-          // Restore each config to Redux
-          Object.entries(restoredConfigs).forEach(([key, config]) => {
-            dispatch(
-              setResourceComponentConfig({
-                key,
-                config,
-              })
-            );
-          });
-        } catch (err) {
-          console.error("Failed to restore configs from localStorage", err);
-        }
-      }
-    }
-  }, [dispatch, producedItems, locations, resourceComponentConfigs]);
 
   useEffect(() => {
     producedItems.forEach((item) => {
@@ -174,20 +179,133 @@ const ResourceComponentInfo = () => {
     });
   }, [dispatch, producedItems, locations]);
 
-  const itemOptionMap = useMemo(() => {
-    const map = new Map();
-    itemOptions.forEach((row) => {
-      map.set(String(row.item ?? "").trim(), row);
+  const loadLazyItemOptions = async ({
+    rowKey,
+    searchText = "",
+    page = 1,
+    append = false,
+  }) => {
+    const cleanSearch = String(searchText || "").trim();
+    const cacheKey = `${cleanSearch.toLowerCase()}__${page}`;
+
+    setItemSearchByKey((prev) => ({
+      ...prev,
+      [rowKey]: searchText,
+    }));
+
+    if (itemSearchCacheRef.current[cacheKey]) {
+      const cached = itemSearchCacheRef.current[cacheKey];
+      setItemOptionsByKey((prev) => ({
+        ...prev,
+        [rowKey]: append
+          ? [...(prev[rowKey] || []), ...(cached.rows || [])]
+          : cached.rows || [],
+      }));
+      setItemPaginationByKey((prev) => ({
+        ...prev,
+        [rowKey]: cached.pagination,
+      }));
+      return;
+    }
+
+    setItemLoadingByKey((prev) => ({
+      ...prev,
+      [rowKey]: true,
+    }));
+
+    try {
+      const result = await searchItemMasterOptions({
+        search: cleanSearch,
+        page,
+        pageSize: 50,
+      });
+
+      itemSearchCacheRef.current[cacheKey] = result;
+
+      setItemOptionsByKey((prev) => ({
+        ...prev,
+        [rowKey]: append
+          ? [...(prev[rowKey] || []), ...(result.rows || [])]
+          : result.rows || [],
+      }));
+
+      setItemPaginationByKey((prev) => ({
+        ...prev,
+        [rowKey]: result.pagination,
+      }));
+    } catch (error) {
+      console.error("Item master lazy search failed:", error);
+      setItemOptionsByKey((prev) => ({
+        ...prev,
+        [rowKey]: [],
+      }));
+      setItemPaginationByKey((prev) => ({
+        ...prev,
+        [rowKey]: { page: 1, pageSize: 50, total: 0, totalPages: 1, hasNext: false },
+      }));
+    } finally {
+      setItemLoadingByKey((prev) => ({
+        ...prev,
+        [rowKey]: false,
+      }));
+    }
+  };
+
+  const handleLazyItemDropdownOpen = (rowKey, currentValue = "") => {
+    setActiveItemDropdownKey(rowKey);
+
+    const existingOptions = itemOptionsByKey[rowKey] || [];
+    const existingSearchText = itemSearchByKey[rowKey] ?? currentValue ?? "";
+
+    if (existingOptions.length > 0) return;
+
+    loadLazyItemOptions({
+      rowKey,
+      searchText: existingSearchText,
+      page: 1,
+      append: false,
     });
-    return map;
-  }, [itemOptions]);
+  };
+
+  const handleLazyItemSearchChange = (rowKey, value) => {
+    setActiveItemDropdownKey(rowKey);
+    setItemSearchByKey((prev) => ({
+      ...prev,
+      [rowKey]: value,
+    }));
+
+    if (itemSearchTimerRef.current[rowKey]) {
+      clearTimeout(itemSearchTimerRef.current[rowKey]);
+    }
+
+    itemSearchTimerRef.current[rowKey] = setTimeout(() => {
+      loadLazyItemOptions({
+        rowKey,
+        searchText: value,
+        page: 1,
+        append: false,
+      });
+    }, 350);
+  };
+
+  const handleLazyItemLoadMore = (rowKey) => {
+    const searchText = itemSearchByKey[rowKey] || "";
+    const pagination = itemPaginationByKey[rowKey] || {};
+    const nextPage = Number(pagination.page || 1) + 1;
+
+    loadLazyItemOptions({
+      rowKey,
+      searchText,
+      page: nextPage,
+      append: true,
+    });
+  };
 
   const isBlocked =
     producedItems.length === 0 ||
     locations.length === 0 ||
     hasInactiveItems ||
     hasInactiveLocs ||
-    itemsLoading ||
     locationsLoading ||
     resourceMetaLoading;
 
@@ -279,9 +397,8 @@ const ResourceComponentInfo = () => {
 
       let nextRow = { ...row, ...patch };
 
-      if (patch.componentItem !== undefined) {
-        const itemInfo = itemOptionMap.get(String(patch.componentItem ?? "").trim());
-        nextRow.description = itemInfo?.item_description ?? "";
+      if (patch.componentItem !== undefined && patch.description === undefined) {
+        nextRow.description = row.description ?? "";
       }
 
       return nextRow;
@@ -315,9 +432,8 @@ const ResourceComponentInfo = () => {
 
       let nextRow = { ...row, ...patch };
 
-      if (patch.coProductItem !== undefined) {
-        const itemInfo = itemOptionMap.get(String(patch.coProductItem ?? "").trim());
-        nextRow.description = itemInfo?.item_description ?? "";
+      if (patch.coProductItem !== undefined && patch.description === undefined) {
+        nextRow.description = row.description ?? "";
       }
 
       return nextRow;
@@ -423,21 +539,6 @@ const ResourceComponentInfo = () => {
     return "";
   };
 
-  useEffect(() => {
-    // Before navigating away, ensure all configs are saved
-    const handleBeforeUnload = () => {
-      if (Object.keys(resourceComponentConfigs).length > 0) {
-        localStorage.setItem(
-          "resourceComponentConfigsBackup",
-          JSON.stringify(resourceComponentConfigs)
-        );
-      }
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [resourceComponentConfigs]);
-
   const handleNext = () => {
     const validationMessage = validateAllConfigs();
     if (validationMessage) {
@@ -446,12 +547,6 @@ const ResourceComponentInfo = () => {
     }
 
     setPageError("");
-
-    // Save all configs to localStorage and Redux before navigation
-    localStorage.setItem(
-      "resourceComponentConfigsBackup",
-      JSON.stringify(resourceComponentConfigs)
-    );
 
     const summaryConfigSnapshot = producedItems.flatMap((item) =>
       locations.map((loc) => {
@@ -530,14 +625,12 @@ const ResourceComponentInfo = () => {
           Configure resources and components for each item and location
         </p>
 
-        {(itemsLoading || locationsLoading || resourceMetaLoading) && (
+        {(locationsLoading || resourceMetaLoading) && (
           <div style={styles.infoBox}>Loading data...</div>
         )}
 
-        {(itemsError || locationsError || resourceMetaError || pageError) && (
+        {(locationsError || resourceMetaError || pageError) && (
           <div style={styles.errorBox}>
-            {itemsError ? `Items Error: ${itemsError}` : null}
-            {itemsError && (locationsError || resourceMetaError || pageError) ? <br /> : null}
             {locationsError ? `Locations Error: ${locationsError}` : null}
             {locationsError && (resourceMetaError || pageError) ? <br /> : null}
             {resourceMetaError ? `Step 3 Error: ${resourceMetaError}` : null}
@@ -813,25 +906,84 @@ const ResourceComponentInfo = () => {
                                   <div key={row.id} style={styles.rowForm}>
                                     <div style={styles.fieldWithLabel}>
                                       <div style={styles.inlineFieldLabel}>Component Item</div>
-                                      <select
-                                        style={styles.input}
-                                        value={row.componentItem}
-                                        onChange={(e) =>
-                                          changeComponentRow(
-                                            item.item,
-                                            loc.location,
-                                            row.id,
-                                            { componentItem: e.target.value }
-                                          )
-                                        }
-                                      >
-                                        <option value="">Component Item</option>
-                                        {itemOptions.map((option) => (
-                                          <option key={option.item} value={option.item}>
-                                            {option.item}
-                                          </option>
-                                        ))}
-                                      </select>
+                                      {(() => {
+                                        const rowKey = `component-${key}-${row.id}`;
+                                        const options = itemOptionsByKey[rowKey] || [];
+                                        const loading = !!itemLoadingByKey[rowKey];
+                                        const pagination = itemPaginationByKey[rowKey] || {};
+
+                                        return (
+                                          <div style={styles.lazyDropdownWrap}>
+                                            <input
+                                              type="text"
+                                              style={styles.input}
+                                              value={row.componentItem}
+                                              placeholder="Search Component Item"
+                                              onFocus={() => handleLazyItemDropdownOpen(rowKey, row.componentItem)}
+                                              onClick={() => handleLazyItemDropdownOpen(rowKey, row.componentItem)}
+                                              onChange={(e) => {
+                                                const value = e.target.value;
+                                                changeComponentRow(
+                                                  item.item,
+                                                  loc.location,
+                                                  row.id,
+                                                  {
+                                                    componentItem: value,
+                                                    description: "",
+                                                  }
+                                                );
+                                                handleLazyItemSearchChange(rowKey, value);
+                                              }}
+                                            />
+
+                                            {activeItemDropdownKey === rowKey && (
+                                              <div style={styles.lazyDropdownMenu}>
+                                                {loading && options.length === 0 ? (
+                                                  <div style={styles.lazyDropdownEmpty}>Loading...</div>
+                                                ) : options.length === 0 ? (
+                                                  <div style={styles.lazyDropdownEmpty}>No items found</div>
+                                                ) : (
+                                                  <>
+                                                    {options.map((option) => (
+                                                      <div
+                                                        key={option.item}
+                                                        style={styles.lazyDropdownRow}
+                                                        onMouseDown={(e) => {
+                                                          e.preventDefault();
+                                                          changeComponentRow(
+                                                            item.item,
+                                                            loc.location,
+                                                            row.id,
+                                                            {
+                                                              componentItem: option.item,
+                                                              description: option.item_desc || "",
+                                                            }
+                                                          );
+                                                          setActiveItemDropdownKey(null);
+                                                        }}
+                                                      >
+                                                        <div style={styles.lazyDropdownItem}>{option.item}</div>
+                                                        <div style={styles.lazyDropdownDesc}>{option.item_desc || "-"}</div>
+                                                      </div>
+                                                    ))}
+                                                    {pagination.hasNext && (
+                                                      <button
+                                                        type="button"
+                                                        style={styles.lazyLoadMoreBtn}
+                                                        disabled={loading}
+                                                        onMouseDown={(e) => e.preventDefault()}
+                                                        onClick={() => handleLazyItemLoadMore(rowKey)}
+                                                      >
+                                                        {loading ? "Loading..." : "Load More"}
+                                                      </button>
+                                                    )}
+                                                  </>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
 
                                     <div style={styles.fieldWithLabel}>
@@ -920,25 +1072,84 @@ const ResourceComponentInfo = () => {
                                 <div key={row.id} style={styles.rowForm}>
                                   <div style={styles.fieldWithLabel}>
                                     <div style={styles.inlineFieldLabel}>Co-Product Item</div>
-                                    <select
-                                      style={styles.input}
-                                      value={row.coProductItem}
-                                      onChange={(e) =>
-                                        changeCoProductRow(
-                                          item.item,
-                                          loc.location,
-                                          row.id,
-                                          { coProductItem: e.target.value }
-                                        )
-                                      }
-                                    >
-                                      <option value="">Co-Product Item</option>
-                                      {itemOptions.map((option) => (
-                                        <option key={option.item} value={option.item}>
-                                          {option.item}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    {(() => {
+                                      const rowKey = `coproduct-${key}-${row.id}`;
+                                      const options = itemOptionsByKey[rowKey] || [];
+                                      const loading = !!itemLoadingByKey[rowKey];
+                                      const pagination = itemPaginationByKey[rowKey] || {};
+
+                                      return (
+                                        <div style={styles.lazyDropdownWrap}>
+                                          <input
+                                            type="text"
+                                            style={styles.input}
+                                            value={row.coProductItem}
+                                            placeholder="Search Co-Product Item"
+                                            onFocus={() => handleLazyItemDropdownOpen(rowKey, row.coProductItem)}
+                                            onClick={() => handleLazyItemDropdownOpen(rowKey, row.coProductItem)}
+                                            onChange={(e) => {
+                                              const value = e.target.value;
+                                              changeCoProductRow(
+                                                item.item,
+                                                loc.location,
+                                                row.id,
+                                                {
+                                                  coProductItem: value,
+                                                  description: "",
+                                                }
+                                              );
+                                              handleLazyItemSearchChange(rowKey, value);
+                                            }}
+                                          />
+
+                                          {activeItemDropdownKey === rowKey && (
+                                            <div style={styles.lazyDropdownMenu}>
+                                              {loading && options.length === 0 ? (
+                                                <div style={styles.lazyDropdownEmpty}>Loading...</div>
+                                              ) : options.length === 0 ? (
+                                                <div style={styles.lazyDropdownEmpty}>No items found</div>
+                                              ) : (
+                                                <>
+                                                  {options.map((option) => (
+                                                    <div
+                                                      key={option.item}
+                                                      style={styles.lazyDropdownRow}
+                                                      onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        changeCoProductRow(
+                                                          item.item,
+                                                          loc.location,
+                                                          row.id,
+                                                          {
+                                                            coProductItem: option.item,
+                                                            description: option.item_desc || "",
+                                                          }
+                                                        );
+                                                        setActiveItemDropdownKey(null);
+                                                      }}
+                                                    >
+                                                      <div style={styles.lazyDropdownItem}>{option.item}</div>
+                                                      <div style={styles.lazyDropdownDesc}>{option.item_desc || "-"}</div>
+                                                    </div>
+                                                  ))}
+                                                  {pagination.hasNext && (
+                                                    <button
+                                                      type="button"
+                                                      style={styles.lazyLoadMoreBtn}
+                                                      disabled={loading}
+                                                      onMouseDown={(e) => e.preventDefault()}
+                                                      onClick={() => handleLazyItemLoadMore(rowKey)}
+                                                    >
+                                                      {loading ? "Loading..." : "Load More"}
+                                                    </button>
+                                                  )}
+                                                </>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
 
                                   <div style={styles.fieldWithLabel}>
@@ -1396,6 +1607,53 @@ const styles = {
     gap: "8px",
     fontSize: "14px",
     color: "#111827",
+  },
+  lazyDropdownWrap: {
+    position: "relative",
+    width: "100%",
+  },
+  lazyDropdownMenu: {
+    position: "absolute",
+    top: "40px",
+    left: 0,
+    right: 0,
+    backgroundColor: "#ffffff",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    zIndex: 80,
+    maxHeight: "240px",
+    overflowY: "auto",
+    boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+  },
+  lazyDropdownRow: {
+    padding: "8px 10px",
+    cursor: "pointer",
+    borderBottom: "1px solid #f3f4f6",
+  },
+  lazyDropdownItem: {
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "#111827",
+  },
+  lazyDropdownDesc: {
+    fontSize: "12px",
+    color: "#6b7280",
+    marginTop: "2px",
+  },
+  lazyDropdownEmpty: {
+    padding: "10px",
+    fontSize: "13px",
+    color: "#6b7280",
+  },
+  lazyLoadMoreBtn: {
+    width: "100%",
+    border: "none",
+    backgroundColor: "#f3f4f6",
+    color: "#2563eb",
+    padding: "9px 10px",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 600,
   },
   bottomBar: {
     marginTop: "20px",

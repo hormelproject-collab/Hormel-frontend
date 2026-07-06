@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
 import { MdDelete } from "react-icons/md";
-import { setModifyExistingBomState, selectModifyExistingBomState } from "../../redux/bomSlice";
 
 const NEXT_ROUTE = "/summary";
 const BOM_VERSION_OPTIONS = [
@@ -211,8 +209,6 @@ const ModifyExistingBOM = () => {
     const navigate = useNavigate();
     const routerLocation = useLocation();
     const { id } = useParams();
-    const dispatch = useDispatch();
-    const reduxFormState = useSelector(selectModifyExistingBomState);
 
     const [selectedBom, setSelectedBom] = useState(
         normalizeSelectedBom(routerLocation?.state?.selectedBom)
@@ -244,8 +240,8 @@ const ModifyExistingBOM = () => {
         setLoadingResourceOptions(true);
         try {
             const [routingResconsRows, resourceMasterRows] = await Promise.all([
-                fetchJsonNoLimit("http://localhost:3000/api/bigquery/table/routing_rescons"),
-                fetchJsonNoLimit("http://localhost:3000/api/bigquery/table/resource_master"),
+                fetchJsonNoLimit("/api/bigquery/table/routing_rescons"),
+                fetchJsonNoLimit("/api/bigquery/table/resource_master"),
             ]);
 
             const resourceMap = new Map();
@@ -294,7 +290,7 @@ const ModifyExistingBOM = () => {
 
         setLoadingItemOptions(true);
         try {
-            const itemMasterRows = await fetchJsonNoLimit("http://localhost:3000/api/bigquery/table/item_master");
+            const itemMasterRows = await fetchJsonNoLimit("/api/bigquery/table/item_master");
 
             const itemMap = new Map();
             const itemOptions = [];
@@ -344,7 +340,7 @@ const ModifyExistingBOM = () => {
                 // rely on id param only if backend can resolve it.
                 if (!baseBom && id) {
                     const detailsById = await fetchJsonNoLimit(
-                        `http://localhost:3000/api/tables/existing-bom-details-by-id/${encodeURIComponent(id)}`
+                        `/api/tables/existing-bom-details-by-id/${encodeURIComponent(id)}`
                     );
 
                     baseBom = normalizeSelectedBom(
@@ -434,7 +430,7 @@ const ModifyExistingBOM = () => {
 
                 // PostgreSQL-only initial load
                 const details = await fetchJsonNoLimit(
-                    `http://localhost:3000/api/tables/existing-bom-details?bomId=${encodeURIComponent(
+                    `/api/tables/existing-bom-details?bomId=${encodeURIComponent(
                         baseBom.bom_id
                     )}&location=${encodeURIComponent(
                         baseBom.location
@@ -459,60 +455,42 @@ const ModifyExistingBOM = () => {
                     .map((row) => String(row.resource ?? "").trim())
                     .filter(Boolean);
 
-                const hasSavedState = Boolean(
-                    reduxFormState?.record &&
-                    (String(reduxFormState.record?.id ?? reduxFormState.record?.bom_id ?? "") === String(baseBom.id ?? baseBom.bom_id ?? ""))
+                setSelectedResources(preselectedResources);
+
+                setComponentItems(
+                    componentRows.map((row) =>
+                        makeComponentRow({
+                            id: row.id ?? row.rec_id,
+                            componentItem: row.component_item ?? row.item ?? "",
+                            description: row.description ?? row.item_description ?? "",
+                            standardUsage:
+                                row.standard_usage ??
+                                row.erp_bom_quantity_consumed_per ??
+                                row.qtyConsumedPer ??
+                                "",
+                        })
+                    )
                 );
 
-                const savedStateForBom = hasSavedState ? reduxFormState : null;
-
-                const initialSelectedResources = savedStateForBom?.selectedResources?.length
-                    ? savedStateForBom.selectedResources
-                    : preselectedResources;
-                setSelectedResources(initialSelectedResources);
-
-                const mappedComponentRows = componentRows.map((row) =>
-                    makeComponentRow({
-                        id: row.id ?? row.rec_id,
-                        componentItem: row.component_item ?? row.item ?? "",
-                        description: row.description ?? row.item_description ?? "",
-                        standardUsage:
-                            row.standard_usage ??
-                            row.erp_bom_quantity_consumed_per ??
-                            row.qtyConsumedPer ??
-                            "",
-                    })
+                setCoProducts(
+                    coProductRows.map((row) =>
+                        makeCoProductRow({
+                            id: row.id ?? row.rec_id,
+                            coProductItem: row.co_product_item ?? row.item ?? "",
+                            description: row.description ?? row.item_description ?? "",
+                            qtyProduced:
+                                row.qty_produced_per ??
+                                row.erp_bom_qty_produced_per ??
+                                row.qtyProducedPer ??
+                                "",
+                        })
+                    )
                 );
 
-                const initialComponentItems = savedStateForBom?.componentItems?.length
-                    ? savedStateForBom.componentItems
-                    : mappedComponentRows;
-                setComponentItems(initialComponentItems);
-
-                const mappedCoProductRows = coProductRows.map((row) =>
-                    makeCoProductRow({
-                        id: row.id ?? row.rec_id,
-                        coProductItem: row.co_product_item ?? row.item ?? "",
-                        description: row.description ?? row.item_description ?? "",
-                        qtyProduced:
-                            row.qty_produced_per ??
-                            row.erp_bom_qty_produced_per ??
-                            row.qtyProducedPer ??
-                            "",
-                    })
-                );
-
-                const initialCoProducts = savedStateForBom?.coProducts?.length
-                    ? savedStateForBom.coProducts
-                    : mappedCoProductRows;
-                setCoProducts(initialCoProducts);
-
-                const initialProducedCoProduct =
-                    savedStateForBom?.producedCoProduct ?? mappedCoProductRows.length > 0;
-                setProducedCoProduct(initialProducedCoProduct);
+                setProducedCoProduct(coProductRows.length > 0);
 
                 setRoutingRows(
-                    initialSelectedResources.map((resource) => ({
+                    preselectedResources.map((resource) => ({
                         resource,
                         resourceRelevancy: "",
                         routingId: buildRoutingId(
@@ -522,14 +500,6 @@ const ModifyExistingBOM = () => {
                         ),
                     }))
                 );
-                setBomVersion(savedStateForBom?.bomVersion ?? nextVersion);
-
-                const generatedRows = initialSelectedResources.map((resource) => ({
-                    resource,
-                    resourceRelevancy: getResourceRelevancy(resourceMap, resource),
-                    routingId: buildRoutingId(baseBom.produced_item, baseBom.location, resource),
-                }));
-                setRoutingRows(generatedRows);
             } catch (e) {
                 setErr(e?.message ?? "Failed to load existing BOM details");
             } finally {
@@ -539,42 +509,6 @@ const ModifyExistingBOM = () => {
 
         loadPage();
     }, [id, routerLocation?.state?.selectedBom]);
-
-    // Generate unique key for this BOM's form data
-    const bomStorageKey = useMemo(() => {
-        if (!selectedBom?.id) return null;
-        return `modifyBomData_${selectedBom.id}`;
-    }, [selectedBom?.id]);
-
-    useEffect(() => {
-        if (!selectedBom) return;
-
-        dispatch(
-            setModifyExistingBomState({
-                record: selectedBom,
-                bomVersion,
-                selectedResources,
-                componentItems,
-                coProducts,
-                producedCoProduct,
-            })
-        );
-    }, [dispatch, selectedBom, bomVersion, selectedResources, componentItems, coProducts, producedCoProduct]);
-
-    // Persist form data to localStorage whenever it changes
-    useEffect(() => {
-        if (!bomStorageKey) return;
-
-        const formData = {
-            bomVersion,
-            selectedResources,
-            componentItems,
-            coProducts,
-            producedCoProduct,
-        };
-
-        localStorage.setItem(bomStorageKey, JSON.stringify(formData));
-    }, [bomStorageKey, bomVersion, selectedResources, componentItems, coProducts, producedCoProduct]);
 
     useEffect(() => {
         if (!selectedBom) return;

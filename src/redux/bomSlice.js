@@ -41,34 +41,64 @@ const makeCoProductRow = () => ({
 /** ------------------ THUNKS ------------------ **/
 export const fetchItemMaster = createAsyncThunk(
   "bom/fetchItemMaster",
-  async (_, { rejectWithValue }) => {
+  async (
+    { page = 1, pageSize = 50, search = "", filterBy = "item" } = {},
+    { rejectWithValue }
+  ) => {
     try {
-      const res = await fetch("http://localhost:3000/api/bigquery/table/item-master-with-releaseflag");
+      const params = new URLSearchParams();
+
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      params.set("filterBy", String(filterBy || "item"));
+
+      // IMPORTANT: send input value to backend
+      params.set("search", String(search || "").trim());
+
+      const res = await fetch(
+        `/api/bigquery/table/item-master-with-releaseflag?${params.toString()}`
+      );
 
       if (!res.ok) {
         return rejectWithValue(await res.text());
       }
 
-      const data = await res.json();
+      const payload = await res.json();
 
-      return (Array.isArray(data) ? data : []).map((row, index) => ({
-        id:
-          row.rec_id ??
-          row.postgresql_rec_id ??
-          row.item_id ??
-          row.item ??
-          `row-${index}`,
-        item: row.item ?? row.item_id ?? "",
-        desc: row.item_desc ?? row.item_description ?? "",
-        status: row.item_status ?? row.status ?? "",
-        itemReleaseFlag:
-          row.item_releaseflag ??
-          row.item_release_flag ??
-          row.itemreleaseflag ??
-          row.release_flag ??
-          row.release ??
-          "",
-      }));
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+      return {
+        rows: rows.map((row, index) => ({
+          id:
+            row.rec_id ??
+            row.postgresql_rec_id ??
+            row.item_id ??
+            row.item ??
+            `row-${index}`,
+          item: row.item ?? row.item_id ?? "",
+          desc: row.item_desc ?? row.item_description ?? "",
+          status: row.item_status ?? row.status ?? "",
+          itemReleaseFlag:
+            row.item_releaseflag ??
+            row.item_release_flag ??
+            row.itemreleaseflag ??
+            row.release_flag ??
+            row.release ??
+            "",
+        })),
+        pagination: payload?.pagination || {
+          page,
+          pageSize,
+          total: rows.length,
+          totalPages: 1,
+          hasPrev: false,
+          hasNext: false,
+        },
+      };
     } catch (e) {
       return rejectWithValue(e?.message || "Failed to fetch item master");
     }
@@ -97,7 +127,7 @@ export const fetchResourceComponentMetadata = createAsyncThunk(
             .filter(Boolean)
         : [];
 
-      const res = await fetch("http://localhost:3000/api/bigquery/table/resource-component-metadata", {
+      const res = await fetch("/api/bigquery/table/resource-component-metadata", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -190,7 +220,7 @@ export const fetchLocationsByItems = createAsyncThunk(
             .filter(Boolean)
         : [];
 
-      const res = await fetch("http://localhost:3000/api/bigquery/table/locations-by-items", {
+      const res = await fetch("/api/bigquery/table/locations-by-items", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -238,7 +268,7 @@ export const fetchLocationMaster = createAsyncThunk(
   "bom/fetchLocationMaster",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch("http://localhost:3000/api/tables/location_master");
+      const res = await fetch("/api/tables/location_master");
 
       if (!res.ok) {
         return rejectWithValue(await res.text());
@@ -286,8 +316,6 @@ const initialState = {
 
   modifyExistingBomState: {
     record: null,
-    bomVersion: "",
-    selectedResources: [],
     componentItems: [],
     initialComponentItems: [],
     coProducts: [],
@@ -298,6 +326,14 @@ const initialState = {
   items: itemsAdapter.getInitialState({
     loading: false,
     error: null,
+    pagination: {
+      page: 1,
+      pageSize: 50,
+      total: 0,
+      totalPages: 1,
+      hasPrev: false,
+      hasNext: false,
+    },
   }),
 
   locations: locationsAdapter.getInitialState({
@@ -306,6 +342,7 @@ const initialState = {
   }),
 
   selectedProducedItemIds: [],
+  selectedProducedItemById: {},
   selectedLocationIds: [],
 
   resourceMeta: {
@@ -318,17 +355,6 @@ const initialState = {
   },
 
   resourceComponentConfigs: {},
-  itemBomRoutingForm: {
-    selectedBomId: "",
-    producedItem: "",
-    itemReleaseFlag: "",
-    location: "",
-    selectedResource: "",
-    resourceRelevancy: "",
-    routingPriority: "",
-    addConnectedCoProduct: false,
-    coProductRows: [],
-  },
 };
 
 const bomSlice = createSlice({
@@ -435,14 +461,29 @@ const bomSlice = createSlice({
     },
 
     toggleProducedItem: (state, action) => {
-      const id = action.payload;
+      const payload = action.payload;
+      const row = payload && typeof payload === "object" ? payload : null;
+      const id = row?.id ?? payload;
+      if (!id) return;
+
       const idx = state.selectedProducedItemIds.indexOf(id);
-      if (idx >= 0) state.selectedProducedItemIds.splice(idx, 1);
-      else state.selectedProducedItemIds.push(id);
+      if (idx >= 0) {
+        state.selectedProducedItemIds.splice(idx, 1);
+        delete state.selectedProducedItemById[id];
+      } else {
+        state.selectedProducedItemIds.push(id);
+        if (row) {
+          state.selectedProducedItemById[id] = row;
+        } else {
+          const existing = state.items.entities[id];
+          if (existing) state.selectedProducedItemById[id] = existing;
+        }
+      }
     },
 
     clearProducedItems: (state) => {
       state.selectedProducedItemIds = [];
+      state.selectedProducedItemById = {};
       state.resourceComponentConfigs = {};
     },
 
@@ -457,28 +498,6 @@ const bomSlice = createSlice({
       state.selectedLocationIds = [];
       state.resourceComponentConfigs = {};
     },
-
-    setItemBomRoutingForm: (state, action) => {
-      const payload = action.payload || {};
-      state.itemBomRoutingForm = {
-        ...state.itemBomRoutingForm,
-        ...payload,
-      };
-    },
-
-    clearItemBomRoutingForm: (state) => {
-      state.itemBomRoutingForm = {
-        selectedBomId: "",
-        producedItem: "",
-        itemReleaseFlag: "",
-        location: "",
-        selectedResource: "",
-        resourceRelevancy: "",
-        routingPriority: "",
-        addConnectedCoProduct: false,
-        coProductRows: [],
-      };
-    },
   },
 
   extraReducers: (builder) => {
@@ -490,7 +509,15 @@ const bomSlice = createSlice({
       })
       .addCase(fetchItemMaster.fulfilled, (state, action) => {
         state.items.loading = false;
-        itemsAdapter.setAll(state.items, action.payload);
+        itemsAdapter.setAll(state.items, action.payload?.rows || []);
+        state.items.pagination = action.payload?.pagination || {
+          page: 1,
+          pageSize: 50,
+          total: action.payload?.rows?.length || 0,
+          totalPages: 1,
+          hasPrev: false,
+          hasNext: false,
+        };
       })
       .addCase(fetchItemMaster.rejected, (state, action) => {
         state.items.loading = false;
@@ -560,8 +587,6 @@ export const {
   ensureResourceComponentConfig,
   replicateResourceComponentInfoToLocations,
   clearResourceComponentConfigs,
-  setItemBomRoutingForm,
-  clearItemBomRoutingForm,
 } = bomSlice.actions;
 
 export default bomSlice.reducer;
@@ -575,9 +600,15 @@ export const {
 export const selectSelectedProducedItemIds = (state) =>
   state.bom.selectedProducedItemIds;
 
+export const selectSelectedProducedItemById = (state) =>
+  state.bom.selectedProducedItemById || {};
+
 export const selectSelectedProducedItems = createSelector(
-  [selectAllItemMaster, selectSelectedProducedItemIds],
-  (all, ids) => all.filter((x) => ids.includes(x.id))
+  [selectAllItemMaster, selectSelectedProducedItemIds, selectSelectedProducedItemById],
+  (all, ids, selectedById) =>
+    ids
+      .map((id) => selectedById[id] || all.find((x) => x.id === id))
+      .filter(Boolean)
 );
 
 export const selectHasInactiveSelected = createSelector(
@@ -608,6 +639,7 @@ export const selectModifyExistingBomState = (state) => state.bom.modifyExistingB
 
 export const selectItemsLoading = (state) => state.bom.items.loading;
 export const selectItemsError = (state) => state.bom.items.error;
+export const selectItemsPagination = (state) => state.bom.items.pagination;
 export const selectLocationsLoading = (state) => state.bom.locations.loading;
 export const selectLocationsError = (state) => state.bom.locations.error;
 
@@ -624,8 +656,6 @@ export const selectResourceOptionsByKey = (state) =>
   state.bom.resourceMeta.resourceOptionsByKey;
 export const selectResourceComponentConfigs = (state) =>
   state.bom.resourceComponentConfigs;
-export const selectItemBomRoutingForm = (state) =>
-  state.bom.itemBomRoutingForm;
 
 export const selectCheckoutSummary = createSelector(
   [

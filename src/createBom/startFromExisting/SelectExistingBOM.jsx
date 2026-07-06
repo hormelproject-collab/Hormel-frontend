@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL = "http://localhost:3000";
+
 
 const SEARCH_FIELDS = [
   { label: "None", value: "" },
@@ -80,7 +80,7 @@ const SelectExistingBOM = () => {
       setErr("");
 
       try {
-        const res = await fetch(`${API_BASE_URL}/api/tables/existing-bom-search`);
+        const res = await fetch(`/api/tables/existing-bom-search`);
 
         if (!res.ok) {
           throw new Error(await res.text());
@@ -327,7 +327,7 @@ const styles = {
     flexDirection: "column",
     gap: 10,
     width: "100%",
-    // maxWidth: 980,
+    maxWidth: 980,
     marginBottom: 18,
   },
   searchRow: {
@@ -337,13 +337,12 @@ const styles = {
     width: "100%",
   },
   searchColLeft: {
-    flex: 1,
-    minWidth: 0,
+    width: 490,
+    maxWidth: "100%",
   },
   searchColRight: {
     flex: 1,
-    minWidth: 0,
-    marginTop: "15px",
+    minWidth: 240,
   },
   criteriaLabel: {
     fontSize: 10,

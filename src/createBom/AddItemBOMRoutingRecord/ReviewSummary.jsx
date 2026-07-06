@@ -4,8 +4,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { IoIosArrowBack } from "react-icons/io";
 import { MdCheck } from "react-icons/md";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
-
 const safeArray = (value) => (Array.isArray(value) ? value : []);
 const toText = (value) => (value == null ? "" : String(value));
 
@@ -127,7 +125,7 @@ const ReviewSummary = () => {
         },
       };
 
-      const res = await fetch(`${API_BASE_URL}/api/tables/item-bom-routing/create`, {
+      const res = await fetch(`/api/tables/item-bom-routing/create`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { layout } from "../styles/layout";
 
-const VALIDATE_URL = "http://localhost:3000/bom-explosion";
+const VALIDATE_URL = "/api/bom-explosion";
 
 const buildConfigKey = (item, location) => `${item}__${location}`;
 
