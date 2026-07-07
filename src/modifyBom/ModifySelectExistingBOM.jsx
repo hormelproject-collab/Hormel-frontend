@@ -41,9 +41,7 @@ const ModifySelectExistingBOM = () => {
         setLoading(true);
         setError("");
 
-        const response = await fetch(
-          "http://localhost:3000/api/tables/existing-bom-search"
-        );
+        const response = await fetch("/api/tables/existing-bom-search");
 
         if (!response.ok) {
           throw new Error("Failed to fetch existing BOM search data");
@@ -214,12 +212,12 @@ const ModifySelectExistingBOM = () => {
 
             <div style={styles.table}>
               <div style={styles.header}>
-                <div>Location</div>
-                <div>Produced Item</div>
-                <div>Produced Item Description</div>
-                <div>BOM ID</div>
-                {/* <div>Resource</div> */}
-                <div>Item Release Flag</div>
+                <div style={styles.headerCell}>Location</div>
+                <div style={styles.headerCell}>Produced Item</div>
+                <div style={styles.headerCell}>Produced Item Description</div>
+                <div style={styles.headerCell}>BOM ID</div>
+                {/* <div style={styles.headerCell}>Resource</div> */}
+                <div style={styles.headerCell}>Item Release Flag</div>
               </div>
 
               {filteredRows.map((r) => (
@@ -240,12 +238,12 @@ const ModifySelectExistingBOM = () => {
                   }}
                   tabIndex={0}
                 >
-                  <div>{r.location}</div>
-                  <div>{r.produced_item}</div>
-                  <div>{r.produced_item_desc}</div>
-                  <div>{r.bom_id}</div>
-                  {/* <div>{r.resource}</div> */}
-                  <div style={getReleaseStyle(r.item_release_flag)}>
+                  <div style={styles.cell}>{r.location}</div>
+                  <div style={styles.cell}>{r.produced_item}</div>
+                  <div style={styles.cell}>{r.produced_item_desc}</div>
+                  <div style={styles.cell}>{r.bom_id}</div>
+                  {/* <div style={styles.cell}>{r.resource}</div> */}
+                  <div style={{ ...styles.cell, ...getReleaseStyle(r.item_release_flag) }}>
                     {r.item_release_flag}
                     {String(r.item_release_flag || "").includes("3") && " ⚠️"}
                   </div>
@@ -269,7 +267,7 @@ const styles = {
     justifyContent: "center",
   },
   wrapper: {
-    maxWidth: "1000px",
+    maxWidth: "1200px",
     width: "100%",
     padding: "20px",
   },
@@ -347,19 +345,51 @@ const styles = {
   table: {
     border: "1px solid #ddd",
     borderRadius: 6,
-    overflow: "hidden",
+    overflowX: "auto",
+    overflowY: "hidden",
+    background: "#fff",
   },
   header: {
     display: "grid",
-    gridTemplateColumns: "0.5fr 0.6fr 1.5fr 1.5fr 1fr",
+    gridTemplateColumns: "110px 150px minmax(260px, 1.6fr) minmax(230px, 1.4fr) 150px",
+    columnGap: "14px",
+    alignItems: "stretch",
+    minWidth: "900px",
     background: "#e5e7eb",
-    padding: 10,
+    padding: "0 14px",
+    borderBottom: "1px solid #d1d5db",
+  },
+  headerCell: {
+    padding: "12px 0",
+    fontSize: "13px",
+    fontWeight: 700,
+    color: "#111827",
+    display: "flex",
+    alignItems: "center",
+    boxSizing: "border-box",
+    minWidth: 0,
   },
   row: {
     display: "grid",
-    gridTemplateColumns: "0.5fr 0.6fr 1.5fr 1.5fr 1fr",
-    padding: 10,
+    gridTemplateColumns: "110px 150px minmax(260px, 1.6fr) minmax(230px, 1.4fr) 150px",
+    columnGap: "14px",
+    alignItems: "stretch",
+    minWidth: "900px",
+    padding: "0 14px",
     borderTop: "1px solid #eee",
     cursor: "pointer",
+    background: "#fff",
+  },
+  cell: {
+    padding: "12px 0",
+    fontSize: "13px",
+    color: "#111827",
+    display: "flex",
+    alignItems: "center",
+    boxSizing: "border-box",
+    minWidth: 0,
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+    lineHeight: 1.35,
   },
 };

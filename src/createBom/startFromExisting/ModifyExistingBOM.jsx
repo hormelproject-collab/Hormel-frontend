@@ -26,6 +26,30 @@ const toNumberOrEmpty = (value) => {
     return Number.isFinite(n) ? n : "";
 };
 
+const splitItemAndDescription = (itemValue, descriptionValue = "") => {
+    const rawItem = String(itemValue ?? "").trim();
+    const rawDescription = String(descriptionValue ?? "").trim();
+
+    if (!rawItem) return { item: "", description: rawDescription };
+
+    const hyphenIndex = rawItem.indexOf("-");
+    if (hyphenIndex > 0) {
+        const item = rawItem.slice(0, hyphenIndex).trim();
+        const descriptionFromCombined = rawItem.slice(hyphenIndex + 1).trim();
+        return { item, description: rawDescription || descriptionFromCombined };
+    }
+
+    return { item: rawItem, description: rawDescription };
+};
+
+const getItemOptionLabel = (option) => {
+    const item = String(option?.item ?? "").trim();
+    const description = String(
+        option?.description ?? option?.desc ?? option?.item_desc ?? option?.item_description ?? ""
+    ).trim();
+    return description ? `${item} - ${description}` : item;
+};
+
 const fetchJsonNoLimit = async (baseUrl) => {
     const urlsToTry = [`${baseUrl}`, baseUrl];
     let lastError = null;
@@ -78,35 +102,47 @@ const getResourceRelevancy = (resourceMasterMap, resource) => {
     return resourceMasterMap.get(key)?.resourceRelevancy ?? "";
 };
 
-const makeComponentRow = (seed = {}) => ({
-    id:
-        seed.id ??
-        `component-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    componentItem: seed.componentItem ?? seed.item ?? seed.component_item ?? "",
-    description:
-        seed.description ?? seed.item_description ?? seed.component_description ?? "",
-    standardUsage:
-        seed.standardUsage ??
-        seed.erp_bom_quantity_consumed_per ??
-        seed.qtyConsumedPer ??
-        seed.standard_usage ??
-        "",
-});
+const makeComponentRow = (seed = {}) => {
+    const normalized = splitItemAndDescription(
+        seed.componentItem ?? seed.item ?? seed.component_item ?? "",
+        seed.description ?? seed.item_description ?? seed.component_description ?? ""
+    );
 
-const makeCoProductRow = (seed = {}) => ({
-    id:
-        seed.id ??
-        `coproduct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    coProductItem: seed.coProductItem ?? seed.item ?? seed.co_product_item ?? "",
-    description:
-        seed.description ?? seed.item_description ?? seed.co_product_description ?? "",
-    qtyProduced:
-        seed.qtyProduced ??
-        seed.qtyProducedPer ??
-        seed.erp_bom_qty_produced_per ??
-        seed.qty_produced_per ??
-        "",
-});
+    return {
+        id:
+            seed.id ??
+            `component-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        componentItem: normalized.item,
+        description: normalized.description,
+        standardUsage:
+            seed.standardUsage ??
+            seed.erp_bom_quantity_consumed_per ??
+            seed.qtyConsumedPer ??
+            seed.standard_usage ??
+            "",
+    };
+};
+
+const makeCoProductRow = (seed = {}) => {
+    const normalized = splitItemAndDescription(
+        seed.coProductItem ?? seed.item ?? seed.co_product_item ?? "",
+        seed.description ?? seed.item_description ?? seed.co_product_description ?? ""
+    );
+
+    return {
+        id:
+            seed.id ??
+            `coproduct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        coProductItem: normalized.item,
+        description: normalized.description,
+        qtyProduced:
+            seed.qtyProduced ??
+            seed.qtyProducedPer ??
+            seed.erp_bom_qty_produced_per ??
+            seed.qty_produced_per ??
+            "",
+    };
+};
 
 const MultiSelectDropdown = ({
     options,
@@ -297,12 +333,15 @@ const ModifyExistingBOM = () => {
             const seenItems = new Set();
 
             (Array.isArray(itemMasterRows) ? itemMasterRows : []).forEach((row) => {
-                const itemValue = String(row.item ?? "").trim();
+                const normalized = splitItemAndDescription(
+                    row.item ?? row.item_id ?? "",
+                    row.item_desc ?? row.item_description ?? row.description ?? ""
+                );
+                const itemValue = normalized.item;
                 const itemKey = itemValue.toUpperCase();
-                if (!itemKey) return;
+                if (!itemKey || !itemKey.startsWith("HRL")) return;
 
-                const description =
-                    row.item_desc ?? row.item_description ?? row.description ?? "";
+                const description = normalized.description;
 
                 itemMap.set(itemKey, {
                     description,
@@ -781,31 +820,43 @@ const ModifyExistingBOM = () => {
                                 <div></div>
                             </div>
 
-                            {componentItems.map((row) => (
-                                <div key={row.id} style={styles.editTableRow}>
-                                    <select
-                                        value={row.componentItem}
-                                        onFocus={loadGcpItemOptions}
-                                        onChange={(e) =>
-                                            updateComponent(
-                                                row.id,
-                                                "componentItem",
-                                                e.target.value
-                                            )
-                                        }
-                                        style={styles.tableInput}
-                                    >
-                                        <option value="">
-                                            {loadingItemOptions
-                                                ? "Loading items..."
-                                                : "Component Item"}
-                                        </option>
-                                        {allItemOptions.map((option) => (
-                                            <option key={option.item} value={option.item}>
-                                                {option.item}
+                            {componentItems.map((row) => {
+                                const currentComponentItem = String(row.componentItem ?? "").trim();
+                                const componentDropdownOptions =
+                                    currentComponentItem &&
+                                    !allItemOptions.some(
+                                        (option) =>
+                                            String(option.item ?? "").trim().toUpperCase() ===
+                                            currentComponentItem.toUpperCase()
+                                    )
+                                        ? [{ item: currentComponentItem, description: row.description ?? "", isExistingValue: true }, ...allItemOptions]
+                                        : allItemOptions;
+
+                                return (
+                                    <div key={row.id} style={styles.editTableRow}>
+                                        <select
+                                            value={currentComponentItem}
+                                            onFocus={loadGcpItemOptions}
+                                            onChange={(e) =>
+                                                updateComponent(
+                                                    row.id,
+                                                    "componentItem",
+                                                    e.target.value
+                                                )
+                                            }
+                                            style={styles.tableInput}
+                                        >
+                                            <option value="">
+                                                {loadingItemOptions
+                                                    ? "Loading items..."
+                                                    : "Component Item"}
                                             </option>
-                                        ))}
-                                    </select>
+                                            {componentDropdownOptions.map((option) => (
+                                                <option key={option.item} value={option.item}>
+                                                    {getItemOptionLabel(option)}
+                                                </option>
+                                            ))}
+                                        </select>
 
                                     <input
                                         value={row.description}
@@ -842,7 +893,8 @@ const ModifyExistingBOM = () => {
                                         </button>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -890,31 +942,43 @@ const ModifyExistingBOM = () => {
                                     <div></div>
                                 </div>
 
-                                {coProducts.map((row) => (
-                                    <div key={row.id} style={styles.editTableRow}>
-                                        <select
-                                            value={row.coProductItem}
-                                            onFocus={loadGcpItemOptions}
-                                            onChange={(e) =>
-                                                updateCoProduct(
-                                                    row.id,
-                                                    "coProductItem",
-                                                    e.target.value
-                                                )
-                                            }
-                                            style={styles.tableInput}
-                                        >
-                                            <option value="">
-                                                {loadingItemOptions
-                                                    ? "Loading items..."
-                                                    : "Co-Product Item"}
-                                            </option>
-                                            {allItemOptions.map((option) => (
-                                                <option key={option.item} value={option.item}>
-                                                    {option.item}
+                                {coProducts.map((row) => {
+                                    const currentCoProductItem = String(row.coProductItem ?? "").trim();
+                                    const coProductDropdownOptions =
+                                        currentCoProductItem &&
+                                        !allItemOptions.some(
+                                            (option) =>
+                                                String(option.item ?? "").trim().toUpperCase() ===
+                                                currentCoProductItem.toUpperCase()
+                                        )
+                                            ? [{ item: currentCoProductItem, description: row.description ?? "", isExistingValue: true }, ...allItemOptions]
+                                            : allItemOptions;
+
+                                    return (
+                                        <div key={row.id} style={styles.editTableRow}>
+                                            <select
+                                                value={currentCoProductItem}
+                                                onFocus={loadGcpItemOptions}
+                                                onChange={(e) =>
+                                                    updateCoProduct(
+                                                        row.id,
+                                                        "coProductItem",
+                                                        e.target.value
+                                                    )
+                                                }
+                                                style={styles.tableInput}
+                                            >
+                                                <option value="">
+                                                    {loadingItemOptions
+                                                        ? "Loading items..."
+                                                        : "Co-Product Item"}
                                                 </option>
-                                            ))}
-                                        </select>
+                                                {coProductDropdownOptions.map((option) => (
+                                                    <option key={option.item} value={option.item}>
+                                                        {getItemOptionLabel(option)}
+                                                    </option>
+                                                ))}
+                                            </select>
 
                                         <input
                                             value={row.description}
@@ -951,7 +1015,8 @@ const ModifyExistingBOM = () => {
                                             </button>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>

@@ -15,13 +15,7 @@ const isInactiveStatus = (status) => {
 
 const isActiveStatus = (status) => {
   const s = normalizeStatus(status);
-  return (
-    s === "ACTIVE" ||
-    s === "A" ||
-    s === "1" ||
-    s === "Y" ||
-    s === "TRUE"
-  );
+  return s === "ACTIVE" || s === "A" || s === "1" || s === "Y" || s === "TRUE";
 };
 
 const makeComponentRow = () => ({
@@ -38,6 +32,57 @@ const makeCoProductRow = () => ({
   qtyProduced: "",
 });
 
+const defaultPagination = {
+  page: 1,
+  pageSize: 50,
+  total: 0,
+  totalPages: 1,
+  hasPrev: false,
+  hasNext: false,
+};
+
+const defaultExistingBomSearchState = {
+  loading: false,
+  error: null,
+  rows: [],
+  selectedRowId: "",
+  searchBy1: "resource",
+  searchBy2: "location",
+  query1: "",
+  query2: "",
+  pagination: defaultPagination,
+};
+
+const normalizeExistingBomSearchRow = (row, index) => {
+  const location = String(row.location ?? "").trim();
+  const producedItem = String(row.produced_item ?? row.item ?? "").trim();
+  const producedItemDesc = String(
+    row.produced_item_desc ?? row.item_description ?? row.item_desc ?? ""
+  ).trim();
+  const bomId = String(row.bom_id ?? row.bomId ?? "").trim();
+  const resource = String(row.resource ?? "").trim();
+  const routingId = String(row.routing_id ?? row.routingId ?? "").trim();
+  const itemReleaseFlag = String(
+    row.item_release_flag ??
+      row.item_releaseflag ??
+      row.release_flag ??
+      row.release ??
+      ""
+  ).trim();
+
+  return {
+    id: row.id ?? `${bomId}__${routingId || resource || "NORESOURCE"}__${index}`,
+    location,
+    produced_item: producedItem,
+    produced_item_desc: producedItemDesc,
+    bom_id: bomId,
+    resource,
+    routing_id: routingId,
+    item_release_flag: itemReleaseFlag,
+    __raw: row,
+  };
+};
+
 /** ------------------ THUNKS ------------------ **/
 export const fetchItemMaster = createAsyncThunk(
   "bom/fetchItemMaster",
@@ -47,24 +92,18 @@ export const fetchItemMaster = createAsyncThunk(
   ) => {
     try {
       const params = new URLSearchParams();
-
       params.set("page", String(page));
       params.set("pageSize", String(pageSize));
       params.set("filterBy", String(filterBy || "item"));
-
-      // IMPORTANT: send input value to backend
       params.set("search", String(search || "").trim());
 
       const res = await fetch(
         `/api/bigquery/table/item-master-with-releaseflag?${params.toString()}`
       );
 
-      if (!res.ok) {
-        return rejectWithValue(await res.text());
-      }
+      if (!res.ok) return rejectWithValue(await res.text());
 
       const payload = await res.json();
-
       const rows = Array.isArray(payload?.data)
         ? payload.data
         : Array.isArray(payload)
@@ -91,16 +130,62 @@ export const fetchItemMaster = createAsyncThunk(
             "",
         })),
         pagination: payload?.pagination || {
+          ...defaultPagination,
           page,
           pageSize,
           total: rows.length,
-          totalPages: 1,
-          hasPrev: false,
-          hasNext: false,
         },
       };
     } catch (e) {
       return rejectWithValue(e?.message || "Failed to fetch item master");
+    }
+  }
+);
+
+export const fetchExistingBomSearchRows = createAsyncThunk(
+  "bom/fetchExistingBomSearchRows",
+  async (
+    {
+      page = 1,
+      pageSize = 50,
+      searchBy1 = "resource",
+      query1 = "",
+      searchBy2 = "location",
+      query2 = "",
+    } = {},
+    { rejectWithValue }
+  ) => {
+    try {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      params.set("searchBy1", String(searchBy1 || ""));
+      params.set("query1", String(query1 || "").trim());
+      params.set("searchBy2", String(searchBy2 || ""));
+      params.set("query2", String(query2 || "").trim());
+
+      const res = await fetch(`/api/tables/existing-bom-search?${params.toString()}`);
+
+      if (!res.ok) return rejectWithValue(await res.text());
+
+      const payload = await res.json();
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+      return {
+        rows: rows.map((row, index) => normalizeExistingBomSearchRow(row, index)),
+        pagination: payload?.pagination || {
+          ...defaultPagination,
+          page,
+          pageSize,
+          total: rows.length,
+        },
+      };
+    } catch (e) {
+      return rejectWithValue(e?.message || "Failed to fetch existing BOM records");
     }
   }
 );
@@ -129,64 +214,35 @@ export const fetchResourceComponentMetadata = createAsyncThunk(
 
       const res = await fetch("/api/bigquery/table/resource-component-metadata", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          items: normalizedItems,
-          locations: normalizedLocations,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: normalizedItems, locations: normalizedLocations }),
       });
 
-      if (!res.ok) {
-        return rejectWithValue(await res.text());
-      }
+      if (!res.ok) return rejectWithValue(await res.text());
 
       const result = await res.json();
       const data = result?.data ?? {};
+      const resourceOptionsRows = Array.isArray(data.resourceOptions) ? data.resourceOptions : [];
 
-      const resourceOptionsRows = Array.isArray(data.resourceOptions)
-        ? data.resourceOptions
-        : [];
-
-      /**
-       * Backend now returns ALL resources globally:
-       * [
-       *   { resource, resource_relevancy }
-       * ]
-       *
-       * So build a flat deduped list first.
-       */
       const resourceOptions = [];
       const seenResources = new Set();
 
       resourceOptionsRows.forEach((row) => {
         const resource = String(row.resource ?? "").trim();
         if (!resource) return;
-
         const dedupKey = resource.toUpperCase();
         if (seenResources.has(dedupKey)) return;
         seenResources.add(dedupKey);
-
         resourceOptions.push({
           resource,
-          resourceRelevancy: row.resource_relevancy ?? "",
+          resourceRelevancy: row.resource_relevancy ?? row.resourceRelevancy ?? "",
         });
       });
 
-      /**
-       * Keep backward compatibility for existing Resource Component screen,
-       * which likely expects resourceOptionsByKey[item__location].
-       *
-       * Since resources are now global, assign the SAME resource list
-       * to every selected item + location combination.
-       */
       const resourceOptionsByKey = {};
-
       normalizedItems.forEach((item) => {
         normalizedLocations.forEach((location) => {
-          const key = `${item}__${location}`;
-          resourceOptionsByKey[key] = resourceOptions;
+          resourceOptionsByKey[`${item}__${location}`] = resourceOptions;
         });
       });
 
@@ -197,9 +253,7 @@ export const fetchResourceComponentMetadata = createAsyncThunk(
         resourceOptionsByKey,
       };
     } catch (e) {
-      return rejectWithValue(
-        e?.message || "Failed to fetch resource component metadata"
-      );
+      return rejectWithValue(e?.message || "Failed to fetch resource component metadata");
     }
   }
 );
@@ -212,9 +266,7 @@ export const fetchLocationsByItems = createAsyncThunk(
         ? itemIds
             .map((x) => {
               if (typeof x === "string") return x;
-              if (x && typeof x === "object") {
-                return x.item ?? x.id ?? "";
-              }
+              if (x && typeof x === "object") return x.item ?? x.id ?? "";
               return "";
             })
             .filter(Boolean)
@@ -222,37 +274,29 @@ export const fetchLocationsByItems = createAsyncThunk(
 
       const res = await fetch("/api/bigquery/table/locations-by-items", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemIds: normalizedItemIds }),
       });
 
-      if (!res.ok) {
-        return rejectWithValue(await res.text());
-      }
+      if (!res.ok) return rejectWithValue(await res.text());
 
       const result = await res.json();
       const rows = Array.isArray(result?.data)
         ? result.data
         : Array.isArray(result)
-        ? result
-        : [];
+          ? result
+          : [];
 
-      // Deduplicate by location because UI is selecting locations
       const dedupMap = new Map();
-
       rows.forEach((row) => {
         const location = String(row.location ?? "").trim();
         if (!location) return;
-
         if (!dedupMap.has(location)) {
           dedupMap.set(location, {
             id: location,
             location,
             name: row.location_description ?? "",
             status: row.location_status ?? row.status ?? "",
-            item: row.item ?? "",
           });
         }
       });
@@ -269,13 +313,9 @@ export const fetchLocationMaster = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const res = await fetch("/api/tables/location_master");
-
-      if (!res.ok) {
-        return rejectWithValue(await res.text());
-      }
+      if (!res.ok) return rejectWithValue(await res.text());
 
       const data = await res.json();
-
       return (Array.isArray(data) ? data : []).map((row, index) => ({
         id: row.rec_id ?? row.location ?? `loc-${index}`,
         location: String(row.location ?? ""),
@@ -304,7 +344,6 @@ const locationsAdapter = createEntityAdapter({
 /** ------------------ SLICE ------------------ **/
 const initialState = {
   selectedAction: null,
-
   modifySelectState: {
     searchBy1: "",
     searchBy2: "",
@@ -313,7 +352,6 @@ const initialState = {
     rows: [],
     selectedRecord: null,
   },
-
   modifyExistingBomState: {
     record: null,
     componentItems: [],
@@ -322,29 +360,21 @@ const initialState = {
     initialCoProducts: [],
     producedCoProduct: false,
   },
-
   items: itemsAdapter.getInitialState({
     loading: false,
     error: null,
-    pagination: {
-      page: 1,
-      pageSize: 50,
-      total: 0,
-      totalPages: 1,
-      hasPrev: false,
-      hasNext: false,
-    },
+    pagination: defaultPagination,
   }),
-
   locations: locationsAdapter.getInitialState({
     loading: false,
     error: null,
+    pagination: defaultPagination,
+    search: "",
   }),
-
+  existingBomSearch: defaultExistingBomSearchState,
   selectedProducedItemIds: [],
   selectedProducedItemById: {},
   selectedLocationIds: [],
-
   resourceMeta: {
     loading: false,
     error: null,
@@ -353,7 +383,6 @@ const initialState = {
     resourceOptions: [],
     resourceOptionsByKey: {},
   },
-
   resourceComponentConfigs: {},
 };
 
@@ -364,26 +393,39 @@ const bomSlice = createSlice({
     setAction: (state, action) => {
       state.selectedAction = action.payload;
     },
-
+    setExistingBomSearchState: (state, action) => {
+      const payload = action.payload || {};
+      state.existingBomSearch = {
+        ...state.existingBomSearch,
+        ...payload,
+        pagination: {
+          ...state.existingBomSearch.pagination,
+          ...(payload.pagination || {}),
+        },
+      };
+    },
+    clearExistingBomSearchState: (state) => {
+      state.existingBomSearch = defaultExistingBomSearchState;
+    },
+    setLocationsSearch: (state, action) => {
+      state.locations.search = String(action.payload ?? "");
+      state.locations.pagination.page = 1;
+    },
+    setLocationsPagination: (state, action) => {
+      state.locations.pagination = {
+        ...state.locations.pagination,
+        ...(action.payload || {}),
+      };
+    },
     setResourceComponentConfig: (state, action) => {
       const { key, config } = action.payload || {};
       if (!key) return;
-
       const existing = state.resourceComponentConfigs[key] || {};
-      state.resourceComponentConfigs[key] = {
-        ...existing,
-        ...config,
-      };
+      state.resourceComponentConfigs[key] = { ...existing, ...config };
     },
-
     setModifySelectState: (state, action) => {
-      const payload = action.payload || {};
-      state.modifySelectState = {
-        ...state.modifySelectState,
-        ...payload,
-      };
+      state.modifySelectState = { ...state.modifySelectState, ...(action.payload || {}) };
     },
-
     clearModifySelectState: (state) => {
       state.modifySelectState = {
         searchBy1: "",
@@ -394,15 +436,12 @@ const bomSlice = createSlice({
         selectedRecord: null,
       };
     },
-
     setModifyExistingBomState: (state, action) => {
-      const payload = action.payload || {};
       state.modifyExistingBomState = {
         ...state.modifyExistingBomState,
-        ...payload,
+        ...(action.payload || {}),
       };
     },
-
     clearModifyExistingBomState: (state) => {
       state.modifyExistingBomState = {
         record: null,
@@ -413,11 +452,9 @@ const bomSlice = createSlice({
         producedCoProduct: false,
       };
     },
-
     ensureResourceComponentConfig: (state, action) => {
       const { key, item, location } = action.payload || {};
       if (!key) return;
-
       if (!state.resourceComponentConfigs[key]) {
         state.resourceComponentConfigs[key] = {
           item,
@@ -432,11 +469,9 @@ const bomSlice = createSlice({
         };
       }
     },
-
     replicateResourceComponentInfoToLocations: (state, action) => {
       const { sourceKey, targetKeys = [] } = action.payload || {};
       if (!sourceKey || !state.resourceComponentConfigs[sourceKey]) return;
-
       const source = state.resourceComponentConfigs[sourceKey];
 
       targetKeys.forEach((targetKey) => {
@@ -455,11 +490,9 @@ const bomSlice = createSlice({
         };
       });
     },
-
     clearResourceComponentConfigs: (state) => {
       state.resourceComponentConfigs = {};
     },
-
     toggleProducedItem: (state, action) => {
       const payload = action.payload;
       const row = payload && typeof payload === "object" ? payload : null;
@@ -480,29 +513,32 @@ const bomSlice = createSlice({
         }
       }
     },
-
     clearProducedItems: (state) => {
       state.selectedProducedItemIds = [];
       state.selectedProducedItemById = {};
       state.resourceComponentConfigs = {};
+      state.selectedLocationIds = [];
+      locationsAdapter.removeAll(state.locations);
+      state.locations.search = "";
+      state.locations.pagination = defaultPagination;
     },
-
     toggleLocation: (state, action) => {
       const id = action.payload;
       const idx = state.selectedLocationIds.indexOf(id);
       if (idx >= 0) state.selectedLocationIds.splice(idx, 1);
       else state.selectedLocationIds.push(id);
     },
-
     clearLocations: (state) => {
       state.selectedLocationIds = [];
       state.resourceComponentConfigs = {};
+      locationsAdapter.removeAll(state.locations);
+      state.locations.error = null;
+      state.locations.search = "";
+      state.locations.pagination = defaultPagination;
     },
   },
-
   extraReducers: (builder) => {
     builder
-      // items
       .addCase(fetchItemMaster.pending, (state) => {
         state.items.loading = true;
         state.items.error = null;
@@ -511,20 +547,30 @@ const bomSlice = createSlice({
         state.items.loading = false;
         itemsAdapter.setAll(state.items, action.payload?.rows || []);
         state.items.pagination = action.payload?.pagination || {
-          page: 1,
-          pageSize: 50,
+          ...defaultPagination,
           total: action.payload?.rows?.length || 0,
-          totalPages: 1,
-          hasPrev: false,
-          hasNext: false,
         };
       })
       .addCase(fetchItemMaster.rejected, (state, action) => {
         state.items.loading = false;
         state.items.error = action.payload || "Failed to load items";
       })
-
-      // step 3 metadata
+      .addCase(fetchExistingBomSearchRows.pending, (state) => {
+        state.existingBomSearch.loading = true;
+        state.existingBomSearch.error = null;
+      })
+      .addCase(fetchExistingBomSearchRows.fulfilled, (state, action) => {
+        state.existingBomSearch.loading = false;
+        state.existingBomSearch.rows = action.payload?.rows || [];
+        state.existingBomSearch.pagination = action.payload?.pagination || {
+          ...defaultPagination,
+          total: action.payload?.rows?.length || 0,
+        };
+      })
+      .addCase(fetchExistingBomSearchRows.rejected, (state, action) => {
+        state.existingBomSearch.loading = false;
+        state.existingBomSearch.error = action.payload || "Failed to load existing BOM records";
+      })
       .addCase(fetchResourceComponentMetadata.pending, (state) => {
         state.resourceMeta.loading = true;
         state.resourceMeta.error = null;
@@ -534,16 +580,12 @@ const bomSlice = createSlice({
         state.resourceMeta.bomVersions = action.payload.bomVersions || [];
         state.resourceMeta.itemOptions = action.payload.itemOptions || [];
         state.resourceMeta.resourceOptions = action.payload.resourceOptions || [];
-        state.resourceMeta.resourceOptionsByKey =
-          action.payload.resourceOptionsByKey || {};
+        state.resourceMeta.resourceOptionsByKey = action.payload.resourceOptionsByKey || {};
       })
       .addCase(fetchResourceComponentMetadata.rejected, (state, action) => {
         state.resourceMeta.loading = false;
-        state.resourceMeta.error =
-          action.payload || "Failed to load resource component metadata";
+        state.resourceMeta.error = action.payload || "Failed to load resource component metadata";
       })
-
-      // locations by selected items
       .addCase(fetchLocationsByItems.pending, (state) => {
         state.locations.loading = true;
         state.locations.error = null;
@@ -551,13 +593,22 @@ const bomSlice = createSlice({
       .addCase(fetchLocationsByItems.fulfilled, (state, action) => {
         state.locations.loading = false;
         locationsAdapter.setAll(state.locations, action.payload);
+        const total = action.payload?.length || 0;
+        const pageSize = state.locations.pagination.pageSize || 50;
+        state.locations.pagination = {
+          ...state.locations.pagination,
+          page: 1,
+          pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+          hasPrev: false,
+          hasNext: total > pageSize,
+        };
       })
       .addCase(fetchLocationsByItems.rejected, (state, action) => {
         state.locations.loading = false;
         state.locations.error = action.payload || "Failed to load locations";
       })
-
-      // full location master
       .addCase(fetchLocationMaster.pending, (state) => {
         state.locations.loading = true;
         state.locations.error = null;
@@ -565,6 +616,17 @@ const bomSlice = createSlice({
       .addCase(fetchLocationMaster.fulfilled, (state, action) => {
         state.locations.loading = false;
         locationsAdapter.setAll(state.locations, action.payload);
+        const total = action.payload?.length || 0;
+        const pageSize = state.locations.pagination.pageSize || 50;
+        state.locations.pagination = {
+          ...state.locations.pagination,
+          page: 1,
+          pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+          hasPrev: false,
+          hasNext: total > pageSize,
+        };
       })
       .addCase(fetchLocationMaster.rejected, (state, action) => {
         state.locations.loading = false;
@@ -579,6 +641,10 @@ export const {
   clearProducedItems,
   toggleLocation,
   clearLocations,
+  setLocationsSearch,
+  setLocationsPagination,
+  setExistingBomSearchState,
+  clearExistingBomSearchState,
   setResourceComponentConfig,
   setModifySelectState,
   clearModifySelectState,
@@ -597,18 +663,13 @@ export const {
   selectById: selectItemById,
 } = itemsAdapter.getSelectors((state) => state.bom.items);
 
-export const selectSelectedProducedItemIds = (state) =>
-  state.bom.selectedProducedItemIds;
-
-export const selectSelectedProducedItemById = (state) =>
-  state.bom.selectedProducedItemById || {};
+export const selectSelectedProducedItemIds = (state) => state.bom.selectedProducedItemIds;
+export const selectSelectedProducedItemById = (state) => state.bom.selectedProducedItemById || {};
 
 export const selectSelectedProducedItems = createSelector(
   [selectAllItemMaster, selectSelectedProducedItemIds, selectSelectedProducedItemById],
   (all, ids, selectedById) =>
-    ids
-      .map((id) => selectedById[id] || all.find((x) => x.id === id))
-      .filter(Boolean)
+    ids.map((id) => selectedById[id] || all.find((x) => x.id === id)).filter(Boolean)
 );
 
 export const selectHasInactiveSelected = createSelector(
@@ -621,8 +682,7 @@ export const {
   selectById: selectLocationById,
 } = locationsAdapter.getSelectors((state) => state.bom.locations);
 
-export const selectSelectedLocationIds = (state) =>
-  state.bom.selectedLocationIds;
+export const selectSelectedLocationIds = (state) => state.bom.selectedLocationIds;
 
 export const selectSelectedLocations = createSelector(
   [selectAllLocations, selectSelectedLocationIds],
@@ -636,26 +696,32 @@ export const selectHasInactiveLocationsSelected = createSelector(
 
 export const selectModifySelectState = (state) => state.bom.modifySelectState;
 export const selectModifyExistingBomState = (state) => state.bom.modifyExistingBomState;
-
 export const selectItemsLoading = (state) => state.bom.items.loading;
 export const selectItemsError = (state) => state.bom.items.error;
 export const selectItemsPagination = (state) => state.bom.items.pagination;
 export const selectLocationsLoading = (state) => state.bom.locations.loading;
 export const selectLocationsError = (state) => state.bom.locations.error;
+export const selectLocationsPagination = (state) => state.bom.locations.pagination;
+export const selectLocationsSearch = (state) => state.bom.locations.search;
 
-export const selectResourceMetaLoading = (state) =>
-  state.bom.resourceMeta.loading;
-export const selectResourceMetaError = (state) =>
-  state.bom.resourceMeta.error;
+export const selectExistingBomSearchState = (state) =>
+  state.bom.existingBomSearch || defaultExistingBomSearchState;
+export const selectExistingBomSearchRows = (state) =>
+  (state.bom.existingBomSearch || defaultExistingBomSearchState).rows || [];
+export const selectExistingBomSearchLoading = (state) =>
+  !!(state.bom.existingBomSearch || defaultExistingBomSearchState).loading;
+export const selectExistingBomSearchError = (state) =>
+  (state.bom.existingBomSearch || defaultExistingBomSearchState).error;
+export const selectExistingBomSearchPagination = (state) =>
+  (state.bom.existingBomSearch || defaultExistingBomSearchState).pagination || defaultPagination;
+
+export const selectResourceMetaLoading = (state) => state.bom.resourceMeta.loading;
+export const selectResourceMetaError = (state) => state.bom.resourceMeta.error;
 export const selectBomVersions = (state) => state.bom.resourceMeta.bomVersions;
-export const selectResourceItemOptions = (state) =>
-  state.bom.resourceMeta.itemOptions;
-export const selectAllResourceOptions = (state) =>
-  state.bom.resourceMeta.resourceOptions;
-export const selectResourceOptionsByKey = (state) =>
-  state.bom.resourceMeta.resourceOptionsByKey;
-export const selectResourceComponentConfigs = (state) =>
-  state.bom.resourceComponentConfigs;
+export const selectResourceItemOptions = (state) => state.bom.resourceMeta.itemOptions;
+export const selectAllResourceOptions = (state) => state.bom.resourceMeta.resourceOptions;
+export const selectResourceOptionsByKey = (state) => state.bom.resourceMeta.resourceOptionsByKey;
+export const selectResourceComponentConfigs = (state) => state.bom.resourceComponentConfigs;
 
 export const selectCheckoutSummary = createSelector(
   [

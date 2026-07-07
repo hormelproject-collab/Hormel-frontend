@@ -13,6 +13,13 @@ export default function DownloadBOM() {
     "Item BOM Routing",
   ];
 
+  const tableLabelToDbName = {
+    "BOM Parameters": "bom_parameters",
+    "BOM Produced": "bom_produced",
+    "BOM Consumed": "bom_consumed",
+    "Item BOM Routing": "item_bom_routing",
+  };
+
   const handleCheckboxChange = (table) => {
     setSelectedTables((prev) =>
       prev.includes(table)
@@ -21,14 +28,7 @@ export default function DownloadBOM() {
     );
   };
 
-  const tableLabelToDbName = {
-    "BOM Parameters": "bom_parameters",
-    "BOM Produced": "bom_produced",
-    "BOM Consumed": "bom_consumed",
-    "Item BOM Routing": "item_bom_routing",
-  };
-
-  async function downloadSelectedTablesCsv(selectedTablesLabels) {
+  async function downloadSelectedTablesExcel(selectedTablesLabels) {
     try {
       setLoading(true);
 
@@ -41,30 +41,25 @@ export default function DownloadBOM() {
         return;
       }
 
-      const response = await fetch(
-        "http://localhost:3000/api/tables/download-bom-excel",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tables }),
-        }
-      );
+      const response = await fetch("/api/tables/download-bom-excel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tables }),
+      });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        throw new Error(err.message || "Download failed");
+        throw new Error(err.message || err.error || "Download failed");
       }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-
       const a = document.createElement("a");
       a.href = url;
       a.download = "bom_tables.xlsx";
       document.body.appendChild(a);
       a.click();
       a.remove();
-
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Download error:", error);
@@ -81,13 +76,10 @@ export default function DownloadBOM() {
       </div>
 
       <h1 style={styles.title}>Download BOM Data</h1>
-      <p style={styles.subtitle}>
-        Select the tables you would like to download
-      </p>
+      <p style={styles.subtitle}>Select the tables you would like to download</p>
 
       <div style={styles.card}>
         <h2 style={styles.cardTitle}>Select Tables</h2>
-
         {tableOptions.map((table) => (
           <label key={table} style={styles.checkboxRow}>
             <input
@@ -101,11 +93,8 @@ export default function DownloadBOM() {
         ))}
       </div>
 
-      <div style={styles.card}>
-        <h2 style={styles.cardTitle}>
-          Selected Tables ({selectedTables.length})
-        </h2>
-
+      <div style={styles.noteBox}>
+        <strong>Selected Tables ({selectedTables.length})</strong>
         <ul style={styles.list}>
           {selectedTables.map((table) => (
             <li key={table}>{table}</li>
@@ -115,8 +104,9 @@ export default function DownloadBOM() {
 
       <div style={styles.buttonContainer}>
         <button
+          type="button"
           style={styles.button}
-          onClick={() => downloadSelectedTablesCsv(selectedTables)}
+          onClick={() => downloadSelectedTablesExcel(selectedTables)}
           disabled={loading}
         >
           {loading ? "Downloading..." : "⬇ DOWNLOAD SELECTED TABLES"}
@@ -133,18 +123,15 @@ const styles = {
     backgroundColor: "#f3f4f6",
     minHeight: "100vh",
   },
-
   title: {
     fontSize: "36px",
     marginBottom: "10px",
   },
-
   subtitle: {
     fontSize: "18px",
     color: "#555",
     marginBottom: "25px",
   },
-
   card: {
     backgroundColor: "#fff",
     padding: "20px",
@@ -152,12 +139,10 @@ const styles = {
     boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
     marginBottom: "20px",
   },
-
   cardTitle: {
     fontSize: "22px",
     marginBottom: "15px",
   },
-
   checkboxRow: {
     display: "flex",
     alignItems: "center",
@@ -165,13 +150,11 @@ const styles = {
     padding: "10px 0",
     fontSize: "16px",
   },
-
   checkbox: {
     width: "18px",
     height: "18px",
     cursor: "pointer",
   },
-
   noteBox: {
     backgroundColor: "#eef2f7",
     padding: "15px",
@@ -180,17 +163,14 @@ const styles = {
     fontSize: "14px",
     color: "#444",
   },
-
   list: {
     paddingLeft: "20px",
   },
-
   buttonContainer: {
     display: "flex",
     justifyContent: "flex-end",
     marginTop: "20px",
   },
-
   button: {
     backgroundColor: "#2f80ed",
     color: "white",
@@ -203,7 +183,6 @@ const styles = {
     alignItems: "center",
     gap: "8px",
   },
-
   back: {
     color: "#2563eb",
     cursor: "pointer",
