@@ -46,10 +46,19 @@ const defaultExistingBomSearchState = {
   error: null,
   rows: [],
   selectedRowId: "",
+  selectedRowIds: [],
+  selectedRowsById: {},
   searchBy1: "resource",
   searchBy2: "location",
   query1: "",
   query2: "",
+  pagination: defaultPagination,
+};
+
+const defaultEngineeringChangeLogState = {
+  loading: false,
+  error: null,
+  rows: [],
   pagination: defaultPagination,
 };
 
@@ -82,9 +91,15 @@ const normalizeExistingBomSearchRow = (row, index) => {
       row.release ??
       ""
   ).trim();
+  const erpCoProductAssociation = String(
+    row.erp_co_product_association ??
+      row.erpCoProductAssociation ??
+      row.co_product_association ??
+      ""
+  ).trim();
 
   return {
-    id: row.id ?? `${bomId}__${routingId || resource || "NORESOURCE"}__${index}`,
+    id: row.id ?? `${bomId}__${routingId || resource || producedItem || "NORESOURCE"}__${index}`,
     location,
     produced_item: producedItem,
     produced_item_desc: producedItemDesc,
@@ -92,6 +107,7 @@ const normalizeExistingBomSearchRow = (row, index) => {
     resource,
     routing_id: routingId,
     item_release_flag: itemReleaseFlag,
+    erp_co_product_association: erpCoProductAssociation,
     __raw: row,
   };
 };
@@ -409,6 +425,46 @@ export const fetchLocationsByItems = createAsyncThunk(
   }
 );
 
+export const fetchEngineeringChangeLogRows = createAsyncThunk(
+  "bom/fetchEngineeringChangeLogRows",
+  async ({ page = 1, pageSize = 50 } = {}, { rejectWithValue }) => {
+    try {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+
+      const res = await fetch(`/api/tables/engineering-change-log?${params.toString()}`);
+      if (!res.ok) return rejectWithValue(await res.text());
+
+      const payload = await res.json();
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.rows)
+          ? payload.rows
+          : Array.isArray(payload?.result)
+            ? payload.result
+            : Array.isArray(payload)
+              ? payload
+              : [];
+
+      return {
+        rows,
+        pagination: payload?.pagination || {
+          ...defaultPagination,
+          page,
+          pageSize,
+          total: rows.length,
+          totalPages: Math.max(1, Math.ceil(rows.length / pageSize)),
+          hasPrev: page > 1,
+          hasNext: false,
+        },
+      };
+    } catch (e) {
+      return rejectWithValue(e?.message || "Failed to fetch engineering change log");
+    }
+  }
+);
+
 export const fetchLocationMaster = createAsyncThunk(
   "bom/fetchLocationMaster",
   async (_, { rejectWithValue }) => {
@@ -474,6 +530,7 @@ const initialState = {
   }),
   existingBomSearch: defaultExistingBomSearchState,
   existingItemBomRoutingSearch: defaultExistingItemBomRoutingSearchState,
+  engineeringChangeLog: defaultEngineeringChangeLogState,
   selectedProducedItemIds: [],
   selectedProducedItemById: {},
   selectedLocationIds: [],
@@ -509,6 +566,48 @@ const bomSlice = createSlice({
     clearExistingBomSearchState: (state) => {
       state.existingBomSearch = defaultExistingBomSearchState;
     },
+    toggleExistingBomSelectedRow: (state, action) => {
+      const row = action.payload;
+      const id = row && typeof row === "object" ? row.id : row;
+      if (!id) return;
+
+      const selectedIds = state.existingBomSearch.selectedRowIds;
+      const existingIndex = selectedIds.indexOf(id);
+
+      if (existingIndex >= 0) {
+        selectedIds.splice(existingIndex, 1);
+        delete state.existingBomSearch.selectedRowsById[id];
+      } else {
+        selectedIds.push(id);
+        if (row && typeof row === "object") {
+          state.existingBomSearch.selectedRowsById[id] = row;
+        }
+      }
+    },
+    toggleExistingBomSelectedPageRows: (state, action) => {
+      const rows = Array.isArray(action.payload) ? action.payload : [];
+      const selectedIds = state.existingBomSearch.selectedRowIds;
+      const allSelected = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id));
+
+      if (allSelected) {
+        rows.forEach((row) => {
+          const index = selectedIds.indexOf(row.id);
+          if (index >= 0) selectedIds.splice(index, 1);
+          delete state.existingBomSearch.selectedRowsById[row.id];
+        });
+        return;
+      }
+
+      rows.forEach((row) => {
+        if (!row?.id) return;
+        if (!selectedIds.includes(row.id)) selectedIds.push(row.id);
+        state.existingBomSearch.selectedRowsById[row.id] = row;
+      });
+    },
+    clearExistingBomSelectedRows: (state) => {
+      state.existingBomSearch.selectedRowIds = [];
+      state.existingBomSearch.selectedRowsById = {};
+    },
 
     setExistingItemBomRoutingSearchState: (state, action) => {
       const payload = action.payload || {};
@@ -523,6 +622,17 @@ const bomSlice = createSlice({
     },
     clearExistingItemBomRoutingSearchState: (state) => {
       state.existingItemBomRoutingSearch = defaultExistingItemBomRoutingSearchState;
+    },
+    setEngineeringChangeLogState: (state, action) => {
+      const payload = action.payload || {};
+      state.engineeringChangeLog = {
+        ...state.engineeringChangeLog,
+        ...payload,
+        pagination: {
+          ...state.engineeringChangeLog.pagination,
+          ...(payload.pagination || {}),
+        },
+      };
     },
     toggleExistingIbrSelectedRow: (state, action) => {
       const row = action.payload;
@@ -758,6 +868,23 @@ const bomSlice = createSlice({
         state.resourceMeta.loading = false;
         state.resourceMeta.error = action.payload || "Failed to load resource component metadata";
       })
+      .addCase(fetchEngineeringChangeLogRows.pending, (state) => {
+        state.engineeringChangeLog.loading = true;
+        state.engineeringChangeLog.error = null;
+      })
+      .addCase(fetchEngineeringChangeLogRows.fulfilled, (state, action) => {
+        state.engineeringChangeLog.loading = false;
+        state.engineeringChangeLog.rows = action.payload?.rows || [];
+        state.engineeringChangeLog.pagination = action.payload?.pagination || {
+          ...defaultPagination,
+          total: action.payload?.rows?.length || 0,
+        };
+      })
+      .addCase(fetchEngineeringChangeLogRows.rejected, (state, action) => {
+        state.engineeringChangeLog.loading = false;
+        state.engineeringChangeLog.error = action.payload || "Failed to fetch engineering change log";
+        state.engineeringChangeLog.rows = [];
+      })
       .addCase(fetchLocationsByItems.pending, (state) => {
         state.locations.loading = true;
         state.locations.error = null;
@@ -817,8 +944,12 @@ export const {
   setLocationsPagination,
   setExistingBomSearchState,
   clearExistingBomSearchState,
+  toggleExistingBomSelectedRow,
+  toggleExistingBomSelectedPageRows,
+  clearExistingBomSelectedRows,
   setExistingItemBomRoutingSearchState,
   clearExistingItemBomRoutingSearchState,
+  setEngineeringChangeLogState,
   toggleExistingIbrSelectedRow,
   toggleExistingIbrSelectedPageRows,
   clearExistingIbrSelectedRows,
@@ -891,7 +1022,14 @@ export const selectExistingBomSearchError = (state) =>
   (state.bom.existingBomSearch || defaultExistingBomSearchState).error;
 export const selectExistingBomSearchPagination = (state) =>
   (state.bom.existingBomSearch || defaultExistingBomSearchState).pagination || defaultPagination;
-
+export const selectExistingBomSelectedRowIds = (state) =>
+  (state.bom.existingBomSearch || defaultExistingBomSearchState).selectedRowIds || [];
+export const selectExistingBomSelectedRowsById = (state) =>
+  (state.bom.existingBomSearch || defaultExistingBomSearchState).selectedRowsById || {};
+export const selectExistingBomSelectedRows = createSelector(
+  [selectExistingBomSelectedRowIds, selectExistingBomSelectedRowsById],
+  (ids, byId) => ids.map((id) => byId[id]).filter(Boolean)
+);
 
 export const selectExistingItemBomRoutingSearchState = (state) =>
   state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState;
@@ -914,6 +1052,17 @@ export const selectExistingIbrSelectedRows = createSelector(
   [selectExistingIbrSelectedRowIds, selectExistingIbrSelectedRowsById],
   (ids, byId) => ids.map((id) => byId[id]).filter(Boolean)
 );
+
+export const selectEngineeringChangeLogState = (state) =>
+  state.bom.engineeringChangeLog || defaultEngineeringChangeLogState;
+export const selectEngineeringChangeLogRows = (state) =>
+  (state.bom.engineeringChangeLog || defaultEngineeringChangeLogState).rows || [];
+export const selectEngineeringChangeLogLoading = (state) =>
+  !!(state.bom.engineeringChangeLog || defaultEngineeringChangeLogState).loading;
+export const selectEngineeringChangeLogError = (state) =>
+  (state.bom.engineeringChangeLog || defaultEngineeringChangeLogState).error;
+export const selectEngineeringChangeLogPagination = (state) =>
+  (state.bom.engineeringChangeLog || defaultEngineeringChangeLogState).pagination || defaultPagination;
 
 export const selectResourceMetaLoading = (state) => state.bom.resourceMeta.loading;
 export const selectResourceMetaError = (state) => state.bom.resourceMeta.error;

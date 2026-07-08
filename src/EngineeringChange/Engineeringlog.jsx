@@ -1,8 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import ProgressIndicator from "../components/CommonProgressIndicator";
+import {
+  fetchEngineeringChangeLogRows,
+  setEngineeringChangeLogState,
+  selectEngineeringChangeLogRows,
+  selectEngineeringChangeLogLoading,
+  selectEngineeringChangeLogError,
+  selectEngineeringChangeLogPagination,
+} from "../redux/bomSlice";
 
 const API_BASE_URL = "";
+const PAGE_SIZE = 50;
 
 /* ----------------------------- Helper Functions ----------------------------- */
 
@@ -809,9 +820,11 @@ const recordMatchesTextCriterion = (row, field, inputValue) => {
 
 export default function Engineeringlog() {
   const navigate = useNavigate();
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [apiError, setApiError] = useState("");
+  const dispatch = useDispatch();
+  const rawRows = useSelector(selectEngineeringChangeLogRows);
+  const loading = useSelector(selectEngineeringChangeLogLoading);
+  const apiError = useSelector(selectEngineeringChangeLogError);
+  const pagination = useSelector(selectEngineeringChangeLogPagination);
 
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState(formatDateForInput(new Date()));
@@ -825,6 +838,16 @@ export default function Engineeringlog() {
   const [criteriaValue2, setCriteriaValue2] = useState("");
 
   const currentUser = useMemo(() => getCurrentUser(), []);
+  const page = Math.max(1, Number(pagination?.page || 1));
+  const pageSize = Math.max(1, Number(pagination?.pageSize || PAGE_SIZE));
+  const totalRecords = Math.max(0, Number(pagination?.total || 0));
+  const totalPages = Math.max(1, Number(pagination?.totalPages || 1));
+  const hasPrev = Boolean(pagination?.hasPrev ?? page > 1);
+  const hasNext = Boolean(pagination?.hasNext ?? page < totalPages);
+  const rows = useMemo(
+    () => (rawRows || []).map((item, index) => normalizeLogRecord(item, index)),
+    [rawRows]
+  );
 
   const handleRowNavigation = (row) => {
     const changeType = String(row.changeType || "").trim().toLowerCase();
@@ -881,53 +904,8 @@ export default function Engineeringlog() {
   };
 
   useEffect(() => {
-    const fetchEngineeringLog = async () => {
-      setLoading(true);
-      setApiError("");
-
-      try {
-        const response = await fetch(
-          `/api/tables/engineering-change-log`,
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(
-            errText || `Failed to fetch engineering change log (${response.status})`
-          );
-        }
-
-        const data = await response.json();
-
-        const rawList = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.data)
-            ? data.data
-            : Array.isArray(data?.rows)
-              ? data.rows
-              : Array.isArray(data?.result)
-                ? data.result
-                : [];
-
-        const normalized = rawList.map(normalizeLogRecord);
-        setRows(normalized);
-      } catch (error) {
-        console.error("Engineering change log fetch error:", error);
-        setApiError(error.message || "Failed to fetch engineering change log");
-        setRows([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEngineeringLog();
-  }, []);
+    dispatch(fetchEngineeringChangeLogRows({ page, pageSize: PAGE_SIZE }));
+  }, [dispatch, page]);
 
   const userOptions = useMemo(() => uniqueSorted(rows.map((r) => r.user)), [rows]);
 
@@ -963,6 +941,36 @@ export default function Engineeringlog() {
     criteriaField2,
     criteriaValue2,
   ]);
+
+  const pageStart = totalRecords === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = totalRecords === 0 ? 0 : Math.min(pageStart + rows.length - 1, totalRecords);
+  const showingText = totalRecords === 0
+    ? "Showing 0 of 0 log record(s)"
+    : `Showing ${pageStart}-${pageEnd} of ${totalRecords.toLocaleString()} log record(s)`;
+
+  const goToPrevPage = () => {
+    if (!hasPrev || loading) return;
+    dispatch(
+      setEngineeringChangeLogState({
+        pagination: {
+          page: Math.max(1, page - 1),
+          pageSize: PAGE_SIZE,
+        },
+      })
+    );
+  };
+
+  const goToNextPage = () => {
+    if (!hasNext || loading) return;
+    dispatch(
+      setEngineeringChangeLogState({
+        pagination: {
+          page: page + 1,
+          pageSize: PAGE_SIZE,
+        },
+      })
+    );
+  };
 
   const handleExport = () => {
     const sheets = buildExportSheets(filteredRows);
@@ -1147,6 +1155,12 @@ export default function Engineeringlog() {
       wordBreak: "break-word",
       lineHeight: 1.45,
     },
+    loadingBodyCell: {
+      padding: "28px 12px",
+      borderBottom: "1px solid #e5e7eb",
+      background: "#ffffff",
+      textAlign: "center",
+    },
     pill: {
       display: "inline-block",
       fontSize: "11px",
@@ -1164,6 +1178,36 @@ export default function Engineeringlog() {
       fontSize: "14px",
       color: "#d93025",
       marginTop: "10px",
+    },
+    paginationRow: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "14px",
+      marginTop: "14px",
+    },
+    pageButton: {
+      minWidth: "74px",
+      height: "30px",
+      border: "1px solid #c7cbd1",
+      borderRadius: "3px",
+      background: "#ffffff",
+      color: "#2563eb",
+      fontSize: "12px",
+      fontWeight: 600,
+      cursor: "pointer",
+    },
+    pageButtonDisabled: {
+      color: "#9ca3af",
+      background: "#f3f4f6",
+      cursor: "not-allowed",
+    },
+    pageNoText: {
+      minWidth: "72px",
+      textAlign: "center",
+      fontSize: "12px",
+      color: "#111827",
+      fontWeight: 600,
     },
   };
 
@@ -1319,6 +1363,9 @@ export default function Engineeringlog() {
         </button>
       </div>
 
+      {!apiError ? (
+        <div style={styles.statusText}>{showingText}</div>
+      ) : null}
       <div style={styles.tableWrap}>
         <table style={styles.table}>
           <thead>
@@ -1337,8 +1384,8 @@ export default function Engineeringlog() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} style={styles.tbodyTd}>
-                  Loading engineering change log...
+                <td colSpan={8} style={styles.loadingBodyCell}>
+                  <ProgressIndicator label="Loading engineering change log..." />
                 </td>
               </tr>
             ) : apiError ? (
@@ -1399,18 +1446,31 @@ export default function Engineeringlog() {
         </table>
       </div>
 
-      {!loading && !apiError && (
-        <div style={styles.statusText}>
-          Showing <strong>{filteredRows.length}</strong> of <strong>{rows.length}</strong> log record(s)
-          {showMyChangesOnly && currentUser ? (
-            <>
-              {" "}
-              for <strong>{currentUser}</strong>
-            </>
-          ) : null}
-          .
-        </div>
-      )}
+      <div style={styles.paginationRow}>
+        <button
+          type="button"
+          onClick={goToPrevPage}
+          disabled={!hasPrev || loading}
+          style={{
+            ...styles.pageButton,
+            ...(!hasPrev || loading ? styles.pageButtonDisabled : {}),
+          }}
+        >
+          ← Prev
+        </button>
+        <div style={styles.pageNoText}>{page}</div>
+        <button
+          type="button"
+          onClick={goToNextPage}
+          disabled={!hasNext || loading}
+          style={{
+            ...styles.pageButton,
+            ...(!hasNext || loading ? styles.pageButtonDisabled : {}),
+          }}
+        >
+          Next →
+        </button>
+      </div>
 
       {apiError ? (
         <div style={styles.errorText}>
