@@ -1169,7 +1169,7 @@ export default function Engineeringlog() {
 
   return (
     <div style={styles.page}>
-      {/* MAIN MENU BUTTON */}
+     
       <button
         type="button"
         style={styles.backButton}
@@ -1184,7 +1184,7 @@ export default function Engineeringlog() {
       <div style={styles.card}>
         <div style={styles.sectionTitle}>Filters & Search</div>
 
-        {/* Top row */}
+        
         <div style={styles.filtersRow}>
           <div style={styles.fieldWrap}>
             <label style={styles.label}>From Date</label>
@@ -1232,7 +1232,7 @@ export default function Engineeringlog() {
           </label>
         </div>
 
-        {/* Criteria row 1 */}
+    
         <div style={styles.criteriaGrid}>
           <div style={styles.fieldWrap}>
             <label style={styles.label}>Search By (Criteria 1)</label>
@@ -1269,7 +1269,7 @@ export default function Engineeringlog() {
           </div>
         </div>
 
-        {/* Criteria row 2 */}
+        
         <div style={styles.criteriaGrid}>
           <div style={styles.fieldWrap}>
             <label style={styles.label}>Search By (Criteria 2)</label>

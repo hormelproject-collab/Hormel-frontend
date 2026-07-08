@@ -82,7 +82,7 @@ const ModifyExistingBOMSummary = () => {
 
   // Include removed original component items (marked as removed in navigation state)
   const removedMappedComponentItems = removedComponentItems.map((item) => {
-    console.log("Mapping removed component item:", item);
+    
     const originalUsage = String(item.original_standard_usage ?? item.standard_usage ?? "");
     const key = String(item.original_component_item || item.component_item || "");
     const fallback =
@@ -249,9 +249,9 @@ const ModifyExistingBOMSummary = () => {
         notes: notes || "",
       };
 
-      console.log("Submitting BOM modification:", payload);
+      
 
-      const response = await fetch("http://localhost:3000/api/tables/modify-bom", {
+      const response = await fetch("/api/tables/modify-bom", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -269,7 +269,7 @@ const ModifyExistingBOMSummary = () => {
         );
       }
 
-      console.log("BOM modification successful:", result);
+      
       setSuccessMessage("✓ BOM changes submitted successfully!");
 
     } catch (error) {

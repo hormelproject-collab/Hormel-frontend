@@ -138,7 +138,7 @@ const ModifyExistingBOMData = () => {
 
                 setItemMasterLookup(lookup);
 
-                // console.log("Item Master Lookup", lookup);
+               
             } catch (err) {
                 console.error("Failed to fetch item master", err);
             }
@@ -190,7 +190,7 @@ const ModifyExistingBOMData = () => {
                 setLoading(true);
                 setError("");
 
-                const res = await fetch(`http://localhost:3000/api/tables/item_bom_routing/${id}`);
+                const res = await fetch(`/api/tables/item_bom_routing/${id}`);
                 if (!res.ok) throw new Error("Failed to fetch record");
 
                 const data = await res.json();
@@ -242,7 +242,50 @@ const ModifyExistingBOMData = () => {
     };
 
 
-    // Fetch component items and co-products based on bomId
+    
+    const getItemDescriptionFromItemDetails = async (items = []) => {
+        const uniqueItems = Array.from(new Set(items.map((x) => String(x || "").trim()).filter(Boolean)));
+        if (!uniqueItems.length) return {};
+
+        const lookup = {};
+
+        try {
+            const res = await fetch("/api/tables/item-details/by-items", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ items: uniqueItems }),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const rows = normalizeApiArray(data);
+
+                rows.forEach((row) => {
+                    const item = String(row.item ?? row.Item ?? row.item_id ?? "").trim();
+                    const desc = String(
+                        row.item_desc ??
+                        row.item_description ??
+                        row.ItemDesc ??
+                        row.ItemDescription ??
+                        row.description ??
+                        row.desc ??
+                        ""
+                    ).trim();
+
+                    if (item && desc) {
+                        lookup[item] = desc;
+                        lookup[item.toUpperCase()] = desc;
+                    }
+                });
+            }
+        } catch (err) {
+            console.error("Failed to fetch descriptions from item_details", err);
+        }
+
+        return lookup;
+    };
+
+// Fetch component items and co-products based on bomId
     useEffect(() => {
         const bomId =
             state?.record?.bom_id ||
@@ -350,27 +393,57 @@ const ModifyExistingBOMData = () => {
 
                 // Fetch Component Items
                 const componentRows = await fetchRows(
-                    `http://localhost:3000/api/tables/bom_consumed/${encodeURIComponent(bomId)}`,
-                    `http://localhost:3000/api/tables/bom_consumed`,
+                    `/api/tables/bom_consumed/${encodeURIComponent(bomId)}`,
+                    `/api/tables/bom_consumed`,
                 );
-                const filteredComponentRows = filterRowsByBomId(componentRows, bomId)
-                    .filter(hasQtyLessThanOne);
-                const builtComponentRows = filteredComponentRows.map(buildComponentRow);
-                setComponentItemOptions(filteredComponentRows.map(buildOption));
-                setComponentItems(builtComponentRows);
-                setInitialComponentItems(builtComponentRows);
-                
+
+                // Components can be more than 1, so do NOT apply qty < 1 filter here.
+                const filteredComponentRows = filterRowsByBomId(componentRows, bomId);
+
                 // Fetch Co-Products
                 const coProductRows = await fetchRows(
-                    `http://localhost:3000/api/tables/bom_produced/${encodeURIComponent(bomId)}`,
-                    `http://localhost:3000/api/tables/bom_produced`,
+                    `/api/tables/bom_produced/${encodeURIComponent(bomId)}`,
+                    `/api/tables/bom_produced`,
                 );
                 const filteredCoProductRows = filterRowsByBomId(coProductRows, bomId)
                     .filter(hasQtyLessThanOne);
-                const builtCoProductRows = filteredCoProductRows.map(buildCoProductRow);
+
+                // Fetch item_desc/item_description from PostgreSQL item_details for both components and co-products.
+                const itemsForDescription = [
+                    ...filteredComponentRows.map((row) => String(row.item ?? row.Item ?? row.component_item ?? row.componentItem ?? "").trim()),
+                    ...filteredCoProductRows.map((row) => String(row.item ?? row.Item ?? row.component_item ?? row.componentItem ?? "").trim()),
+                ].filter(Boolean);
+
+                const itemDetailsLookup = await getItemDescriptionFromItemDetails(itemsForDescription);
+                setItemMasterLookup((prev) => ({ ...prev, ...itemDetailsLookup }));
+
+                const builtComponentRows = filteredComponentRows.map((row) => {
+                    const built = buildComponentRow(row);
+                    const desc = built.component_desc || itemDetailsLookup[built.component_item] || itemDetailsLookup[String(built.component_item).toUpperCase()] || "";
+                    return {
+                        ...built,
+                        component_desc: desc,
+                        original_component_desc: desc,
+                    };
+                });
+
+                setComponentItemOptions(filteredComponentRows.map(buildOption));
+                setComponentItems(builtComponentRows);
+                setInitialComponentItems(builtComponentRows.map((row) => ({ ...row })));
+
+                const builtCoProductRows = filteredCoProductRows.map((row) => {
+                    const built = buildCoProductRow(row);
+                    const desc = built.desc || itemDetailsLookup[built.item] || itemDetailsLookup[String(built.item).toUpperCase()] || "";
+                    return {
+                        ...built,
+                        desc,
+                        original_desc: desc,
+                    };
+                });
+
                 setCoProductOptions(filteredCoProductRows.map(buildOption));
                 setCoProducts(builtCoProductRows);
-                setInitialCoProducts(builtCoProductRows);
+                setInitialCoProducts(builtCoProductRows.map((row) => ({ ...row })));
                 setProducedCoProduct(filteredCoProductRows.length > 0);
             } catch (e) {
                 console.error("Error fetching items:", e.message);
@@ -410,11 +483,10 @@ const ModifyExistingBOMData = () => {
                     "/api/bigquery/table/item_master"
                 );
                 const componentData = await componentRes.json();
-                // console.log("Fetched component items:", componentData);
+                
 
                 const componentRows = normalizeApiArray(componentData);
-                // console.log("componentRows", componentRows);
-                // console.log("first row", componentRows[0]);
+                
 
                 setAllComponentOptions(
                     componentRows.map(buildOption)
@@ -424,11 +496,10 @@ const ModifyExistingBOMData = () => {
                     "/api/bigquery/table/item_master"
                 );
                 const coProductData = await coProductRes.json();
-                // console.log("Fetched co-product items:", coProductData);
+               
 
                 const coProductRows = normalizeApiArray(coProductData);
-                // console.log("coRows", coProductRows);
-                // console.log("first row", coProductRows[0]);
+              
                 setAllCoProductOptions(
                     coProductRows.map(buildOption)
                 );
@@ -639,7 +710,7 @@ const ModifyExistingBOMData = () => {
         updated[index] = {
             ...updated[index],
             item: value,
-            desc: itemMasterLookup[value] || "",
+            desc: itemMasterLookup[value] || itemMasterLookup[String(value).toUpperCase()] || "",
         };
 
         setCoProducts(updated);
@@ -667,16 +738,16 @@ const ModifyExistingBOMData = () => {
     return (
         <div style={styles.page}>
             <div style={styles.wrapper}>
-                {/* Back */}
+                
                 <div style={styles.back} onClick={() => navigate(-1)}>
                     ← BACK
                 </div>
 
-                {/* Header */}
+                
                 <h1 style={styles.title}>Step 2: Modify Existing BOM Data</h1>
                 <p style={styles.subtitle}>Modify the BOM record details</p>
 
-                {/* Top info card */}
+               
                 <div style={styles.card}>
                     <div style={styles.grid}>
                         <div style={styles.field}>
@@ -722,7 +793,7 @@ const ModifyExistingBOMData = () => {
                     </div>
                 </div>
 
-                {/* Component items section */}
+               
                 <div style={styles.card}>
                     <div style={styles.sectionHeader}>
                         <h2 style={styles.sectionTitle}>Component Items</h2>
@@ -785,7 +856,7 @@ const ModifyExistingBOMData = () => {
                     )}
                 </div>
 
-                {/* Co-product card */}
+                
                 <div style={styles.card}>
                     <label style={styles.coProductRow}>
                         <input
@@ -798,10 +869,10 @@ const ModifyExistingBOMData = () => {
                     </label>
                 </div>
 
-                {/* Text area */}
+              
                 {producedCoProduct && (
                     <div style={styles.card}>
-                        {/* HEADER */}
+                       
                         <div style={styles.sectionHeader}>
                             <h2 style={styles.sectionTitle}>Co-Products</h2>
                             <button style={styles.addBtn} onClick={addCoProduct}>
@@ -809,7 +880,7 @@ const ModifyExistingBOMData = () => {
                             </button>
                         </div>
 
-                        {/* EMPTY STATE */}
+                       
                         {coProducts.length === 0 ? (
                             <div style={styles.emptyBox}>
                                 No co-products. Click "Add Co-Product" to add one.

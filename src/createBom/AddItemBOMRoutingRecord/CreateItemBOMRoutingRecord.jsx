@@ -1,7 +1,8 @@
-
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { IoIosArrowBack, IoIosArrowDown, IoMdClose, IoMdTrash } from "react-icons/io";
+
+const PAGE_SIZE = 50;
 
 const createCoProductRow = () => ({
   id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -10,12 +11,168 @@ const createCoProductRow = () => ({
   qtyProduced: "",
 });
 
+const LazyDropdown = ({
+  label = "",
+  placeholder = "Select",
+  value = "",
+  displayValue = "",
+  fetchUrl,
+  getOptionKey,
+  getOptionLabel,
+  onSelect,
+  disabled = false,
+  searchPlaceholder = "Search...",
+  minWidth = "100%",
+}) => {
+  const wrapperRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadRows = async ({ nextPage = 1, append = false, searchText = search } = {}) => {
+    if (!fetchUrl) return;
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const params = new URLSearchParams();
+      params.set("page", String(nextPage));
+      params.set("pageSize", String(PAGE_SIZE));
+      params.set("search", String(searchText || "").trim());
+
+      const res = await fetch(`${fetchUrl}?${params.toString()}`);
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(json?.details || json?.error || "Failed to fetch dropdown data");
+      }
+
+      const data = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+      const pagination = json?.pagination || {};
+
+      setRows((prev) => (append ? [...prev, ...data] : data));
+      setPage(Number(pagination.page || nextPage));
+      setHasNext(Boolean(pagination.hasNext));
+    } catch (err) {
+      setError(err?.message || "Failed to fetch dropdown data");
+      if (!append) setRows([]);
+      setHasNext(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpen = async () => {
+    if (disabled) return;
+
+    const nextOpen = !open;
+    setOpen(nextOpen);
+
+    if (nextOpen && rows.length === 0) {
+      await loadRows({ nextPage: 1, append: false, searchText: search });
+    }
+  };
+
+  const handleSearchChange = async (e) => {
+    const text = e.target.value;
+    setSearch(text);
+    setPage(1);
+    await loadRows({ nextPage: 1, append: false, searchText: text });
+  };
+
+  const handleLoadMore = async (e) => {
+    e.stopPropagation();
+    if (!hasNext || loading) return;
+    await loadRows({ nextPage: page + 1, append: true, searchText: search });
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} style={{ ...styles.lazyDropdownBlock, minWidth }}>
+      {label ? <label style={styles.label}>{label}</label> : null}
+
+      <div
+        style={{
+          ...styles.lazyDropdownControl,
+          opacity: disabled ? 0.65 : 1,
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+        onClick={handleOpen}
+      >
+        <span style={value ? styles.lazyDropdownValue : styles.lazyDropdownPlaceholder}>
+          {displayValue || placeholder}
+        </span>
+        <IoIosArrowDown style={styles.selectIconStatic} />
+      </div>
+
+      {open && !disabled ? (
+        <div style={styles.lazyDropdownMenu} onClick={(e) => e.stopPropagation()}>
+          <input
+            value={search}
+            onChange={handleSearchChange}
+            placeholder={searchPlaceholder}
+            style={styles.lazyDropdownSearch}
+            autoFocus
+          />
+
+          <div style={styles.lazyDropdownList}>
+            {rows.map((opt) => {
+              const key = getOptionKey(opt);
+              return (
+                <div
+                  key={key}
+                  style={styles.lazyDropdownOption}
+                  onClick={() => {
+                    onSelect(opt);
+                    setOpen(false);
+                  }}
+                >
+                  {getOptionLabel(opt)}
+                </div>
+              );
+            })}
+
+            {!loading && rows.length === 0 ? (
+              <div style={styles.lazyDropdownEmpty}>No records found</div>
+            ) : null}
+
+            {loading ? <div style={styles.lazyDropdownEmpty}>Loading...</div> : null}
+            {error ? <div style={styles.lazyDropdownError}>{error}</div> : null}
+          </div>
+
+          {hasNext ? (
+            <button
+              type="button"
+              style={styles.loadMoreButton}
+              onClick={handleLoadMore}
+              disabled={loading}
+            >
+              {loading ? "Loading..." : "Load more"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const CreateItemBOMRoutingRecord = () => {
   const navigate = useNavigate();
-
-  const [bomOptions, setBomOptions] = useState([]);
-  const [resourceOptions, setResourceOptions] = useState([]);
-  const [coProductOptions, setCoProductOptions] = useState([]);
   const [selectedBomId, setSelectedBomId] = useState("");
   const [producedItem, setProducedItem] = useState("");
   const [itemReleaseFlag, setItemReleaseFlag] = useState("");
@@ -25,13 +182,10 @@ const CreateItemBOMRoutingRecord = () => {
   const [routingPriority, setRoutingPriority] = useState("");
   const [addConnectedCoProduct, setAddConnectedCoProduct] = useState(false);
   const [coProductRows, setCoProductRows] = useState([createCoProductRow()]);
-
   const [loading, setLoading] = useState({
-    initial: false,
     bomDetails: false,
     itemReleaseFlag: false,
     resourceRelevancy: false,
-    coProducts: false,
   });
   const [error, setError] = useState("");
 
@@ -55,7 +209,6 @@ const CreateItemBOMRoutingRecord = () => {
 
     return validCoProductRows.every((row) => {
       const qty = Number(row.qtyProduced);
-
       return (
         String(row.coProductItem || "").trim() &&
         String(row.qtyProduced || "").trim() &&
@@ -65,64 +218,11 @@ const CreateItemBOMRoutingRecord = () => {
     });
   }, [addConnectedCoProduct, validCoProductRows]);
 
-
   const canProceed =
     !!selectedBomId &&
     !!selectedResource &&
     !!routingPriority &&
     (!addConnectedCoProduct || allCoProductRowsValid);
-
-  const deriveItemAndLocationFromBomId = (bomId) => {
-    const value = String(bomId || "").trim();
-    if (!value) {
-      return { item: "", location: "" };
-    }
-
-    const parts = value.split("_").map((p) => p.trim()).filter(Boolean);
-    if (parts.length < 3) {
-      return { item: "", location: "" };
-    }
-
-    return {
-      item: parts[1] || "",
-      location: parts.slice(2).join("_") || "",
-    };
-  };
-
-  useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        setLoading((prev) => ({ ...prev, initial: true }));
-        setError("");
-
-        const [bomRes, resourceRes] = await Promise.all([
-          fetch(`/api/tables/bom-routing-step1/bom-ids`),
-          fetch(`/api/bigquery/table/bom-routing-step1/resources`),
-        ]);
-
-        const bomJson = await bomRes.json();
-        const resourceJson = await resourceRes.json();
-
-        if (!bomRes.ok) {
-          throw new Error(bomJson?.details || bomJson?.error || "Failed to fetch BOM IDs");
-        }
-        if (!resourceRes.ok) {
-          throw new Error(
-            resourceJson?.details || resourceJson?.error || "Failed to fetch resources"
-          );
-        }
-
-        setBomOptions(Array.isArray(bomJson.data) ? bomJson.data : []);
-        setResourceOptions(Array.isArray(resourceJson.data) ? resourceJson.data : []);
-      } catch (err) {
-        setError(err.message || "Failed to load page data");
-      } finally {
-        setLoading((prev) => ({ ...prev, initial: false }));
-      }
-    };
-
-    loadInitialData();
-  }, []);
 
   const loadItemReleaseFlag = async (item) => {
     if (!item) {
@@ -135,7 +235,7 @@ const CreateItemBOMRoutingRecord = () => {
       const res = await fetch(
         `/api/bigquery/table/bom-routing-step1/item-releaseflag/${encodeURIComponent(item)}`
       );
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         throw new Error(json?.details || json?.error || "Failed to fetch item release flag");
@@ -144,6 +244,7 @@ const CreateItemBOMRoutingRecord = () => {
       const releaseFlag =
         json?.data?.release ||
         json?.data?.item_releaseflag ||
+        json?.data?.itemReleaseFlag ||
         json?.data?.releaseFlag ||
         "";
 
@@ -151,42 +252,10 @@ const CreateItemBOMRoutingRecord = () => {
       return releaseFlag || "";
     } catch (err) {
       setItemReleaseFlag("");
-      setError(err.message || "Failed to fetch item release flag");
+      setError(err?.message || "Failed to fetch item release flag");
       return "";
     } finally {
       setLoading((prev) => ({ ...prev, itemReleaseFlag: false }));
-    }
-  };
-
-  const loadCoProducts = async (bomId) => {
-    if (!bomId) {
-      setCoProductOptions([]);
-      setCoProductRows([createCoProductRow()]);
-      return;
-    }
-
-    try {
-      setLoading((prev) => ({ ...prev, coProducts: true }));
-      setError("");
-
-      const res = await fetch(
-        `/api/bigquery/table/bom-routing-step1/co-products/${encodeURIComponent(bomId)}`
-      );
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(json?.details || json?.error || "Failed to fetch co-products");
-      }
-
-      const options = Array.isArray(json.data) ? json.data : [];
-      setCoProductOptions(options);
-      setCoProductRows([createCoProductRow()]);
-    } catch (err) {
-      setCoProductOptions([]);
-      setCoProductRows([createCoProductRow()]);
-      setError(err.message || "Failed to fetch co-products");
-    } finally {
-      setLoading((prev) => ({ ...prev, coProducts: false }));
     }
   };
 
@@ -196,7 +265,6 @@ const CreateItemBOMRoutingRecord = () => {
         setProducedItem("");
         setItemReleaseFlag("");
         setLocation("");
-        setCoProductOptions([]);
         setCoProductRows([createCoProductRow()]);
         return;
       }
@@ -205,45 +273,38 @@ const CreateItemBOMRoutingRecord = () => {
         setLoading((prev) => ({ ...prev, bomDetails: true }));
         setError("");
 
-        const selectedBom = bomOptions.find(
-          (opt) => String(opt.bomId || "").trim() === String(selectedBomId || "").trim()
+        const res = await fetch(
+          `/api/bigquery/table/bom-routing-step1/bom-details/${encodeURIComponent(selectedBomId)}`
         );
+        const json = await res.json().catch(() => ({}));
 
-        const derived = deriveItemAndLocationFromBomId(selectedBomId);
+        if (!res.ok) {
+          throw new Error(json?.details || json?.error || "Failed to fetch BOM details");
+        }
 
-        const finalProducedItem =
-          selectedBom?.producedItem ||
-          selectedBom?.item ||
-          derived.item ||
-          "";
-
-        const finalLocation =
-          selectedBom?.location ||
-          derived.location ||
-          "";
+        const data = json?.data || {};
+        const finalProducedItem = data.producedItem || data.item || "";
+        const finalLocation = data.location || "";
+        const finalReleaseFlag = data.itemReleaseFlag || data.item_release_flag || "";
 
         setProducedItem(finalProducedItem);
         setLocation(finalLocation);
 
-        if (finalProducedItem) {
+        if (finalReleaseFlag) {
+          setItemReleaseFlag(finalReleaseFlag);
+        } else if (finalProducedItem) {
           await loadItemReleaseFlag(finalProducedItem);
         } else {
           setItemReleaseFlag("");
         }
 
-        if (addConnectedCoProduct) {
-          await loadCoProducts(selectedBomId);
-        } else {
-          setCoProductOptions([]);
-          setCoProductRows([createCoProductRow()]);
-        }
+        setCoProductRows([createCoProductRow()]);
       } catch (err) {
         setProducedItem("");
         setItemReleaseFlag("");
         setLocation("");
-        setCoProductOptions([]);
         setCoProductRows([createCoProductRow()]);
-        setError(err.message || "Failed to load BOM details");
+        setError(err?.message || "Failed to load BOM details");
       } finally {
         setLoading((prev) => ({ ...prev, bomDetails: false }));
       }
@@ -251,7 +312,7 @@ const CreateItemBOMRoutingRecord = () => {
 
     loadBomDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBomId, bomOptions]);
+  }, [selectedBomId]);
 
   useEffect(() => {
     const loadResourceRelevancy = async () => {
@@ -263,23 +324,24 @@ const CreateItemBOMRoutingRecord = () => {
       try {
         setLoading((prev) => ({ ...prev, resourceRelevancy: true }));
         setError("");
+
         const res = await fetch(
           `/api/bigquery/table/bom-routing-step1/resource-relevancy/${encodeURIComponent(
             selectedResource
           )}`
         );
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          throw new Error(
-            json?.details || json?.error || "Failed to fetch resource relevancy"
-          );
+          throw new Error(json?.details || json?.error || "Failed to fetch resource relevancy");
         }
 
-        setResourceRelevancy(json?.data?.resourcePlanningRelevance || "");
+        setResourceRelevancy(
+          json?.data?.resourcePlanningRelevance || json?.data?.resource_relevancy || ""
+        );
       } catch (err) {
         setResourceRelevancy("");
-        setError(err.message || "Failed to fetch resource relevancy");
+        setError(err?.message || "Failed to fetch resource relevancy");
       } finally {
         setLoading((prev) => ({ ...prev, resourceRelevancy: false }));
       }
@@ -288,51 +350,20 @@ const CreateItemBOMRoutingRecord = () => {
     loadResourceRelevancy();
   }, [selectedResource]);
 
-  const handleCoProductToggle = async (checked) => {
+  const handleCoProductToggle = (checked) => {
     setAddConnectedCoProduct(checked);
-
-    if (!checked) {
-      setCoProductOptions([]);
-      setCoProductRows([createCoProductRow()]);
-      return;
-    }
-
-    if (selectedBomId) {
-      await loadCoProducts(selectedBomId);
-    }
+    setCoProductRows([createCoProductRow()]);
   };
 
-  const handleCoProductItemChange = (rowId, itemValue) => {
-    const matched = coProductOptions.find((option) => option.item === itemValue);
-
-    setCoProductRows((prev) =>
-      prev.map((row) =>
-        row.id === rowId
-          ? {
-            ...row,
-            coProductItem: itemValue,
-            itemDescription: matched?.description || "",
-          }
-          : row
-      )
-    );
-  };
   const isQtyProducedInvalid = (qtyProduced) => {
     if (String(qtyProduced || "").trim() === "") return false;
-
     const qty = Number(qtyProduced);
     return Number.isNaN(qty) || qty >= 1;
   };
+
   const handleCoProductQtyChange = (rowId, qtyProduced) => {
     setCoProductRows((prev) =>
-      prev.map((row) =>
-        row.id === rowId
-          ? {
-            ...row,
-            qtyProduced,
-          }
-          : row
-      )
+      prev.map((row) => (row.id === rowId ? { ...row, qtyProduced } : row))
     );
   };
 
@@ -352,10 +383,10 @@ const CreateItemBOMRoutingRecord = () => {
 
     const coProducts = addConnectedCoProduct
       ? validCoProductRows.map((row) => ({
-        coProductItem: row.coProductItem,
-        itemDescription: row.itemDescription,
-        qtyProduced: row.qtyProduced,
-      }))
+          coProductItem: row.coProductItem,
+          itemDescription: row.itemDescription,
+          qtyProduced: row.qtyProduced,
+        }))
       : [];
 
     navigate("/review-summary", {
@@ -390,25 +421,17 @@ const CreateItemBOMRoutingRecord = () => {
 
         <div style={styles.card}>
           <div style={styles.fieldBlock}>
-            <label style={styles.label}>BOM ID *</label>
-            <div style={styles.selectWrap}>
-              <select
-                value={selectedBomId}
-                onChange={(e) => setSelectedBomId(e.target.value)}
-                style={styles.select}
-                disabled={loading.initial}
-              >
-                <option value="">
-                  {loading.initial ? "Loading BOM IDs..." : "Select BOM ID"}
-                </option>
-                {bomOptions.map((opt) => (
-                  <option key={opt.bomId} value={opt.bomId}>
-                    {opt.bomId}
-                  </option>
-                ))}
-              </select>
-              <IoIosArrowDown style={styles.selectIcon} />
-            </div>
+            <LazyDropdown
+              label="BOM ID *"
+              placeholder="Select BOM ID"
+              value={selectedBomId}
+              displayValue={selectedBomId}
+              fetchUrl="/api/bigquery/table/bom-routing-step1/bom-ids-lazy"
+              getOptionKey={(opt) => opt.bomId}
+              getOptionLabel={(opt) => opt.bomId}
+              onSelect={(opt) => setSelectedBomId(opt.bomId)}
+              searchPlaceholder="Search BOM ID..."
+            />
           </div>
 
           <div style={styles.fieldBlock}>
@@ -422,11 +445,7 @@ const CreateItemBOMRoutingRecord = () => {
 
           <div style={styles.fieldBlock}>
             <input
-              value={
-                loading.bomDetails || loading.itemReleaseFlag
-                  ? "Loading..."
-                  : itemReleaseFlag
-              }
+              value={loading.bomDetails || loading.itemReleaseFlag ? "Loading..." : itemReleaseFlag}
               readOnly
               placeholder="Item Release Flag"
               style={styles.inputDisabled}
@@ -434,33 +453,21 @@ const CreateItemBOMRoutingRecord = () => {
           </div>
 
           <div style={styles.fieldBlock}>
-            <label style={styles.label}>Resource *</label>
-            <div style={styles.resourceWrap}>
-              <select
-                value={selectedResource}
-                onChange={(e) => setSelectedResource(e.target.value)}
-                style={styles.resourceSelect}
-                disabled={loading.initial}
-              >
-                <option value="">
-                  {loading.initial ? "Loading Resources..." : "Select Resource"}
-                </option>
-                {resourceOptions.map((opt) => (
-                  <option key={opt.resource} value={opt.resource}>
-                    {opt.resource}
-                  </option>
-                ))}
-              </select>
-              <div style={styles.resourceRightIcons}>
-                {selectedResource ? (
-                  <IoMdClose
-                    style={styles.clearIcon}
-                    onClick={() => setSelectedResource("")}
-                  />
-                ) : null}
-                <IoIosArrowDown style={styles.selectIconStatic} />
-              </div>
-            </div>
+            <LazyDropdown
+              label="Resource *"
+              placeholder="Select Resource"
+              value={selectedResource}
+              displayValue={selectedResource}
+              fetchUrl="/api/bigquery/table/bom-routing-step1/resources-lazy"
+              getOptionKey={(opt) => opt.resource}
+              getOptionLabel={(opt) => opt.resource}
+              onSelect={(opt) => {
+                setSelectedResource(opt.resource);
+                setResourceRelevancy(opt.resourcePlanningRelevance || opt.resource_relevancy || "");
+              }}
+              searchPlaceholder="Search Resource..."
+            />
+           
           </div>
 
           <div style={styles.fieldBlock}>
@@ -473,9 +480,7 @@ const CreateItemBOMRoutingRecord = () => {
               placeholder="Enter Routing Priority"
               style={styles.input}
             />
-            <div style={styles.helperText}>
-              Enter routing priority for this Resource / Routing ID
-            </div>
+            <div style={styles.helperText}>Enter routing priority for this Resource / Routing ID</div>
           </div>
 
           <div style={styles.fieldBlock}>
@@ -488,12 +493,7 @@ const CreateItemBOMRoutingRecord = () => {
           </div>
 
           <div style={styles.fieldBlock}>
-            <input
-              value={routingId}
-              readOnly
-              placeholder="Routing ID"
-              style={styles.inputDisabled}
-            />
+            <input value={routingId} readOnly placeholder="Routing ID" style={styles.inputDisabled} />
           </div>
 
           <label style={styles.checkboxRow}>
@@ -510,11 +510,7 @@ const CreateItemBOMRoutingRecord = () => {
             <div style={styles.coProductCard}>
               <div style={styles.coProductHeader}>
                 <div style={styles.coProductTitle}>Co-Products</div>
-                <button
-                  type="button"
-                  style={styles.addCoProductButton}
-                  onClick={handleAddCoProductRow}
-                >
+                <button type="button" style={styles.addCoProductButton} onClick={handleAddCoProductRow}>
                   + ADD CO-PRODUCT
                 </button>
               </div>
@@ -529,26 +525,28 @@ const CreateItemBOMRoutingRecord = () => {
               {coProductRows.map((row) => (
                 <div key={row.id} style={styles.coProductGridRow}>
                   <div style={styles.coProductCell}>
-                    <div style={styles.selectWrap}>
-                      <select
-                        value={row.coProductItem}
-                        onChange={(e) => handleCoProductItemChange(row.id, e.target.value)}
-                        style={styles.select}
-                        disabled={loading.coProducts || !selectedBomId}
-                      >
-                        <option value="">
-                          {loading.coProducts
-                            ? "Loading Co-Products..."
-                            : "Co-Product Item"}
-                        </option>
-                        {coProductOptions.map((opt) => (
-                          <option key={opt.item} value={opt.item}>
-                            {opt.item}
-                          </option>
-                        ))}
-                      </select>
-                      <IoIosArrowDown style={styles.selectIcon} />
-                    </div>
+                    <LazyDropdown
+                      placeholder="Co-Product Item"
+                      value={row.coProductItem}
+                      displayValue={row.coProductItem}
+                      fetchUrl="/api/bigquery/table/bom-routing-step1/co-product-items-lazy"
+                      getOptionKey={(opt) => opt.item}
+                      getOptionLabel={(opt) => `${opt.item}${opt.item_desc ? ` - ${opt.item_desc}` : ""}`}
+                      onSelect={(opt) => {
+                        setCoProductRows((prev) =>
+                          prev.map((r) =>
+                            r.id === row.id
+                              ? {
+                                  ...r,
+                                  coProductItem: opt.item || "",
+                                  itemDescription: opt.item_desc || opt.description || "",
+                                }
+                              : r
+                          )
+                        );
+                      }}
+                      searchPlaceholder="Search item or description..."
+                    />
                   </div>
 
                   <div style={styles.coProductCell}>
@@ -573,11 +571,8 @@ const CreateItemBOMRoutingRecord = () => {
                         borderColor: isQtyProducedInvalid(row.qtyProduced) ? "#dc2626" : "#c7c7c7",
                       }}
                     />
-
                     {isQtyProducedInvalid(row.qtyProduced) ? (
-                      <div style={styles.qtyWarningText}>
-                        Qty Produced should always be less than 1
-                      </div>
+                      <div style={styles.qtyWarningText}>Qty Produced should always be less than 1</div>
                     ) : null}
                   </div>
 
@@ -682,30 +677,6 @@ const styles = {
     marginBottom: "8px",
     fontWeight: 500,
   },
-  selectWrap: {
-    position: "relative",
-    width: "100%",
-  },
-  select: {
-    width: "100%",
-    height: "42px",
-    borderRadius: "4px",
-    border: "1px solid #c7c7c7",
-    backgroundColor: "#fff",
-    padding: "0 40px 0 14px",
-    fontSize: "16px",
-    appearance: "none",
-    outline: "none",
-    boxSizing: "border-box",
-  },
-  selectIcon: {
-    position: "absolute",
-    right: "12px",
-    top: "50%",
-    transform: "translateY(-50%)",
-    color: "#7a7a7a",
-    pointerEvents: "none",
-  },
   inputDisabled: {
     width: "100%",
     height: "42px",
@@ -735,39 +706,6 @@ const styles = {
     marginLeft: "14px",
     fontSize: "13px",
     color: "#9ca3af",
-  },
-  resourceWrap: {
-    display: "flex",
-    alignItems: "center",
-    border: "1px solid #111827",
-    borderRadius: "4px",
-    backgroundColor: "#fff",
-    height: "56px",
-    boxSizing: "border-box",
-    overflow: "hidden",
-  },
-  resourceSelect: {
-    flex: 1,
-    height: "100%",
-    border: "none",
-    backgroundColor: "transparent",
-    padding: "0 14px",
-    fontSize: "16px",
-    appearance: "none",
-    outline: "none",
-  },
-  resourceRightIcons: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    paddingRight: "14px",
-    color: "#6b7280",
-  },
-  clearIcon: {
-    cursor: "pointer",
-  },
-  selectIconStatic: {
-    color: "#6b7280",
   },
   checkboxRow: {
     display: "flex",
@@ -832,7 +770,7 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "1.2fr 1.2fr 0.65fr 44px",
     gap: "10px",
-    alignItems: "center",
+    alignItems: "start",
     marginBottom: "10px",
   },
   coProductCell: {
@@ -842,6 +780,7 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
+    paddingTop: "7px",
   },
   deleteButton: {
     border: "none",
@@ -853,6 +792,11 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     padding: 0,
+  },
+  qtyWarningText: {
+    marginTop: "4px",
+    fontSize: "12px",
+    color: "#dc2626",
   },
   footer: {
     width: "100%",
@@ -876,5 +820,106 @@ const styles = {
   arrow: {
     fontSize: "18px",
     lineHeight: 1,
+  },
+  selectIconStatic: {
+    color: "#6b7280",
+    flexShrink: 0,
+  },
+  clearResourceButton: {
+    marginTop: "8px",
+    border: "none",
+    background: "transparent",
+    color: "#2563eb",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    fontSize: "13px",
+    padding: 0,
+  },
+  lazyDropdownBlock: {
+    position: "relative",
+    width: "100%",
+  },
+  lazyDropdownControl: {
+    width: "100%",
+    minHeight: "42px",
+    borderRadius: "4px",
+    border: "1px solid #c7c7c7",
+    backgroundColor: "#fff",
+    padding: "0 14px",
+    fontSize: "16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    boxSizing: "border-box",
+    gap: "10px",
+  },
+  lazyDropdownValue: {
+    color: "#111827",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  lazyDropdownPlaceholder: {
+    color: "#9ca3af",
+  },
+  lazyDropdownMenu: {
+    position: "absolute",
+    zIndex: 999,
+    top: "calc(100% + 4px)",
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.14)",
+    padding: "8px",
+  },
+  lazyDropdownSearch: {
+    width: "100%",
+    height: "36px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    padding: "0 10px",
+    fontSize: "14px",
+    boxSizing: "border-box",
+    outline: "none",
+    marginBottom: "8px",
+  },
+  lazyDropdownList: {
+    maxHeight: "220px",
+    overflowY: "auto",
+  },
+  lazyDropdownOption: {
+    padding: "9px 10px",
+    fontSize: "14px",
+    cursor: "pointer",
+    borderRadius: "4px",
+    color: "#111827",
+    wordBreak: "break-word",
+  },
+  lazyDropdownEmpty: {
+    padding: "10px",
+    fontSize: "14px",
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  lazyDropdownError: {
+    padding: "10px",
+    fontSize: "13px",
+    color: "#dc2626",
+    textAlign: "center",
+  },
+  loadMoreButton: {
+    width: "100%",
+    marginTop: "8px",
+    height: "34px",
+    border: "1px solid #2563eb",
+    borderRadius: "4px",
+    backgroundColor: "#fff",
+    color: "#2563eb",
+    fontWeight: 600,
+    cursor: "pointer",
   },
 };

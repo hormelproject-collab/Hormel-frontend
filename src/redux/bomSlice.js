@@ -53,6 +53,19 @@ const defaultExistingBomSearchState = {
   pagination: defaultPagination,
 };
 
+const defaultExistingItemBomRoutingSearchState = {
+  loading: false,
+  error: null,
+  rows: [],
+  searchBy1: "bomId",
+  searchBy2: "item",
+  query1: "",
+  query2: "",
+  pagination: defaultPagination,
+  selectedRowIds: [],
+  selectedRowsById: {},
+};
+
 const normalizeExistingBomSearchRow = (row, index) => {
   const location = String(row.location ?? "").trim();
   const producedItem = String(row.produced_item ?? row.item ?? "").trim();
@@ -82,6 +95,40 @@ const normalizeExistingBomSearchRow = (row, index) => {
     __raw: row,
   };
 };
+
+const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
+  const recId = String(row.rec_id ?? row.recId ?? "").trim();
+  const item = String(row.item ?? row.Item ?? "").trim();
+  const bomId = String(row.bom_id ?? row.bomId ?? "").trim();
+  const routingId = String(row.routing_id ?? row.routingId ?? "").trim();
+  const location = String(row.location ?? "").trim();
+  const resource = String(row.resource ?? "").trim();
+  const erpCoProductAssociation = String(
+    row.erp_co_product_association ??
+      row.erpCoProductAssociation ??
+      row.co_product_association ??
+      ""
+  ).trim();
+  const coProductAssociation = Number(erpCoProductAssociation || "0") >= 1 ? 1 : 0;
+  const componentItem = coProductAssociation === 1 ? "" : item;
+  const coProductItem = coProductAssociation === 1 ? item : "";
+
+  return {
+    id: recId || `${bomId}__${routingId}__${item}__${index}`,
+    rec_id: recId,
+    item,
+    bom_id: bomId,
+    routing_id: routingId,
+    location,
+    resource,
+    erp_co_product_association: erpCoProductAssociation,
+    co_product_association: coProductAssociation,
+    component_item: componentItem,
+    co_product_item: coProductItem,
+    __raw: row,
+  };
+};
+
 
 /** ------------------ THUNKS ------------------ **/
 export const fetchItemMaster = createAsyncThunk(
@@ -186,6 +233,60 @@ export const fetchExistingBomSearchRows = createAsyncThunk(
       };
     } catch (e) {
       return rejectWithValue(e?.message || "Failed to fetch existing BOM records");
+    }
+  }
+);
+
+
+export const fetchExistingItemBomRoutingSearchRows = createAsyncThunk(
+  "bom/fetchExistingItemBomRoutingSearchRows",
+  async (
+    {
+      page = 1,
+      pageSize = 50,
+      searchBy1 = "bomId",
+      query1 = "",
+      searchBy2 = "item",
+      query2 = "",
+    } = {},
+    { rejectWithValue }
+  ) => {
+    try {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      params.set("searchBy1", String(searchBy1 || ""));
+      params.set("query1", String(query1 || "").trim());
+      params.set("searchBy2", String(searchBy2 || ""));
+      params.set("query2", String(query2 || "").trim());
+
+      const res = await fetch(
+        `/api/tables/existing-item-bom-routing-search?${params.toString()}`
+      );
+      if (!res.ok) return rejectWithValue(await res.text());
+
+      const payload = await res.json();
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+      return {
+        rows: rows.map((row, index) =>
+          normalizeExistingItemBomRoutingSearchRow(row, index)
+        ),
+        pagination: payload?.pagination || {
+          ...defaultPagination,
+          page,
+          pageSize,
+          total: rows.length,
+        },
+      };
+    } catch (e) {
+      return rejectWithValue(
+        e?.message || "Failed to fetch existing item BOM routing records"
+      );
     }
   }
 );
@@ -372,6 +473,7 @@ const initialState = {
     search: "",
   }),
   existingBomSearch: defaultExistingBomSearchState,
+  existingItemBomRoutingSearch: defaultExistingItemBomRoutingSearchState,
   selectedProducedItemIds: [],
   selectedProducedItemById: {},
   selectedLocationIds: [],
@@ -406,6 +508,59 @@ const bomSlice = createSlice({
     },
     clearExistingBomSearchState: (state) => {
       state.existingBomSearch = defaultExistingBomSearchState;
+    },
+
+    setExistingItemBomRoutingSearchState: (state, action) => {
+      const payload = action.payload || {};
+      state.existingItemBomRoutingSearch = {
+        ...state.existingItemBomRoutingSearch,
+        ...payload,
+        pagination: {
+          ...state.existingItemBomRoutingSearch.pagination,
+          ...(payload.pagination || {}),
+        },
+      };
+    },
+    clearExistingItemBomRoutingSearchState: (state) => {
+      state.existingItemBomRoutingSearch = defaultExistingItemBomRoutingSearchState;
+    },
+    toggleExistingIbrSelectedRow: (state, action) => {
+      const row = action.payload;
+      const id = row && typeof row === "object" ? row.id : row;
+      if (!id) return;
+      const selectedIds = state.existingItemBomRoutingSearch.selectedRowIds;
+      const existingIndex = selectedIds.indexOf(id);
+      if (existingIndex >= 0) {
+        selectedIds.splice(existingIndex, 1);
+        delete state.existingItemBomRoutingSearch.selectedRowsById[id];
+      } else {
+        selectedIds.push(id);
+        if (row && typeof row === "object") {
+          state.existingItemBomRoutingSearch.selectedRowsById[id] = row;
+        }
+      }
+    },
+    toggleExistingIbrSelectedPageRows: (state, action) => {
+      const rows = Array.isArray(action.payload) ? action.payload : [];
+      const selectedIds = state.existingItemBomRoutingSearch.selectedRowIds;
+      const allSelected = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id));
+      if (allSelected) {
+        rows.forEach((row) => {
+          const index = selectedIds.indexOf(row.id);
+          if (index >= 0) selectedIds.splice(index, 1);
+          delete state.existingItemBomRoutingSearch.selectedRowsById[row.id];
+        });
+        return;
+      }
+      rows.forEach((row) => {
+        if (!row?.id) return;
+        if (!selectedIds.includes(row.id)) selectedIds.push(row.id);
+        state.existingItemBomRoutingSearch.selectedRowsById[row.id] = row;
+      });
+    },
+    clearExistingIbrSelectedRows: (state) => {
+      state.existingItemBomRoutingSearch.selectedRowIds = [];
+      state.existingItemBomRoutingSearch.selectedRowsById = {};
     },
     setLocationsSearch: (state, action) => {
       state.locations.search = String(action.payload ?? "");
@@ -571,6 +726,23 @@ const bomSlice = createSlice({
         state.existingBomSearch.loading = false;
         state.existingBomSearch.error = action.payload || "Failed to load existing BOM records";
       })
+      .addCase(fetchExistingItemBomRoutingSearchRows.pending, (state) => {
+        state.existingItemBomRoutingSearch.loading = true;
+        state.existingItemBomRoutingSearch.error = null;
+      })
+      .addCase(fetchExistingItemBomRoutingSearchRows.fulfilled, (state, action) => {
+        state.existingItemBomRoutingSearch.loading = false;
+        state.existingItemBomRoutingSearch.rows = action.payload?.rows || [];
+        state.existingItemBomRoutingSearch.pagination = action.payload?.pagination || {
+          ...defaultPagination,
+          total: action.payload?.rows?.length || 0,
+        };
+      })
+      .addCase(fetchExistingItemBomRoutingSearchRows.rejected, (state, action) => {
+        state.existingItemBomRoutingSearch.loading = false;
+        state.existingItemBomRoutingSearch.error =
+          action.payload || "Failed to load existing item BOM routing records";
+      })
       .addCase(fetchResourceComponentMetadata.pending, (state) => {
         state.resourceMeta.loading = true;
         state.resourceMeta.error = null;
@@ -645,6 +817,11 @@ export const {
   setLocationsPagination,
   setExistingBomSearchState,
   clearExistingBomSearchState,
+  setExistingItemBomRoutingSearchState,
+  clearExistingItemBomRoutingSearchState,
+  toggleExistingIbrSelectedRow,
+  toggleExistingIbrSelectedPageRows,
+  clearExistingIbrSelectedRows,
   setResourceComponentConfig,
   setModifySelectState,
   clearModifySelectState,
@@ -714,6 +891,29 @@ export const selectExistingBomSearchError = (state) =>
   (state.bom.existingBomSearch || defaultExistingBomSearchState).error;
 export const selectExistingBomSearchPagination = (state) =>
   (state.bom.existingBomSearch || defaultExistingBomSearchState).pagination || defaultPagination;
+
+
+export const selectExistingItemBomRoutingSearchState = (state) =>
+  state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState;
+export const selectExistingItemBomRoutingSearchRows = (state) =>
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).rows || [];
+export const selectExistingItemBomRoutingSearchLoading = (state) =>
+  !!(state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).loading;
+export const selectExistingItemBomRoutingSearchError = (state) =>
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).error;
+export const selectExistingItemBomRoutingSearchPagination = (state) =>
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
+    .pagination || defaultPagination;
+export const selectExistingIbrSelectedRowIds = (state) =>
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
+    .selectedRowIds || [];
+export const selectExistingIbrSelectedRowsById = (state) =>
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
+    .selectedRowsById || {};
+export const selectExistingIbrSelectedRows = createSelector(
+  [selectExistingIbrSelectedRowIds, selectExistingIbrSelectedRowsById],
+  (ids, byId) => ids.map((id) => byId[id]).filter(Boolean)
+);
 
 export const selectResourceMetaLoading = (state) => state.bom.resourceMeta.loading;
 export const selectResourceMetaError = (state) => state.bom.resourceMeta.error;

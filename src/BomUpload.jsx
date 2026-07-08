@@ -10,9 +10,7 @@ const BomUpload = () => {
   const [loading, setLoading] = useState(false);
 
   /**
-   * CSV → JSON rows + add ERR_ID as row number
-   * - Header row = 1
-   * - First data row = 2
+   * CSV → JSON rows 
    */
   const parseCSV = (file) => {
     return new Promise((resolve, reject) => {
@@ -62,8 +60,7 @@ const BomUpload = () => {
       const routingData = await parseCSV(routingFile);
       const parametersData = await parseCSV(parametersFile);
 
-      // (Optional) quick sanity log
-      console.log("Sample consumed row:", consumedData?.[0]);
+
 
       // Send raw table arrays to backend
       const payload = {
@@ -73,7 +70,7 @@ const BomUpload = () => {
         bom_parameters: parametersData,
       };
 
-      const response = await axios.post("http://localhost:3000/api/bom-upload/validate-and-load", payload);
+      const response = await axios.post("/api/bom-upload/validate-and-load", payload);
       const result = response.data;
 
       if (result.status === "success") {

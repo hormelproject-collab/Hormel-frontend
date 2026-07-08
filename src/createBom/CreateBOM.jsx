@@ -8,7 +8,7 @@ const CreateBOM = () => {
 
     return (
         <div style={styles.container}>
-            {/* Back */}
+            
             <div style={styles.back} onClick={() => navigate("/")}>
                 ← BACK TO MAIN MENU
             </div>

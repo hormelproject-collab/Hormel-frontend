@@ -11,6 +11,8 @@ import {
   selectExistingBomSearchState,
 } from "../../redux/bomSlice";
 
+import ProgressIndicator, { ShowingRecordsInfo } from "../../components/CommonProgressIndicator";
+
 const PAGE_SIZE = 50;
 
 const SEARCH_FIELDS = [
@@ -201,7 +203,7 @@ const SelectExistingBOM = () => {
           </div>
         </div>
 
-        {loading ? <div style={styles.infoText}>Loading...</div> : null}
+
         {err ? <div style={styles.errorText}>Error: {err}</div> : null}
 
         <div style={styles.paginationInfo}>
@@ -209,7 +211,7 @@ const SelectExistingBOM = () => {
           {total > 0 ? ` (${startRecord}-${endRecord})` : ""}
         </div>
 
-        <div style={styles.tableCard}>
+        <div style={{ ...styles.tableCard, position: "relative" }}>
           <div style={styles.tableHeader}>
             <div>Location</div>
             <div>Produced Item</div>
@@ -219,11 +221,20 @@ const SelectExistingBOM = () => {
             <div>Item Release Flag</div>
           </div>
 
-          {!loading && rows.length === 0 ? (
-            <div style={styles.emptyState}>No BOM records found.</div>
+          {loading ? (
+            <div style={styles.loadingBodyRow}>
+              <ProgressIndicator label="Loading BOM records..." />
+            </div>
+          ) : rows.length === 0 ? (
+            <div style={styles.emptyState}>
+              No BOM records found.
+            </div>
           ) : (
             rows.map((row, index) => {
-              const safeKey = row.id || `${row.bom_id}-${row.resource || "NORESOURCE"}-${index}`;
+              const safeKey =
+                row.id ||
+                `${row.bom_id}-${row.resource || "NORESOURCE"}-${index}`;
+
               const isSelected = selectedRowId === row.id;
 
               return (
@@ -240,7 +251,12 @@ const SelectExistingBOM = () => {
                   <div style={styles.cell}>{row.produced_item_desc || "-"}</div>
                   <div style={styles.cell}>{row.bom_id || "-"}</div>
                   <div style={styles.cell}>{row.resource || "-"}</div>
-                  <div style={{ ...styles.cell, ...getReleaseStyle(row.item_release_flag) }}>
+                  <div
+                    style={{
+                      ...styles.cell,
+                      ...getReleaseStyle(row.item_release_flag),
+                    }}
+                  >
                     {row.item_release_flag || "-"}
                   </div>
                 </div>
@@ -248,6 +264,7 @@ const SelectExistingBOM = () => {
             })
           )}
         </div>
+
 
         <div style={styles.paginationContainer}>
           <button
@@ -424,7 +441,14 @@ const styles = {
     color: "#111827",
     lineHeight: 1.35,
     wordBreak: "break-word",
-  },
+  }, loadingBodyRow: {
+  padding: "28px 16px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "#ffffff",
+  minHeight: "120px",
+},
   emptyState: {
     padding: "18px 12px",
     fontSize: 14,

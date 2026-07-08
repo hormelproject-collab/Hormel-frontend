@@ -12,6 +12,8 @@ import {
   selectItemsPagination,
 } from "../../redux/bomSlice";
 
+import ProgressIndicator from "../../components/CommonProgressIndicator";
+
 const ITEMS_PER_PAGE = 50;
 
 const FILTER_OPTIONS = [
@@ -150,7 +152,6 @@ const ProducedItems = () => {
           />
         </div>
 
-        {loading && <div style={styles.info}>Loading items...</div>}
         {error && <div style={styles.error}>Error: {String(error)}</div>}
 
         {!error && (
@@ -159,7 +160,7 @@ const ProducedItems = () => {
           </div>
         )}
 
-        <div style={styles.table}>
+        <div style={{ ...styles.table, position: "relative" }}>
           <div style={{ ...styles.headerRow, gridTemplateColumns: gridCols }}>
             <div />
             <div>Item</div>
@@ -168,7 +169,11 @@ const ProducedItems = () => {
             <div>Item Release Flag</div>
           </div>
 
-          {visibleItems.length === 0 && !loading ? (
+          {loading ? (
+            <div style={styles.loadingBodyRow}>
+              <ProgressIndicator label="Loading items..." />
+            </div>
+          ) : visibleItems.length === 0 ? (
             <div style={styles.emptyRow}>No items found.</div>
           ) : (
             visibleItems.map((row) => {
@@ -384,6 +389,14 @@ const styles = {
     fontSize: "14px",
     color: "#6b7280",
     textAlign: "center",
+  },
+  loadingBodyRow: {
+    padding: "28px 14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottom: "1px solid #e5e7eb",
+    backgroundColor: "#ffffff",
   },
   checkboxCell: {
     display: "flex",

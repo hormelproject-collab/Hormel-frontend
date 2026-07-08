@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-const DELETE_BOM_SUMMARY_API = `${BASE_URL}/api/tables/delete-bom/summary`;
-const DELETE_BOM_EXECUTE_API = `${BASE_URL}/api/tables/delete-bom/execute`;
+const DELETE_BOM_SUMMARY_API = `/api/tables/delete-bom/summary`;
+const DELETE_BOM_EXECUTE_API = `/api/tables/delete-bom/execute`;
 
 const styles = {
   page: {

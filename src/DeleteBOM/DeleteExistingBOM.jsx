@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-const EXISTING_BOM_API = `${BASE_URL}/api/tables/existing-bom-search`;
+import ProgressIndicator from "../components/CommonProgressIndicator";
+const EXISTING_BOM_API = `/api/tables/existing-bom-search`;
+const CO_PRODUCT_YELLOW = "#fef08a";
 
 const styles = {
   page: {
@@ -155,6 +156,9 @@ const styles = {
     color: "#ff1f1f",
     fontWeight: 500,
   },
+  coProductRow: {
+    backgroundColor: CO_PRODUCT_YELLOW,
+  },
   footerRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -212,30 +216,35 @@ const styles = {
     padding: "22px 12px",
     fontSize: "12px",
   },
-      legendRow: {
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        marginTop: "12px",
-        fontSize: "12px",
-        color: "#374151",
-        maxWidth: "1150px",
-    },
-        legendColor: {
-        width: "18px",
-        height: "14px",
-        background: "#fef08a",
-        border: "1px solid #d1d5db",
-        borderRadius: "2px",
-        flexShrink: 0,
-    },
+  loadingBodyCell: {
+    textAlign: "center",
+    padding: "28px 12px",
+    borderBottom: "1px solid #d1d5db",
+    background: "#ffffff",
+  },
+  legendRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginTop: "12px",
+    fontSize: "12px",
+    color: "#374151",
+    maxWidth: "1150px",
+  },
+  legendColor: {
+    width: "18px",
+    height: "14px",
+    background: CO_PRODUCT_YELLOW,
+    border: "1px solid #d1d5db",
+    borderRadius: "2px",
+    flexShrink: 0,
+  },
 };
 
 const CRITERIA_OPTIONS = [
   { value: "", label: "None" },
   { value: "location", label: "Location" },
   { value: "bomId", label: "BOMID" },
-  // { value: "resource", label: "Resource" },
   { value: "producedItem", label: "Produced Item" },
   { value: "producedItemDescription", label: "Produced Item Description" },
   { value: "releaseFlag", label: "Item Release Flag" },
@@ -308,25 +317,32 @@ const normalizeRecord = (row, index) => {
 
   const bomId = getValue(row, ["bom_id", "BOMID", "bomId", "BOM_ID"]);
 
+  const erpCoProductAssociation = getValue(row, [
+    "erp_co_product_association",
+    "erpCoProductAssociation",
+    "ERP_CO_PRODUCT_ASSOCIATION",
+  ]);
+
   return {
-    id: bomId || `${location}__${producedItem}__${index}`,
+    id: getValue(row, ["id", "ID"]) || `${bomId || location}__${producedItem}__${resource}__${index}`,
     location,
     producedItem,
     resource,
     producedItemDescription,
     releaseFlag,
     bomId,
+    erpCoProductAssociation,
     raw: row,
   };
 };
 
 export default function DeleteExistingBomStep1() {
   const navigate = useNavigate();
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
-
   const [criteria1Field, setCriteria1Field] = useState("bomId");
   const [criteria1Value, setCriteria1Value] = useState("");
   const [criteria2Field, setCriteria2Field] = useState("producedItem");
@@ -351,16 +367,12 @@ export default function DeleteExistingBomStep1() {
 
         if (!response.ok) {
           throw new Error(
-            result?.details ||
-              result?.error ||
-              "Failed to fetch existing BOM records"
+            result?.details || result?.error || "Failed to fetch existing BOM records"
           );
         }
 
         const list = Array.isArray(result?.data) ? result.data : [];
-        const normalized = list.map((row, index) =>
-          normalizeRecord(row, index)
-        );
+        const normalized = list.map((row, index) => normalizeRecord(row, index));
 
         if (!cancelled) {
           setRows(normalized);
@@ -384,32 +396,47 @@ export default function DeleteExistingBomStep1() {
     };
   }, []);
 
-const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-        const value1 = String(getRowValueByCriteria(row, criteria1Field) ?? "").trim().toLowerCase();
-        const value2 = String(getRowValueByCriteria(row, criteria2Field) ?? "").trim().toLowerCase();
-        const search1 = String(criteria1Value ?? "").trim().toLowerCase();
-        const search2 = String(criteria2Value ?? "").trim().toLowerCase();
+  const filteredRows = useMemo(() => {
+    const filtered = rows.filter((row) => {
+      const value1 = String(getRowValueByCriteria(row, criteria1Field) ?? "")
+        .trim()
+        .toLowerCase();
+      const value2 = String(getRowValueByCriteria(row, criteria2Field) ?? "")
+        .trim()
+        .toLowerCase();
+      const search1 = String(criteria1Value ?? "").trim().toLowerCase();
+      const search2 = String(criteria2Value ?? "").trim().toLowerCase();
 
-        const match1 =
-            !criteria1Field || !search1
-                ? true
-                : value1 === search1;
+      const match1 = !criteria1Field || !search1 ? true : value1.includes(search1);
+      const match2 = !criteria2Field || !search2 ? true : value2.includes(search2);
 
-        const match2 =
-            !criteria2Field || !search2
-                ? true
-                : value2 === search2;
-
-        return match1 && match2;
+      return match1 && match2;
     });
-}, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
+
+    // Keep page ordering stable even after frontend filtering:
+    // BOMID first, main item first, then co-products.
+    return [...filtered].sort((a, b) => {
+      const bomCompare = String(a.bomId || "").localeCompare(String(b.bomId || ""));
+      if (bomCompare !== 0) return bomCompare;
+
+      const aIsCoProduct = String(a.erpCoProductAssociation || "").trim() === "1";
+      const bIsCoProduct = String(b.erpCoProductAssociation || "").trim() === "1";
+
+      if (aIsCoProduct !== bIsCoProduct) {
+        return aIsCoProduct ? 1 : -1;
+      }
+
+      return String(a.producedItem || "").localeCompare(String(b.producedItem || ""));
+    });
+  }, [rows, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
 
   const selectedCount = selectedIds.length;
+  const totalItems = filteredRows.length;
+  const startRecord = totalItems === 0 ? 0 : 1;
+  const endRecord = totalItems;
 
   const allVisibleSelected =
-    filteredRows.length > 0 &&
-    filteredRows.every((row) => selectedIds.includes(row.id));
+    filteredRows.length > 0 && filteredRows.every((row) => selectedIds.includes(row.id));
 
   const handleToggleAll = () => {
     if (allVisibleSelected) {
@@ -428,9 +455,7 @@ const filteredRows = useMemo(() => {
 
   const handleToggleRow = (rowId) => {
     setSelectedIds((prev) =>
-      prev.includes(rowId)
-        ? prev.filter((id) => id !== rowId)
-        : [...prev, rowId]
+      prev.includes(rowId) ? prev.filter((id) => id !== rowId) : [...prev, rowId]
     );
   };
 
@@ -440,6 +465,7 @@ const filteredRows = useMemo(() => {
 
   const handleConfirm = () => {
     const selectedRows = rows.filter((row) => selectedIds.includes(row.id));
+
     navigate("/delete-bom-dashboard/delete-existing-bom/summary", {
       state: {
         selectedRows,
@@ -487,9 +513,7 @@ const filteredRows = useMemo(() => {
                 placeholder={
                   criteria1Field
                     ? `Search ${
-                        CRITERIA_OPTIONS.find(
-                          (x) => x.value === criteria1Field
-                        )?.label || ""
+                        CRITERIA_OPTIONS.find((x) => x.value === criteria1Field)?.label || ""
                       }`
                     : "Search"
                 }
@@ -525,9 +549,7 @@ const filteredRows = useMemo(() => {
                 placeholder={
                   criteria2Field
                     ? `Search ${
-                        CRITERIA_OPTIONS.find(
-                          (x) => x.value === criteria2Field
-                        )?.label || ""
+                        CRITERIA_OPTIONS.find((x) => x.value === criteria2Field)?.label || ""
                       }`
                     : "Search"
                 }
@@ -537,15 +559,8 @@ const filteredRows = useMemo(() => {
           </div>
         </div>
 
-        {loading ? (
-          <div style={{ ...styles.stateBox, ...styles.loading }}>
-            Loading existing BOM records...
-          </div>
-        ) : null}
 
-        {error ? (
-          <div style={{ ...styles.stateBox, ...styles.error }}>{error}</div>
-        ) : null}
+        {error ? <div style={{ ...styles.stateBox, ...styles.error }}>{error}</div> : null}
 
         <div style={styles.tableCard}>
           <div style={styles.tableScroller}>
@@ -557,24 +572,30 @@ const filteredRows = useMemo(() => {
                       type="checkbox"
                       checked={allVisibleSelected}
                       onChange={handleToggleAll}
+                      disabled={loading}
                       style={styles.checkbox}
                       aria-label="Select all rows"
                     />
                   </th>
                   <th style={{ ...styles.th, width: "100px" }}>Location</th>
-                  <th style={{ ...styles.th, width: "134px" }}>
-                    Produced Item
-                  </th>
+                  <th style={{ ...styles.th, width: "134px" }}>Produced Item</th>
                   <th style={{ ...styles.th, width: "230px" }}>
                     Produced Item Description
                   </th>
-                  <th style={{ ...styles.th, width: "156px" }}>
-                    Item Release Flag
-                  </th>
+                  <th style={{ ...styles.th, width: "156px" }}>Item Release Flag</th>
                   <th style={{ ...styles.th, width: "186px" }}>BOM ID</th>
                 </tr>
               </thead>
+
               <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} style={styles.loadingBodyCell}>
+                      <ProgressIndicator label="Loading existing BOM records..." />
+                    </td>
+                  </tr>
+                ) : null}
+
                 {!loading && filteredRows.length === 0 ? (
                   <tr>
                     <td colSpan={6} style={styles.emptyRow}>
@@ -583,16 +604,18 @@ const filteredRows = useMemo(() => {
                   </tr>
                 ) : null}
 
-                {filteredRows.map((row) => {
+                {!loading && filteredRows.map((row) => {
                   const isSelected = selectedIds.includes(row.id);
                   const showRedRelease =
-                    /release\s*3/i.test(row.releaseFlag) ||
-                    /\u26a0|△/.test(row.releaseFlag);
+                    /release\s*3/i.test(row.releaseFlag) || /\u26a0|△/.test(row.releaseFlag);
                   const releaseText = row.releaseFlag || "-";
+                  const isCoProduct =
+                    String(row.erpCoProductAssociation || "").trim() === "1";
+                  const coProductCellStyle = isCoProduct ? styles.coProductRow : {};
 
                   return (
-                    <tr key={row.id}>
-                      <td style={{ ...styles.td, ...styles.checkboxCell }}>
+                    <tr key={row.id} style={coProductCellStyle}>
+                      <td style={{ ...styles.td, ...styles.checkboxCell, ...coProductCellStyle }}>
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -601,23 +624,17 @@ const filteredRows = useMemo(() => {
                           aria-label={`Select BOM ${row.bomId || row.id}`}
                         />
                       </td>
-                      <td style={styles.td}>{row.location || "-"}</td>
-                      <td style={styles.td}>{row.producedItem || "-"}</td>
-                      <td style={styles.td}>
-                        {row.producedItemDescription || "-"}
-                      </td>
-                      <td style={styles.td}>
-                        <span
-                          style={showRedRelease ? styles.releaseRed : undefined}
-                        >
+
+                      <td style={{ ...styles.td, ...coProductCellStyle }}>{row.location || "-"}</td>
+                      <td style={{ ...styles.td, ...coProductCellStyle }}>{row.producedItem || "-"}</td>
+                      <td style={{ ...styles.td, ...coProductCellStyle }}>{row.producedItemDescription || "-"}</td>
+                      <td style={{ ...styles.td, ...coProductCellStyle }}>
+                        <span style={showRedRelease ? styles.releaseRed : undefined}>
                           {releaseText}
-                          {showRedRelease &&
-                          !/\u26a0|△/.test(releaseText)
-                            ? " △"
-                            : ""}
+                          {showRedRelease && !/\u26a0|△/.test(releaseText) ? " △" : ""}
                         </span>
                       </td>
-                      <td style={styles.td}>{row.bomId || "-"}</td>
+                      <td style={{ ...styles.td, ...coProductCellStyle }}>{row.bomId || "-"}</td>
                     </tr>
                   );
                 })}
@@ -626,15 +643,13 @@ const filteredRows = useMemo(() => {
           </div>
         </div>
 
-                <div style={styles.legendRow}>
-                    <span style={styles.legendColor} />
-                    <span>Yellow color code represents co-products.</span>
-                </div>        
+        <div style={styles.legendRow}>
+          <span style={styles.legendColor} />
+          <span>Yellow color code represents co-products.</span>
+        </div>
 
         <div style={styles.footerRow}>
-          <div style={styles.selectionText}>
-            {selectedCount} record(s) selected for deletion
-          </div>
+          <div style={styles.selectionText}>{selectedCount} record(s) selected for deletion</div>
 
           <button
             type="button"
@@ -642,9 +657,7 @@ const filteredRows = useMemo(() => {
             disabled={selectedCount === 0}
             style={{
               ...styles.confirmBtn,
-              ...(selectedCount === 0
-                ? styles.confirmBtnDisabled
-                : styles.confirmBtnEnabled),
+              ...(selectedCount === 0 ? styles.confirmBtnDisabled : styles.confirmBtnEnabled),
             }}
           >
             <span style={{ fontSize: "12px" }}>🗑</span>

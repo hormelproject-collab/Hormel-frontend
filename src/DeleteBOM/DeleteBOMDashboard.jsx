@@ -124,12 +124,12 @@ export default function DeleteBomHome() {
 
   return (
     <div style={styles.page}>
-      {/* Top Header */}
+      
       <header style={styles.header}>
         <div style={styles.headerTitle}>BOM Data Management App</div>
       </header>
 
-      {/* Main Content */}
+      
       <main style={styles.content}>
         <button
           type="button"

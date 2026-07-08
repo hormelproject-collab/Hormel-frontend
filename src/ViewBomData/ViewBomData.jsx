@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:3000";
+
 
 const CRITERIA_OPTIONS = [
   { value: "", label: "None" },
@@ -98,7 +95,7 @@ export default function ViewBomData() {
         setLoading(true);
         setError("");
 
-        const response = await fetch(`${API_BASE_URL}/api/tables/view-bom-data/search`, {
+        const response = await fetch(`/api/tables/view-bom-data/search`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -351,7 +348,7 @@ export default function ViewBomData() {
           Select up to two search criteria to filter BOM data
         </div>
 
-        {/* Criteria 1 */}
+    
         <div style={styles.criteriaGrid}>
           <div style={styles.fieldWrap}>
             <label style={styles.label}>Search Criteria 1</label>
@@ -388,7 +385,7 @@ export default function ViewBomData() {
           </div>
         </div>
 
-        {/* Criteria 2 */}
+       
         <div style={styles.criteriaGrid}>
           <div style={styles.fieldWrap}>
             <label style={styles.label}>Search Criteria 2</label>
@@ -426,7 +423,7 @@ export default function ViewBomData() {
         </div>
       </div>
 
-      {/* BOM Parameters */}
+     
       {filteredData.bomParameters.length > 0 && (
         <>
           <div style={styles.tableSectionTitle}>BOM Parameters</div>
@@ -457,7 +454,7 @@ export default function ViewBomData() {
         </>
       )}
 
-      {/* BOM Produced */}
+    
       {filteredData.bomProduced.length > 0 && (
         <>
           <div style={styles.tableSectionTitle}>BOM Produced</div>
@@ -494,7 +491,7 @@ export default function ViewBomData() {
         </>
       )}
 
-      {/* BOM Consumed */}
+     
       {filteredData.bomConsumed.length > 0 && (
         <>
           <div style={styles.tableSectionTitle}>BOM Consumed</div>
@@ -529,7 +526,7 @@ export default function ViewBomData() {
         </>
       )}
 
-      {/* Item BOM Routing */}
+    
       {filteredData.itemBomRouting.length > 0 && (
         <>
           <div style={styles.tableSectionTitle}>Item BOM Routing</div>

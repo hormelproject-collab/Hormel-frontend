@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-const DELETE_ITEM_BOM_ROUTING_API = `${BASE_URL}/api/tables/delete-item-bom-routing/execute`;
+const DELETE_ITEM_BOM_ROUTING_API = `/api/tables/delete-item-bom-routing/execute`;
 
 const styles = {
   page: {

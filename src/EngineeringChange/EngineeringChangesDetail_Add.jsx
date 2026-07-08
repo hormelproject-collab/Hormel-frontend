@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+
 
 const toText = (value) => {
   if (value == null) return "";
@@ -116,7 +115,7 @@ export default function EngineeringChangeDetailAdd() {
       setApiError("");
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/tables/engineering-changes-detail-add?${queryString}`,
+          `/api/tables/engineering-changes-detail-add?${queryString}`,
           {
             method: "GET",
             headers: {

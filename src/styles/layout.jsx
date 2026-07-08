@@ -1,6 +1,4 @@
-/* =========================
-   Design Tokens
-========================= */
+
 
 export const tokens = {
   fontFamily: "Inter, Segoe UI, Arial, sans-serif",
@@ -34,9 +32,7 @@ export const tokens = {
   },
 };
 
-/* =========================
-   Layout Helpers
-========================= */
+
 
 export const layout = {
   page: {
@@ -57,10 +53,6 @@ export const layout = {
     marginTop: screen.isMobile ? 16 : 24,
   }),
 };
-
-/* =========================
-   Typography
-========================= */
 
 export const typography = {
   pageTitle: (screen) => ({
@@ -88,9 +80,7 @@ export const typography = {
   },
 };
 
-/* =========================
-   Cards
-========================= */
+
 
 export const cards = {
   container: {
@@ -109,9 +99,7 @@ export const cards = {
   }),
 };
 
-/* =========================
-   Buttons
-========================= */
+
 
 export const buttons = {
   base: {
@@ -139,10 +127,6 @@ export const buttons = {
   },
 };
 
-/* =========================
-   Form Controls
-========================= */
-
 export const forms = {
   input: (screen) => ({
     width: "100%",
@@ -162,9 +146,6 @@ export const forms = {
   },
 };
 
-/* =========================
-   Tables
-========================= */
 
 export const tables = {
   table: {

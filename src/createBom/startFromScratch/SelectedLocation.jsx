@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-
 import {
   fetchLocationsByItems,
   toggleLocation,
   clearLocations,
+  setLocationsSearch,
+  setLocationsPagination,
   selectAllLocations,
   selectSelectedLocationIds,
   selectHasInactiveLocationsSelected,
   selectLocationsLoading,
   selectLocationsError,
+  selectLocationsPagination,
+  selectLocationsSearch,
   selectSelectedProducedItems,
 } from "../../redux/bomSlice";
+
+import ProgressIndicator, { ShowingRecordsInfo } from "../../components/CommonProgressIndicator";
+const PAGE_SIZE = 50;
 
 const normalizeStatus = (value) => String(value ?? "").trim().toUpperCase();
 
@@ -25,20 +31,19 @@ const SelectedLocation = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const [search, setSearch] = useState("");
   const [showInactiveWarning, setShowInactiveWarning] = useState(false);
 
-  // ✅ retain integration with selected produced items from step 1
   const selectedProducedItems = useSelector(selectSelectedProducedItems);
-
-  // ✅ retain integration with redux locations state
   const locations = useSelector(selectAllLocations);
   const selectedIds = useSelector(selectSelectedLocationIds);
   const hasInactiveSelected = useSelector(selectHasInactiveLocationsSelected);
   const loading = useSelector(selectLocationsLoading);
   const error = useSelector(selectLocationsError);
+  const locationPagination = useSelector(selectLocationsPagination);
+  const search = useSelector(selectLocationsSearch);
 
-  // ✅ retain API integration: fetch locations based on produced items
+  const currentPage = locationPagination?.page || 1;
+
   useEffect(() => {
     const itemNumbers = selectedProducedItems
       .map((x) => x.item)
@@ -51,9 +56,8 @@ const SelectedLocation = () => {
     }
   }, [dispatch, selectedProducedItems]);
 
-  // ✅ retain search behavior
   const filteredLocations = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = String(search || "").trim().toLowerCase();
     if (!q) return locations;
 
     return locations.filter((x) => {
@@ -66,6 +70,38 @@ const SelectedLocation = () => {
       );
     });
   }, [locations, search]);
+
+  const totalRecords = filteredLocations.length;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startRecord = totalRecords === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endRecord = Math.min(safePage * PAGE_SIZE, totalRecords);
+
+  useEffect(() => {
+    dispatch(
+      setLocationsPagination({
+        page: safePage,
+        pageSize: PAGE_SIZE,
+        total: totalRecords,
+        totalPages,
+        hasPrev: safePage > 1,
+        hasNext: safePage < totalPages,
+      })
+    );
+  }, [dispatch, safePage, totalRecords, totalPages]);
+
+  const paginatedLocations = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filteredLocations.slice(start, start + PAGE_SIZE);
+  }, [filteredLocations, safePage]);
+
+  const goToPrevPage = () => {
+    dispatch(setLocationsPagination({ page: Math.max(1, safePage - 1) }));
+  };
+
+  const goToNextPage = () => {
+    dispatch(setLocationsPagination({ page: Math.min(totalPages, safePage + 1) }));
+  };
 
   const onToggle = (row) => {
     const active = isActiveLocation(row.status);
@@ -89,6 +125,7 @@ const SelectedLocation = () => {
         </div>
 
         <h1 style={styles.title}>Step 2: Location(s)</h1>
+
         <p style={styles.subTitle}>
           Select one or more locations for the produced items
         </p>
@@ -97,11 +134,10 @@ const SelectedLocation = () => {
           type="text"
           placeholder="Search Location"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => dispatch(setLocationsSearch(e.target.value))}
           style={styles.search}
         />
 
-        {loading && <div style={styles.info}>Loading locations...</div>}
         {error && <div style={styles.error}>Error: {String(error)}</div>}
 
         {!loading && !error && producedItemCount === 0 && (
@@ -110,7 +146,17 @@ const SelectedLocation = () => {
           </div>
         )}
 
-        <div style={styles.table}>
+        {!loading && !error && producedItemCount > 0 && (
+          <ShowingRecordsInfo
+            start={startRecord}
+            end={endRecord}
+            total={totalRecords}
+            itemLabel="item"
+            style={styles.paginationInfo}
+          />
+        )}
+
+        <div style={{ ...styles.table, position: "relative" }}>
           <div style={styles.headerRow}>
             <div style={styles.checkboxCell}>
               <input type="checkbox" disabled />
@@ -120,7 +166,13 @@ const SelectedLocation = () => {
             <div>Location Status</div>
           </div>
 
-          {filteredLocations.map((row) => {
+          {loading ? (
+            <div style={styles.loadingBodyRow}>
+              <ProgressIndicator label="Loading locations..." />
+            </div>
+          ) : null}
+
+          {!loading && paginatedLocations.map((row) => {
             const active = isActiveLocation(row.status);
             const checked = selectedIds.includes(row.id);
 
@@ -144,7 +196,6 @@ const SelectedLocation = () => {
 
                 <div style={styles.cellText}>{row.location || "-"}</div>
                 <div style={styles.cellText}>{row.name || "-"}</div>
-
                 <div
                   style={{
                     ...styles.statusText,
@@ -156,7 +207,43 @@ const SelectedLocation = () => {
               </div>
             );
           })}
+
+          {!loading && !error && producedItemCount > 0 && totalRecords === 0 && (
+            <div style={styles.noRecords}>No locations found.</div>
+          )}
         </div>
+
+        {!loading && !error && producedItemCount > 0 && totalRecords > 0 && (
+          <div style={styles.paginationContainer}>
+            <button
+              type="button"
+              disabled={safePage === 1 || loading}
+              onClick={goToPrevPage}
+              style={{
+                ...styles.pageButton,
+                ...((safePage === 1 || loading) ? styles.pageButtonDisabled : {}),
+              }}
+            >
+              ← Prev
+            </button>
+
+            <span style={styles.pageText}>
+              Page {safePage} of {totalPages}
+            </span>
+
+            <button
+              type="button"
+              disabled={safePage === totalPages || loading}
+              onClick={goToNextPage}
+              style={{
+                ...styles.pageButton,
+                ...((safePage === totalPages || loading) ? styles.pageButtonDisabled : {}),
+              }}
+            >
+              Next →
+            </button>
+          </div>
+        )}
 
         {(showInactiveWarning || hasInactiveSelected) && (
           <div style={styles.warningBox}>
@@ -251,6 +338,11 @@ const styles = {
     fontWeight: 600,
     whiteSpace: "pre-wrap",
   },
+  paginationInfo: {
+    marginBottom: "12px",
+    color: "#4b5563",
+    fontSize: "14px",
+  },
   table: {
     border: "1px solid #d5d9df",
     borderRadius: "4px",
@@ -295,6 +387,46 @@ const styles = {
     fontSize: "14px",
     fontWeight: 500,
   },
+  noRecords: {
+    padding: "18px 16px",
+    color: "#6b7280",
+    fontSize: "14px",
+    textAlign: "center",
+  },
+  loadingBodyRow: {
+    padding: "28px 16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottom: "1px solid #e5e7eb",
+    backgroundColor: "#ffffff",
+  },
+  paginationContainer: {
+    marginTop: "16px",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "16px",
+  },
+  pageButton: {
+    padding: "8px 14px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    backgroundColor: "#ffffff",
+    color: "#111827",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  pageButtonDisabled: {
+    backgroundColor: "#f3f4f6",
+    color: "#9ca3af",
+    cursor: "not-allowed",
+  },
+  pageText: {
+    fontSize: "14px",
+    fontWeight: 500,
+    color: "#111827",
+  },
   warningBox: {
     marginTop: "14px",
     padding: "12px 14px",
@@ -326,15 +458,14 @@ const styles = {
     fontWeight: 500,
     letterSpacing: "0.2px",
   },
- nextBtnEnabled: {
-  backgroundColor: "#2563eb",
-  color: "#ffffff",
-  cursor: "pointer",
-},
-
-nextBtnDisabled: {
-  backgroundColor: "#e5e7eb",
-  color: "#9ca3af",
-  cursor: "not-allowed",
-}
+  nextBtnEnabled: {
+    backgroundColor: "#2563eb",
+    color: "#ffffff",
+    cursor: "pointer",
+  },
+  nextBtnDisabled: {
+    backgroundColor: "#e5e7eb",
+    color: "#9ca3af",
+    cursor: "not-allowed",
+  },
 };
