@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
+import { clearCreateBomFlowState } from "../redux/bomSlice";
 import axios from "axios";
 import { layout } from "../styles/layout";
 
@@ -231,6 +233,7 @@ const buildDuplicatePriorityValidationEntries = (summaryGroups, priorityMap) => 
 export default function SummaryPage() {
   const routerLocation = useLocation();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
   const [notes, setNotes] = useState("");
   const [priorityMap, setPriorityMap] = useState({});
@@ -589,11 +592,39 @@ export default function SummaryPage() {
     return normalizeValidationEntries(validationResult);
   }, [validationResult]);
 
-  const topLevelError =
-    validationResult?.error ?? validationResult?.data?.error ?? "";
+  const responseStatus = String(validationResult?.status || "").toLowerCase();
+  const responseSuccessFlag = validationResult?.success === true;
+  const responseFailureFlag =
+    validationResult?.success === false ||
+    responseStatus === "failure" ||
+    responseStatus === "failed" ||
+    responseStatus === "error";
+
+  const validationFailed = validationEntries.length > 0;
+
+  const recordsNotPushed =
+    !!validationResult &&
+    !validationFailed &&
+    responseFailureFlag &&
+    (responseStatus === "failure" ||
+      responseStatus === "failed" ||
+      responseStatus === "error");
+
+  const topLevelError = recordsNotPushed
+    ? validationResult?.messageForUser ||
+      validationResult?.message ||
+      validationResult?.error ||
+      "Validation was successful but the records are not yet pushed to PostgreSQL table."
+    : !validationFailed
+      ? validationResult?.error ?? validationResult?.data?.error ?? ""
+      : "";
 
   const isSuccess =
-    !!validationResult && !topLevelError && validationEntries.length === 0;
+    !!validationResult &&
+    !validationFailed &&
+    !recordsNotPushed &&
+    !topLevelError &&
+    (responseSuccessFlag || responseStatus === "success");
 
   const successEcNumber = useMemo(() => {
     return getSuccessEcNumber(validationResult, previousState);
@@ -611,6 +642,25 @@ export default function SummaryPage() {
       ...prev,
       [routingId]: value,
     }));
+  };
+
+  const isSubmitResponseSuccessful = (result) => {
+    const status = String(result?.status || "").toLowerCase();
+    const explicitSuccess = result?.success === true || status === "success";
+    const explicitFailure =
+      result?.success === false ||
+      status === "failure" ||
+      status === "failed" ||
+      status === "error";
+    const responseValidationEntries = normalizeValidationEntries(result);
+    const responseTopLevelError =
+      result?.error ??
+      result?.messageForUser ??
+      (explicitFailure ? result?.message : "") ??
+      result?.data?.error ??
+      "";
+
+    return explicitSuccess && !explicitFailure && !responseTopLevelError && responseValidationEntries.length === 0;
   };
 
   const toggleExpanded = (groupKey) => {
@@ -651,7 +701,12 @@ export default function SummaryPage() {
         entryMode: "manual",
         records: actualPayload,
       });
-      setValidationResult(response.data);
+      const result = response.data;
+      setValidationResult(result);
+
+      if (isSubmitResponseSuccessful(result)) {
+        dispatch(clearCreateBomFlowState());
+      }
     } catch (err) {
       const serverData = err?.response?.data;
       setValidationResult(
@@ -940,14 +995,7 @@ export default function SummaryPage() {
           />
         </div>
 
-        {topLevelError ? (
-          <div style={styles.errorCard}>
-            <div style={styles.resultTitle}>Validation Error</div>
-            <div style={styles.errorText}>{topLevelError}</div>
-          </div>
-        ) : null}
-
-        {validationEntries.length > 0 ? (
+        {validationFailed ? (
           <div style={styles.errorCard}>
             <div style={styles.resultTitle}>Validation Errors</div>
             <div style={styles.validationTableWrap}>
@@ -976,15 +1024,22 @@ export default function SummaryPage() {
               </table>
             </div>
           </div>
-        ) : null}
-
-        {isSuccess ? (
+        ) : recordsNotPushed ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Success - Records Not Pushed</div>
+            <div style={styles.errorText}>{topLevelError}</div>
+          </div>
+        ) : isSuccess ? (
           <div style={styles.successCard}>
             <div style={styles.resultTitle}>Validation Success</div>
             <div style={styles.successText}>
-              {`Validation was successful and the records are saved successfully${successEcNumber ? ` with ${successEcNumber}.` : "."
-                }`}
+              {`Validation was successful and the records are saved successfully${successEcNumber ? ` with ${successEcNumber}.` : "."}`}
             </div>
+          </div>
+        ) : topLevelError ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Error</div>
+            <div style={styles.errorText}>{topLevelError}</div>
           </div>
         ) : null}
 

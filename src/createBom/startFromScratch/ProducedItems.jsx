@@ -6,7 +6,9 @@ import {
   toggleProducedItem,
   selectAllItemMaster,
   selectSelectedProducedItemIds,
+  selectSelectedProducedItems,
   selectHasInactiveSelected,
+  clearSelectedProducedItems,
   selectItemsLoading,
   selectItemsError,
   selectItemsPagination,
@@ -54,6 +56,7 @@ const ProducedItems = () => {
 
   const items = useSelector(selectAllItemMaster);
   const selectedIds = useSelector(selectSelectedProducedItemIds);
+  const selectedItems = useSelector(selectSelectedProducedItems);
   const hasInactiveSelected = useSelector(selectHasInactiveSelected);
   const loading = useSelector(selectItemsLoading);
   const error = useSelector(selectItemsError);
@@ -261,6 +264,57 @@ const ProducedItems = () => {
           </div>
         )}
 
+        {selectedItems.length > 0 && (
+          <div style={styles.selectedCard}>
+            <div style={styles.selectedToolbar}>
+              <div style={styles.selectedTitle}>
+                Selected Produced Item(s) ({selectedItems.length})
+              </div>
+              <button
+                type="button"
+                onClick={() => dispatch(clearSelectedProducedItems())}
+                style={styles.deselectAllBtn}
+              >
+                DE-SELECT ALL
+              </button>
+            </div>
+            <div style={styles.selectedScroller}>
+              <table style={styles.selectedHtmlTable}>
+                <thead>
+                  <tr>
+                    <th style={{ ...styles.selectedTh, width: "44px" }} />
+                    <th style={styles.selectedTh}>Item</th>
+                    <th style={styles.selectedTh}>Item Description</th>
+                    <th style={styles.selectedTh}>Item Status</th>
+                    <th style={styles.selectedTh}>Item Release Flag</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedItems.map((row) => {
+                    const isInactive = getNormalizedStatus(row.status) === "INACTIVE";
+                    return (
+                      <tr key={`selected-${row.id}`}>
+                        <td style={{ ...styles.selectedTd, ...styles.selectedCheckboxCell }}>
+                          <input
+                            type="checkbox"
+                            checked
+                            onChange={() => onToggle(row)}
+                            style={{ cursor: "pointer" }}
+                            aria-label={`Deselect ${row.item || row.id}`}
+                          />
+                        </td>
+                        <td style={styles.selectedTd}>{row.item || "-"}</td>
+                        <td style={styles.selectedTd}>{row.desc || "-"}</td>
+                        <td style={styles.selectedTd}>{isInactive ? "Inactive" : "Active"}</td>
+                        <td style={styles.selectedTd}>{row.itemReleaseFlag || "-"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         <div style={styles.bottomBar}>
           <div style={styles.selectedCount}>{selectedIds.length} item(s) selected</div>
 
@@ -463,6 +517,70 @@ const styles = {
     backgroundColor: "#fdecef",
     color: "#b42318",
     fontSize: "14px",
+  },
+  selectedCard: {
+    marginTop: "18px",
+    border: "1px solid #d1d5db",
+    borderRadius: "4px",
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+  },
+  selectedToolbar: {
+    minHeight: "44px",
+    padding: "0 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    backgroundColor: "#f3f4f6",
+    borderBottom: "1px solid #d1d5db",
+  },
+  selectedTitle: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#111827",
+  },
+  deselectAllBtn: {
+    height: "30px",
+    padding: "0 12px",
+    border: "1px solid #c7cbd1",
+    borderRadius: "4px",
+    backgroundColor: "#ffffff",
+    color: "#2563eb",
+    fontSize: "12px",
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  selectedScroller: {
+    overflowX: "auto",
+  },
+  selectedHtmlTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    tableLayout: "fixed",
+  },
+  selectedTh: {
+    textAlign: "left",
+    backgroundColor: "#f3f4f6",
+    color: "#111827",
+    fontSize: "14px",
+    fontWeight: 500,
+    padding: "13px 12px",
+    borderBottom: "1px solid #d1d5db",
+    whiteSpace: "nowrap",
+  },
+  selectedTd: {
+    fontSize: "14px",
+    color: "#111827",
+    padding: "14px 12px",
+    borderBottom: "1px solid #e5e7eb",
+    verticalAlign: "middle",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  selectedCheckboxCell: {
+    textAlign: "center",
   },
   bottomBar: {
     marginTop: "18px",

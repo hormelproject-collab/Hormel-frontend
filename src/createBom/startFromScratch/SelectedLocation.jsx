@@ -4,12 +4,13 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   fetchLocationsByItems,
   toggleLocation,
-  clearLocations,
   setLocationsSearch,
   setLocationsPagination,
   selectAllLocations,
   selectSelectedLocationIds,
+  selectSelectedLocations,
   selectHasInactiveLocationsSelected,
+  clearSelectedLocations,
   selectLocationsLoading,
   selectLocationsError,
   selectLocationsPagination,
@@ -36,6 +37,7 @@ const SelectedLocation = () => {
   const selectedProducedItems = useSelector(selectSelectedProducedItems);
   const locations = useSelector(selectAllLocations);
   const selectedIds = useSelector(selectSelectedLocationIds);
+  const selectedLocations = useSelector(selectSelectedLocations);
   const hasInactiveSelected = useSelector(selectHasInactiveLocationsSelected);
   const loading = useSelector(selectLocationsLoading);
   const error = useSelector(selectLocationsError);
@@ -49,8 +51,8 @@ const SelectedLocation = () => {
       .map((x) => x.item)
       .filter(Boolean);
 
-    dispatch(clearLocations());
-
+    // Keep selected locations in Redux when user comes back from the next page.
+    // The create-BOM flow is cleared only after successful submit from Summary.
     if (itemNumbers.length > 0) {
       dispatch(fetchLocationsByItems(itemNumbers));
     }
@@ -251,6 +253,63 @@ const SelectedLocation = () => {
           </div>
         )}
 
+        {selectedLocations.length > 0 && (
+          <div style={styles.selectedCard}>
+            <div style={styles.selectedToolbar}>
+              <div style={styles.selectedTitle}>
+                Selected Location(s) ({selectedLocations.length})
+              </div>
+              <button
+                type="button"
+                onClick={() => dispatch(clearSelectedLocations())}
+                style={styles.deselectAllBtn}
+              >
+                DE-SELECT ALL
+              </button>
+            </div>
+            <div style={styles.selectedScroller}>
+              <table style={styles.selectedHtmlTable}>
+                <thead>
+                  <tr>
+                    <th style={{ ...styles.selectedTh, width: "48px" }} />
+                    <th style={styles.selectedTh}>Location ID</th>
+                    <th style={styles.selectedTh}>Name</th>
+                    <th style={styles.selectedTh}>Location Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedLocations.map((row) => {
+                    const active = isActiveLocation(row.status);
+                    return (
+                      <tr key={`selected-${row.id}`}>
+                        <td style={{ ...styles.selectedTd, ...styles.selectedCheckboxCell }}>
+                          <input
+                            type="checkbox"
+                            checked
+                            onChange={() => onToggle(row)}
+                            style={{ cursor: "pointer" }}
+                            aria-label={`Deselect location ${row.location || row.id}`}
+                          />
+                        </td>
+                        <td style={styles.selectedTd}>{row.location || "-"}</td>
+                        <td style={styles.selectedTd}>{row.name || "-"}</td>
+                        <td
+                          style={{
+                            ...styles.selectedTd,
+                            color: active ? "#16a34a" : "#dc2626",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {active ? "Active" : "Inactive"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         <div style={styles.bottomBar}>
           <div style={styles.selectedCount}>
             {selectedIds.length} location(s) selected
@@ -435,6 +494,71 @@ const styles = {
     backgroundColor: "#fdecef",
     color: "#b42318",
     fontSize: "14px",
+  },
+  selectedCard: {
+    marginTop: "18px",
+    border: "1px solid #d5d9df",
+    borderRadius: "4px",
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+  },
+  selectedToolbar: {
+    minHeight: "42px",
+    padding: "0 16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    backgroundColor: "#f1f3f5",
+    borderBottom: "1px solid #d9dde3",
+  },
+  selectedTitle: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#111827",
+  },
+  deselectAllBtn: {
+    height: "30px",
+    padding: "0 12px",
+    border: "1px solid #c7cbd1",
+    borderRadius: "4px",
+    backgroundColor: "#ffffff",
+    color: "#2563eb",
+    fontSize: "12px",
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  selectedScroller: {
+    overflowX: "auto",
+  },
+  selectedHtmlTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    tableLayout: "fixed",
+  },
+  selectedTh: {
+    textAlign: "left",
+    backgroundColor: "#f1f3f5",
+    color: "#111827",
+    fontSize: "14px",
+    fontWeight: 500,
+    padding: "13px 12px",
+    borderBottom: "1px solid #d9dde3",
+    whiteSpace: "nowrap",
+  },
+  selectedTd: {
+    fontSize: "14px",
+    color: "#111827",
+    padding: "13px 12px",
+    borderBottom: "1px solid #e5e7eb",
+    verticalAlign: "middle",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  selectedCheckboxCell: {
+    textAlign: "center",
   },
   bottomBar: {
     marginTop: "12px",

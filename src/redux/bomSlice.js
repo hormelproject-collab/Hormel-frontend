@@ -758,6 +758,25 @@ const bomSlice = createSlice({
     clearResourceComponentConfigs: (state) => {
       state.resourceComponentConfigs = {};
     },
+    clearCreateBomFlowState: (state) => {
+      state.selectedProducedItemIds = [];
+      state.selectedProducedItemById = {};
+      state.selectedLocationIds = [];
+      state.resourceComponentConfigs = {};
+      state.resourceMeta = {
+        loading: false,
+        error: null,
+        bomVersions: [],
+        itemOptions: [],
+        resourceOptions: [],
+        resourceOptionsByKey: {},
+      };
+      locationsAdapter.removeAll(state.locations);
+      state.locations.loading = false;
+      state.locations.error = null;
+      state.locations.search = "";
+      state.locations.pagination = defaultPagination;
+    },
     toggleProducedItem: (state, action) => {
       const payload = action.payload;
       const row = payload && typeof payload === "object" ? payload : null;
@@ -787,11 +806,21 @@ const bomSlice = createSlice({
       state.locations.search = "";
       state.locations.pagination = defaultPagination;
     },
+    clearSelectedProducedItems: (state) => {
+      state.selectedProducedItemIds = [];
+      state.selectedProducedItemById = {};
+      state.resourceComponentConfigs = {};
+      state.selectedLocationIds = [];
+    },
     toggleLocation: (state, action) => {
       const id = action.payload;
       const idx = state.selectedLocationIds.indexOf(id);
       if (idx >= 0) state.selectedLocationIds.splice(idx, 1);
       else state.selectedLocationIds.push(id);
+    },
+    clearSelectedLocations: (state) => {
+      state.selectedLocationIds = [];
+      state.resourceComponentConfigs = {};
     },
     clearLocations: (state) => {
       state.selectedLocationIds = [];
@@ -938,7 +967,9 @@ export const {
   setAction,
   toggleProducedItem,
   clearProducedItems,
+  clearSelectedProducedItems,
   toggleLocation,
+  clearSelectedLocations,
   clearLocations,
   setLocationsSearch,
   setLocationsPagination,
@@ -961,6 +992,7 @@ export const {
   ensureResourceComponentConfig,
   replicateResourceComponentInfoToLocations,
   clearResourceComponentConfigs,
+  clearCreateBomFlowState,
 } = bomSlice.actions;
 
 export default bomSlice.reducer;
