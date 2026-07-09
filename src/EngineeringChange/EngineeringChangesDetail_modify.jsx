@@ -311,6 +311,10 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
     const itemOriginal = toText(currentRow.originalValue).trim();
     const itemUpdated = toText(currentRow.updatedValue).trim();
     const valueRow = findNextValueRow(normalizedRows, index + 1, valueFieldNames) || {};
+    const description =
+      toText(currentRow.description).trim() ||
+      toText(valueRow.description).trim() ||
+      "";
     const originalValue = toText(valueRow.originalValue).trim();
     const updatedValueRaw = toText(valueRow.updatedValue).trim();
 
@@ -320,7 +324,7 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
     if (existsInOg && existsInMain) {
       existingRows.push({
         item: itemOriginal || itemUpdated,
-        description: "",
+        description,
         originalValue: originalValue || "",
         updatedValue: updatedValueRaw || "",
         changed: normalizeSpace(originalValue) !== normalizeSpace(updatedValueRaw),
@@ -331,7 +335,7 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
     if (!existsInOg && existsInMain) {
       addedRows.push({
         item: itemUpdated,
-        description: "",
+        description,
         value: updatedValueRaw || originalValue || "",
       });
       continue;
@@ -340,7 +344,7 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
     if (existsInOg && !existsInMain) {
       existingRows.push({
         item: itemOriginal,
-        description: "",
+        description,
         originalValue: originalValue || "",
         updatedValue: "Item removed",
         changed: true,

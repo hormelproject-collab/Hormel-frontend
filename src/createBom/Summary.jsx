@@ -8,10 +8,7 @@ import { layout } from "../styles/layout";
 const VALIDATE_URL = "/api/bom-explosion";
 
 const buildConfigKey = (item, location) => `${item}__${location}`;
-
-const buildBomId = (bomVersion, item, location) =>
-  `${bomVersion}_${item}_${location}`;
-
+const buildBomId = (bomVersion, item, location) => `${bomVersion}_${item}_${location}`;
 const buildRoutingId = (item, location, resource) =>
   `ROUTING_${item}_${location}_${resource}`;
 
@@ -27,6 +24,13 @@ const getProducedDescription = (producedItem) =>
   producedItem?.item_description ??
   "";
 
+const shallowEqualObject = (obj1, obj2) => {
+  const keys1 = Object.keys(obj1 || {});
+  const keys2 = Object.keys(obj2 || {});
+  if (keys1.length !== keys2.length) return false;
+  return keys1.every((key) => obj1[key] === obj2[key]);
+};
+
 const normalizeValidationEntries = (validationResult) => {
   if (!validationResult) return [];
 
@@ -37,16 +41,16 @@ const normalizeValidationEntries = (validationResult) => {
 
     const code = String(
       entry.validationSequence ??
-      entry.validation_sequence ??
-      entry.seq ??
-      entry.sequence ??
-      entry.code ??
-      parent.validationSequence ??
-      parent.validation_sequence ??
-      parent.seq ??
-      parent.sequence ??
-      parent.code ??
-      index + 1
+        entry.validation_sequence ??
+        entry.seq ??
+        entry.sequence ??
+        entry.code ??
+        parent.validationSequence ??
+        parent.validation_sequence ??
+        parent.seq ??
+        parent.sequence ??
+        parent.code ??
+        index + 1
     );
 
     const desc =
@@ -86,12 +90,7 @@ const normalizeValidationEntries = (validationResult) => {
       parent.remediation ??
       "";
 
-    output.push({
-      code,
-      desc,
-      error,
-      rm,
-    });
+    output.push({ code, desc, error, rm });
   };
 
   const manualErrorList = Array.isArray(validationResult?.errorList)
@@ -125,13 +124,7 @@ const normalizeValidationEntries = (validationResult) => {
     typeof fallbackArray === "object"
   ) {
     Object.entries(fallbackArray).forEach(([code, entry], index) => {
-      pushEntry(
-        {
-          code,
-          ...entry,
-        },
-        index
-      );
+      pushEntry({ code, ...entry }, index);
     });
   }
 
@@ -192,7 +185,6 @@ const buildDuplicatePriorityValidationEntries = (summaryGroups, priorityMap) => 
       .filter((row) => row.routingId && row.routingId !== "-")
       .map((row) => {
         const rawPriority = String(priorityMap[row.routingId] ?? "").trim();
-
         return {
           routingId: row.routingId,
           resource: row.resource ?? "",
@@ -201,17 +193,13 @@ const buildDuplicatePriorityValidationEntries = (summaryGroups, priorityMap) => 
         };
       })
       .filter(
-        (row) =>
-          row.priorityText !== "" &&
-          Number.isFinite(row.priority)
+        (row) => row.priorityText !== "" && Number.isFinite(row.priority)
       );
 
     const byPriority = new Map();
 
     normalized.forEach((row) => {
-      if (!byPriority.has(row.priority)) {
-        byPriority.set(row.priority, []);
-      }
+      if (!byPriority.has(row.priority)) byPriority.set(row.priority, []);
       byPriority.get(row.priority).push(row);
     });
 
@@ -237,6 +225,7 @@ export default function SummaryPage() {
 
   const [notes, setNotes] = useState("");
   const [priorityMap, setPriorityMap] = useState({});
+  const [priorityErrors, setPriorityErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [expandedMap, setExpandedMap] = useState({});
@@ -267,8 +256,7 @@ export default function SummaryPage() {
         : [];
 
       const routingRows = generatedRoutingRows.map((row, index) => ({
-        key: `${modifiedBomData.newBomId ?? modifiedBomData.originalBomId ?? "bom"
-          }__${row.routingId ?? index}`,
+        key: `${modifiedBomData.newBomId ?? modifiedBomData.originalBomId ?? "bom"}__${row.routingId ?? index}`,
         resource: row.resource ?? "",
         resourceRelevancy: row.resourceRelevancy ?? "",
         routingId:
@@ -286,8 +274,7 @@ export default function SummaryPage() {
           key:
             modifiedBomData.newBomId ??
             modifiedBomData.originalBomId ??
-            `${modifiedBomData.producedItem ?? ""}__${modifiedBomData.location ?? ""
-            }`,
+            `${modifiedBomData.producedItem ?? ""}__${modifiedBomData.location ?? ""}`,
           producedItem:
             modifiedBomData.producedItem ?? selectedBom?.produced_item ?? "-",
           description:
@@ -376,18 +363,14 @@ export default function SummaryPage() {
         },
         routingRows: Array.isArray(entry.generatedRoutingRows)
           ? entry.generatedRoutingRows.map((row, index) => ({
-            key: `${entry.key}__${row.routingId ?? index}`,
-            resource: row.resource ?? "",
-            resourceRelevancy: row.resourceRelevancy ?? "",
-            routingId:
-              row.routingId ??
-              buildRoutingId(
-                entry.producedItem ?? "",
-                entry.location ?? "",
-                row.resource ?? ""
-              ),
-            defaultPriority: index + 1,
-          }))
+              key: `${entry.key}__${row.routingId ?? index}`,
+              resource: row.resource ?? "",
+              resourceRelevancy: row.resourceRelevancy ?? "",
+              routingId:
+                row.routingId ??
+                buildRoutingId(entry.producedItem ?? "", entry.location ?? "", row.resource ?? ""),
+              defaultPriority: index + 1,
+            }))
           : [],
         isModifyFlow: false,
       }));
@@ -462,7 +445,6 @@ export default function SummaryPage() {
       summaryGroups.forEach((group) => {
         group.routingRows.forEach((row) => {
           if (!row.routingId || row.routingId === "-") return;
-
           nextPriorityMap[row.routingId] =
             prev[row.routingId] !== undefined
               ? prev[row.routingId]
@@ -470,10 +452,7 @@ export default function SummaryPage() {
         });
       });
 
-      if (shallowEqualObject(prev, nextPriorityMap)) {
-        return prev;
-      }
-
+      if (shallowEqualObject(prev, nextPriorityMap)) return prev;
       return nextPriorityMap;
     });
   }, [summaryGroups]);
@@ -483,21 +462,14 @@ export default function SummaryPage() {
       const next = { ...prev };
 
       summaryGroups.forEach((group) => {
-        if (typeof next[group.key] === "undefined") {
-          next[group.key] = true;
-        }
+        if (typeof next[group.key] === "undefined") next[group.key] = true;
       });
 
       Object.keys(next).forEach((key) => {
-        if (!summaryGroups.some((group) => group.key === key)) {
-          delete next[key];
-        }
+        if (!summaryGroups.some((group) => group.key === key)) delete next[key];
       });
 
-      if (shallowEqualObject(prev, next)) {
-        return prev;
-      }
-
+      if (shallowEqualObject(prev, next)) return prev;
       return next;
     });
   }, [summaryGroups]);
@@ -547,34 +519,26 @@ export default function SummaryPage() {
               group.locationData?.location_description ??
               group.location,
             locationStatus:
-              group.locationData?.status ??
-              group.locationData?.location_status ??
-              "",
+              group.locationData?.status ?? group.locationData?.location_status ?? "",
             resourceInfo: group.routingRows.map((row) => ({
               resource: row.resource,
               resourceRelevancy: row.resourceRelevancy ?? "",
               bomVersion: group.bomVersion,
               routingId: row.routingId,
-              priority: Number(
-                priorityMap[row.routingId] ?? row.defaultPriority ?? 1
-              ),
-              // Original produced item should remain blank in item_bom_routing.
-              // Co-product routing rows will be inserted separately in backend with association = 1.
+              priority: Number(priorityMap[row.routingId] ?? row.defaultPriority ?? 1),
               coProductAssociation: null,
             })),
             componentItems: config.noComponentItems
               ? []
               : normalizeNonEmptyComponentItems(components).map((row) => ({
-                componentItem: row.componentItem,
-                description: row.description ?? "",
-                standardUsage: toNumberOrNull(row.standardUsage),
-              })),
+                  componentItem: row.componentItem,
+                  description: row.description ?? "",
+                  standardUsage: toNumberOrNull(row.standardUsage),
+                })),
             coProducts: normalizeNonEmptyCoProducts(coproducts).map((row) => ({
               coProductItem: row.coProductItem,
               description: row.description ?? "",
-              qtyProducedPer: toNumberOrNull(
-                row.qtyProduced ?? row.qtyProducedPer
-              ),
+              qtyProducedPer: toNumberOrNull(row.qtyProduced ?? row.qtyProducedPer),
             })),
             flags: {
               isCoProduct: !!config.producedCoProduct,
@@ -629,19 +593,50 @@ export default function SummaryPage() {
   const successEcNumber = useMemo(() => {
     return getSuccessEcNumber(validationResult, previousState);
   }, [validationResult, previousState]);
-  const shallowEqualObject = (obj1, obj2) => {
-    const keys1 = Object.keys(obj1 || {});
-    const keys2 = Object.keys(obj2 || {});
 
-    if (keys1.length !== keys2.length) return false;
-
-    return keys1.every((key) => obj1[key] === obj2[key]);
-  };
   const handlePriorityChange = (routingId, value) => {
     setPriorityMap((prev) => ({
       ...prev,
       [routingId]: value,
     }));
+
+    setPriorityErrors((prev) => {
+      const next = { ...prev };
+      const trimmedValue = String(value ?? "").trim();
+      const numericValue = Number(trimmedValue);
+
+      if (
+        trimmedValue !== "" &&
+        Number.isFinite(numericValue) &&
+        numericValue > 0
+      ) {
+        delete next[routingId];
+      }
+
+      return next;
+    });
+  };
+
+  const validateRoutingPriorities = () => {
+    const errors = {};
+
+    summaryGroups.forEach((group) => {
+      const routingRows = Array.isArray(group.routingRows) ? group.routingRows : [];
+
+      routingRows.forEach((row) => {
+        if (!row.routingId || row.routingId === "-") return;
+
+        const value = String(priorityMap[row.routingId] ?? "").trim();
+        const numericValue = Number(value);
+
+        if (value === "" || !Number.isFinite(numericValue) || numericValue <= 0) {
+          errors[row.routingId] = "Priority cannot be 0";
+        }
+      });
+    });
+
+    setPriorityErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const isSubmitResponseSuccessful = (result) => {
@@ -660,7 +655,12 @@ export default function SummaryPage() {
       result?.data?.error ??
       "";
 
-    return explicitSuccess && !explicitFailure && !responseTopLevelError && responseValidationEntries.length === 0;
+    return (
+      explicitSuccess &&
+      !explicitFailure &&
+      !responseTopLevelError &&
+      responseValidationEntries.length === 0
+    );
   };
 
   const toggleExpanded = (groupKey) => {
@@ -669,6 +669,7 @@ export default function SummaryPage() {
       [groupKey]: !prev[groupKey],
     }));
   };
+
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
@@ -678,6 +679,13 @@ export default function SummaryPage() {
       setValidationResult({
         error: "No summary rows available to validate.",
       });
+      return;
+    }
+
+    const priorityValidationPassed = validateRoutingPriorities();
+
+    if (!priorityValidationPassed) {
+      setValidationResult(null);
       return;
     }
 
@@ -749,27 +757,22 @@ export default function SummaryPage() {
               </div>
 
               {summaryGroups.map((group) => {
-                const componentRows = normalizeNonEmptyComponentItems(
-                  group.config?.components
-                );
-                const coProductRows = normalizeNonEmptyCoProducts(
-                  group.config?.coproducts
-                );
-                const aggregateStandardUsage =
-                  calculateAggregateStandardUsage(componentRows);
+                const componentRows = normalizeNonEmptyComponentItems(group.config?.components);
+                const coProductRows = normalizeNonEmptyCoProducts(group.config?.coproducts);
+                const aggregateStandardUsage = calculateAggregateStandardUsage(componentRows);
                 const isExpanded = !!expandedMap[group.key];
                 const routingRows =
                   group.routingRows.length > 0
                     ? group.routingRows
                     : [
-                      {
-                        key: `${group.key}__NOROUTING`,
-                        routingId: "-",
-                        defaultPriority: 1,
-                        resource: "",
-                        resourceRelevancy: "",
-                      },
-                    ];
+                        {
+                          key: `${group.key}__NOROUTING`,
+                          routingId: "-",
+                          defaultPriority: 1,
+                          resource: "",
+                          resourceRelevancy: "",
+                        },
+                      ];
 
                 return (
                   <div key={group.key} style={styles.summaryCard}>
@@ -778,16 +781,12 @@ export default function SummaryPage() {
                         type="button"
                         onClick={() => toggleExpanded(group.key)}
                         style={styles.chevronBtn}
-                        aria-label={
-                          isExpanded ? "Collapse details" : "Expand details"
-                        }
+                        aria-label={isExpanded ? "Collapse details" : "Expand details"}
                       >
                         <span
                           style={{
                             ...styles.chevron,
-                            transform: isExpanded
-                              ? "rotate(180deg)"
-                              : "rotate(0deg)",
+                            transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
                           }}
                         >
                           ▾
@@ -795,15 +794,11 @@ export default function SummaryPage() {
                       </button>
 
                       <div style={styles.headerCellProduced}>
-                        <div style={styles.headerValue}>
-                          {group.producedItem || "-"}
-                        </div>
+                        <div style={styles.headerValue}>{group.producedItem || "-"}</div>
                       </div>
 
                       <div style={styles.headerCellDescription}>
-                        <div style={styles.headerValue}>
-                          {group.description || "-"}
-                        </div>
+                        <div style={styles.headerValue}>{group.description || "-"}</div>
                       </div>
 
                       <div style={styles.headerCellLocation}>
@@ -818,10 +813,7 @@ export default function SummaryPage() {
                         <div style={styles.routingListWrap}>
                           {routingRows.map((row) => (
                             <div key={row.key} style={styles.routingLine}>
-                              <div style={styles.headerValue}>
-                                {row.routingId || "-"}
-                              </div>
-
+                              <div style={styles.headerValue}>{row.routingId || "-"}</div>
                             </div>
                           ))}
                         </div>
@@ -836,16 +828,26 @@ export default function SummaryPage() {
                               </div>
                             ) : (
                               <div key={row.key} style={styles.priorityLine}>
-
-                                <input
-                                  type="text"
-                                  value={priorityMap[row.routingId] ?? ""}
-                                  onChange={(e) =>
-                                    handlePriorityChange(row.routingId, e.target.value)
-                                  }
-                                  style={styles.priorityInput}
-                                />
-
+                                <div style={styles.priorityInputWrap}>
+                                  <input
+                                    type="text"
+                                    value={priorityMap[row.routingId] ?? ""}
+                                    onChange={(e) =>
+                                      handlePriorityChange(row.routingId, e.target.value)
+                                    }
+                                    style={{
+                                      ...styles.priorityInput,
+                                      ...(priorityErrors[row.routingId]
+                                        ? styles.priorityInputError
+                                        : {}),
+                                    }}
+                                  />
+                                  {priorityErrors[row.routingId] ? (
+                                    <div style={styles.priorityErrorText}>
+                                      {priorityErrors[row.routingId]}
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
                             )
                           )}
@@ -882,16 +884,12 @@ export default function SummaryPage() {
                                       }
                                       style={styles.innerBodyRow}
                                     >
-                                      <td style={styles.innerTd}>
-                                        {componentRow.componentItem || "-"}
-                                      </td>
-                                      <td style={styles.innerTd}>
-                                        {componentRow.description || "-"}
-                                      </td>
+                                      <td style={styles.innerTd}>{componentRow.componentItem || "-"}</td>
+                                      <td style={styles.innerTd}>{componentRow.description || "-"}</td>
                                       <td style={styles.innerTd}>
                                         {componentRow.standardUsage === "" ||
-                                          componentRow.standardUsage === null ||
-                                          componentRow.standardUsage === undefined
+                                        componentRow.standardUsage === null ||
+                                        componentRow.standardUsage === undefined
                                           ? "-"
                                           : componentRow.standardUsage}
                                       </td>
@@ -900,20 +898,12 @@ export default function SummaryPage() {
                                 )}
                                 <tr style={styles.aggregateRow}>
                                   <td
-                                    style={{
-                                      ...styles.innerTd,
-                                      ...styles.aggregateLabelCell,
-                                    }}
+                                    style={{ ...styles.innerTd, ...styles.aggregateLabelCell }}
                                     colSpan={2}
                                   >
                                     Aggregate Standard Usage
                                   </td>
-                                  <td
-                                    style={{
-                                      ...styles.innerTd,
-                                      ...styles.aggregateValueCell,
-                                    }}
-                                  >
+                                  <td style={{ ...styles.innerTd, ...styles.aggregateValueCell }}>
                                     {aggregateStandardUsage}
                                   </td>
                                 </tr>
@@ -930,9 +920,7 @@ export default function SummaryPage() {
                                 <tr style={styles.coProductHeaderRow}>
                                   <th style={styles.innerTh}>Co-Product Item</th>
                                   <th style={styles.innerTh}>Item Description</th>
-                                  <th style={styles.innerTh}>
-                                    Co-Product Quantity Produced Per
-                                  </th>
+                                  <th style={styles.innerTh}>Co-Product Quantity Produced Per</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -951,20 +939,15 @@ export default function SummaryPage() {
                                       }
                                       style={styles.innerBodyRow}
                                     >
-                                      <td style={styles.innerTd}>
-                                        {coProductRow.coProductItem || "-"}
-                                      </td>
-                                      <td style={styles.innerTd}>
-                                        {coProductRow.description || "-"}
-                                      </td>
+                                      <td style={styles.innerTd}>{coProductRow.coProductItem || "-"}</td>
+                                      <td style={styles.innerTd}>{coProductRow.description || "-"}</td>
                                       <td style={styles.innerTd}>
                                         {coProductRow.qtyProduced === "" ||
-                                          coProductRow.qtyProduced === null ||
-                                          coProductRow.qtyProduced === undefined
+                                        coProductRow.qtyProduced === null ||
+                                        coProductRow.qtyProduced === undefined
                                           ? coProductRow.qtyProducedPer === "" ||
                                             coProductRow.qtyProducedPer === null ||
-                                            coProductRow.qtyProducedPer ===
-                                            undefined
+                                            coProductRow.qtyProducedPer === undefined
                                             ? "-"
                                             : coProductRow.qtyProducedPer
                                           : coProductRow.qtyProduced}
@@ -1010,10 +993,7 @@ export default function SummaryPage() {
                 </thead>
                 <tbody>
                   {validationEntries.map((entry, index) => (
-                    <tr
-                      key={`${entry.code}-${index}`}
-                      style={styles.validationBodyRow}
-                    >
+                    <tr key={`${entry.code}-${index}`} style={styles.validationBodyRow}>
                       <td style={styles.validationTd}>{entry.code}</td>
                       <td style={styles.validationTd}>{entry.desc ?? "-"}</td>
                       <td style={styles.validationTd}>{entry.error ?? "-"}</td>
@@ -1044,11 +1024,7 @@ export default function SummaryPage() {
         ) : null}
 
         <div style={styles.bottomBar}>
-          <button
-            type="button"
-            onClick={handleReturnToMainMenu}
-            style={styles.mainMenuButton}
-          >
+          <button type="button" onClick={handleReturnToMainMenu} style={styles.mainMenuButton}>
             <span style={{ fontSize: "13px" }}>⌂</span>
             <span>RETURN TO MAIN MENU</span>
           </button>
@@ -1058,9 +1034,7 @@ export default function SummaryPage() {
             disabled={submitting || summaryGroups.length === 0}
             style={{
               ...styles.submitBtn,
-              ...(submitting || summaryGroups.length === 0
-                ? styles.submitBtnDisabled
-                : {}),
+              ...(submitting || summaryGroups.length === 0 ? styles.submitBtnDisabled : {}),
             }}
           >
             {submitting ? "Submitting..." : "✓ SUBMIT & CREATE BOM(S)"}
@@ -1215,13 +1189,6 @@ const styles = {
   routingLine: {
     padding: "2px 0",
   },
-  routingMetaText: {
-    fontSize: 12,
-    color: "#6b7280",
-    marginTop: 2,
-    lineHeight: 1.4,
-    wordBreak: "break-word",
-  },
   priorityListWrap: {
     display: "flex",
     flexDirection: "column",
@@ -1230,7 +1197,33 @@ const styles = {
   priorityLine: {
     minHeight: 36,
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
+  },
+  priorityInputWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  priorityInput: {
+    width: 132,
+    height: 32,
+    border: "1px solid #cfd4dc",
+    borderRadius: 3,
+    padding: "0 10px",
+    fontSize: 14,
+    outline: "none",
+    background: "#ffffff",
+    boxSizing: "border-box",
+  },
+  priorityInputError: {
+    border: "1px solid #dc2626",
+    background: "#fff5f5",
+  },
+  priorityErrorText: {
+    fontSize: 11,
+    color: "#dc2626",
+    lineHeight: 1.3,
+    marginTop: 2,
   },
   expandArea: {
     padding: "0 16px 16px 52px",
@@ -1294,17 +1287,6 @@ const styles = {
   },
   aggregateValueCell: {
     fontWeight: 700,
-  },
-  priorityInput: {
-    width: 132,
-    height: 32,
-    border: "1px solid #cfd4dc",
-    borderRadius: 3,
-    padding: "0 10px",
-    fontSize: 14,
-    outline: "none",
-    background: "#ffffff",
-    boxSizing: "border-box",
   },
   mutedText: {
     color: "#6b7280",
@@ -1384,7 +1366,8 @@ const styles = {
     verticalAlign: "top",
     whiteSpace: "pre-wrap",
     lineHeight: 1.5,
-  }, mainMenuButton: {
+  },
+  mainMenuButton: {
     height: "46px",
     border: "1px solid #6da0e1",
     borderRadius: "4px",
@@ -1393,19 +1376,6 @@ const styles = {
     fontSize: "13px",
     fontWeight: 600,
     padding: "0 16px",
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-  }, secondaryBtn: {
-    border: "1px solid #6da0e1",
-    borderRadius: "3px",
-    height: "28px",
-    padding: "0 12px",
-    fontSize: "12px",
-    fontWeight: 500,
-    color: "#1e63b5",
-    background: "#fff",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",

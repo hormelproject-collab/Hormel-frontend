@@ -149,10 +149,16 @@ export default function EngineeringChangeDetailAdd() {
   const createdRows = safeArray(detail?.createdRecords);
   const changeSummaryText = toText(
     detail?.changeSummary || passedState.changeSummary || ""
-  ).toLowerCase();
+  )
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   const isAddedIBRFlow =
-    changeSummaryText.includes("added in item bom routing") ||
+    detail?.hideComponentTable === true ||
+    createdRows.some((row) => row?.hideComponentTable === true) ||
+    /added\s+\d+\s+bom\s+id\s+in\s+item\s+bom\s+routing/.test(changeSummaryText) ||
     changeSummaryText.includes("item bom routing");
 
   const styles = {
