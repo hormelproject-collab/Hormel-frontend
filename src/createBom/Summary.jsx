@@ -744,7 +744,7 @@ export default function SummaryPage() {
                 <div style={styles.tableHeaderCell}>Item Description</div>
                 <div style={styles.tableHeaderCell}>Location</div>
                 <div style={styles.tableHeaderCell}>BOM ID</div>
-                <div style={styles.tableHeaderCell}>Routing ID / Resource</div>
+                <div style={styles.tableHeaderCell}>Routing ID</div>
                 <div style={styles.tableHeaderCell}>Item BOM Routing Priority</div>
               </div>
 

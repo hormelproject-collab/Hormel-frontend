@@ -48,6 +48,7 @@ const defaultExistingBomSearchState = {
   selectedRowId: "",
   selectedRowIds: [],
   selectedRowsById: {},
+  associatedCoProductsByGroup: {},
   searchBy1: "resource",
   searchBy2: "location",
   query1: "",
@@ -73,6 +74,57 @@ const defaultExistingItemBomRoutingSearchState = {
   pagination: defaultPagination,
   selectedRowIds: [],
   selectedRowsById: {},
+  associatedCoProductsByGroup: {},
+};
+
+const getRoutingResource = (routingId, explicitResource = "") => {
+  const resourceFromColumn = String(explicitResource ?? "").trim();
+  if (resourceFromColumn) return resourceFromColumn;
+
+  const value = String(routingId ?? "").trim();
+  if (!value) return "";
+
+  const parts = value
+    .split("_")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  // Required format: ROUTING_item_resource.
+  // Resource is everything after the second underscore.
+  return parts.length >= 3 ? parts.slice(2).join("_") : "";
+};
+
+const buildRoutingId = (item, resource) => {
+  const cleanItem = String(item ?? "").trim();
+  const cleanResource = String(resource ?? "").trim();
+
+  if (!cleanItem || !cleanResource) return "";
+
+  return `ROUTING_${cleanItem}_${cleanResource}`;
+};
+
+const getExistingBomGroupKey = (row) =>
+  [row?.bom_id, row?.resource, row?.location]
+    .map((value) => String(value ?? "").trim().toUpperCase())
+    .join("__");
+
+const isExistingBomCoProduct = (row) =>
+  String(row?.erp_co_product_association ?? "").trim() === "1";
+
+const buildAssociatedCoProductsByGroup = (rows = []) => {
+  const result = {};
+
+  rows.forEach((row) => {
+    if (!isExistingBomCoProduct(row)) return;
+
+    const key = getExistingBomGroupKey(row);
+    if (!key || key === "____") return;
+
+    if (!result[key]) result[key] = [];
+    result[key].push(row);
+  });
+
+  return result;
 };
 
 const normalizeExistingBomSearchRow = (row, index) => {
@@ -82,24 +134,35 @@ const normalizeExistingBomSearchRow = (row, index) => {
     row.produced_item_desc ?? row.item_description ?? row.item_desc ?? ""
   ).trim();
   const bomId = String(row.bom_id ?? row.bomId ?? "").trim();
-  const resource = String(row.resource ?? "").trim();
-  const routingId = String(row.routing_id ?? row.routingId ?? "").trim();
+  const rawRoutingId = String(row.routing_id ?? row.routingId ?? "").trim();
+  const resource = getRoutingResource(rawRoutingId, row.resource);
+  const routingId = buildRoutingId(producedItem, resource) || rawRoutingId;
   const itemReleaseFlag = String(
     row.item_release_flag ??
-      row.item_releaseflag ??
-      row.release_flag ??
-      row.release ??
-      ""
+    row.item_releaseflag ??
+    row.release_flag ??
+    row.release ??
+    ""
   ).trim();
   const erpCoProductAssociation = String(
     row.erp_co_product_association ??
-      row.erpCoProductAssociation ??
-      row.co_product_association ??
-      ""
+    row.erpCoProductAssociation ??
+    row.co_product_association ??
+    ""
   ).trim();
 
+  const rowType = erpCoProductAssociation === "1" ? "COPRODUCT" : "MAIN";
+
+  const stableId = [
+    bomId || "NOBOM",
+    resource || "NORESOURCE",
+    location || "NOLOCATION",
+    producedItem || "NOITEM",
+    rowType,
+  ].join("__");
+
   return {
-    id: row.id ?? `${bomId}__${routingId || resource || producedItem || "NORESOURCE"}__${index}`,
+    id: stableId,
     location,
     produced_item: producedItem,
     produced_item_desc: producedItemDesc,
@@ -108,17 +171,74 @@ const normalizeExistingBomSearchRow = (row, index) => {
     routing_id: routingId,
     item_release_flag: itemReleaseFlag,
     erp_co_product_association: erpCoProductAssociation,
+    is_co_product: erpCoProductAssociation === "1",
+    associated_group_key: [bomId, resource, location]
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .join("__"),
     __raw: row,
   };
+};
+
+const getIbrResourceFromRoutingId = (routingId, explicitResource = "") => {
+  const resourceFromColumn = String(explicitResource ?? "").trim();
+  if (resourceFromColumn) return resourceFromColumn;
+
+  const value = String(routingId ?? "").trim();
+  if (!value) return "";
+
+  const parts = value
+    .split("_")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  // Required format: ROUTING_item_resource.
+  // Resource is everything after the second underscore.
+  return parts.length >= 3 ? parts.slice(2).join("_") : "";
+};
+
+const buildIbrRoutingId = (item, resource, fallbackRoutingId = "") => {
+  const cleanItem = String(item ?? "").trim();
+  const cleanResource = String(resource ?? "").trim();
+
+  if (cleanItem && cleanResource) return `ROUTING_${cleanItem}_${cleanResource}`;
+
+  return String(fallbackRoutingId ?? "").trim();
+};
+
+const getExistingIbrGroupKey = (row) =>
+  [row?.bom_id, row?.routing_id]
+    .map((value) => String(value ?? "").trim().toUpperCase())
+    .join("__");
+
+const isExistingIbrCoProduct = (row) =>
+  Number(
+    String(row?.co_product_association ?? row?.erp_co_product_association ?? "0").trim() || "0"
+  ) >= 1;
+
+const buildAssociatedIbrCoProductsByGroup = (rows = []) => {
+  const result = {};
+
+  rows.forEach((row) => {
+    if (!isExistingIbrCoProduct(row)) return;
+
+    const key = getExistingIbrGroupKey(row);
+    if (!key || key === "__") return;
+
+    if (!result[key]) result[key] = [];
+    result[key].push(row);
+  });
+
+  return result;
 };
 
 const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
   const recId = String(row.rec_id ?? row.recId ?? "").trim();
   const item = String(row.item ?? row.Item ?? "").trim();
   const bomId = String(row.bom_id ?? row.bomId ?? "").trim();
-  const routingId = String(row.routing_id ?? row.routingId ?? "").trim();
+  const rawRoutingId = String(row.routing_id ?? row.routingId ?? "").trim();
+  const resource = getIbrResourceFromRoutingId(rawRoutingId, row.resource);
+  const routingId = buildIbrRoutingId(item, resource, rawRoutingId);
   const location = String(row.location ?? "").trim();
-  const resource = String(row.resource ?? "").trim();
   const erpCoProductAssociation = String(
     row.erp_co_product_association ??
       row.erpCoProductAssociation ??
@@ -128,9 +248,10 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
   const coProductAssociation = Number(erpCoProductAssociation || "0") >= 1 ? 1 : 0;
   const componentItem = coProductAssociation === 1 ? "" : item;
   const coProductItem = coProductAssociation === 1 ? item : "";
+  const rowType = coProductAssociation === 1 ? "COPRODUCT" : "MAIN";
 
   return {
-    id: recId || `${bomId}__${routingId}__${item}__${index}`,
+    id: recId || `${bomId}__${routingId}__${item}__${rowType}__${index}`,
     rec_id: recId,
     item,
     bom_id: bomId,
@@ -141,10 +262,12 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
     co_product_association: coProductAssociation,
     component_item: componentItem,
     co_product_item: coProductItem,
+    associated_group_key: [bomId, routingId]
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .join("__"),
     __raw: row,
   };
 };
-
 
 /** ------------------ THUNKS ------------------ **/
 export const fetchItemMaster = createAsyncThunk(
@@ -313,20 +436,20 @@ export const fetchResourceComponentMetadata = createAsyncThunk(
     try {
       const normalizedItems = Array.isArray(items)
         ? items
-            .map((x) => (typeof x === "string" ? x : x?.item ?? ""))
-            .map((x) => String(x ?? "").trim())
-            .filter(Boolean)
+          .map((x) => (typeof x === "string" ? x : x?.item ?? ""))
+          .map((x) => String(x ?? "").trim())
+          .filter(Boolean)
         : [];
 
       const normalizedLocations = Array.isArray(locations)
         ? locations
-            .map((x) => {
-              if (typeof x === "string") return x;
-              if (x && typeof x === "object") return x.location ?? x.id ?? "";
-              return "";
-            })
-            .map((x) => String(x ?? "").trim())
-            .filter(Boolean)
+          .map((x) => {
+            if (typeof x === "string") return x;
+            if (x && typeof x === "object") return x.location ?? x.id ?? "";
+            return "";
+          })
+          .map((x) => String(x ?? "").trim())
+          .filter(Boolean)
         : [];
 
       const res = await fetch("/api/bigquery/table/resource-component-metadata", {
@@ -381,12 +504,12 @@ export const fetchLocationsByItems = createAsyncThunk(
     try {
       const normalizedItemIds = Array.isArray(itemIds)
         ? itemIds
-            .map((x) => {
-              if (typeof x === "string") return x;
-              if (x && typeof x === "object") return x.item ?? x.id ?? "";
-              return "";
-            })
-            .filter(Boolean)
+          .map((x) => {
+            if (typeof x === "string") return x;
+            if (x && typeof x === "object") return x.item ?? x.id ?? "";
+            return "";
+          })
+          .filter(Boolean)
         : [];
 
       const res = await fetch("/api/bigquery/table/locations-by-items", {
@@ -855,10 +978,15 @@ const bomSlice = createSlice({
       })
       .addCase(fetchExistingBomSearchRows.fulfilled, (state, action) => {
         state.existingBomSearch.loading = false;
-        state.existingBomSearch.rows = action.payload?.rows || [];
+
+        const rows = action.payload?.rows || [];
+
+        state.existingBomSearch.rows = rows;
+        state.existingBomSearch.associatedCoProductsByGroup =
+          buildAssociatedCoProductsByGroup(rows);
         state.existingBomSearch.pagination = action.payload?.pagination || {
           ...defaultPagination,
-          total: action.payload?.rows?.length || 0,
+          total: rows.length || 0,
         };
       })
       .addCase(fetchExistingBomSearchRows.rejected, (state, action) => {
@@ -871,10 +999,15 @@ const bomSlice = createSlice({
       })
       .addCase(fetchExistingItemBomRoutingSearchRows.fulfilled, (state, action) => {
         state.existingItemBomRoutingSearch.loading = false;
-        state.existingItemBomRoutingSearch.rows = action.payload?.rows || [];
+
+        const rows = action.payload?.rows || [];
+
+        state.existingItemBomRoutingSearch.rows = rows;
+        state.existingItemBomRoutingSearch.associatedCoProductsByGroup =
+          buildAssociatedIbrCoProductsByGroup(rows);
         state.existingItemBomRoutingSearch.pagination = action.payload?.pagination || {
           ...defaultPagination,
-          total: action.payload?.rows?.length || 0,
+          total: rows.length || 0,
         };
       })
       .addCase(fetchExistingItemBomRoutingSearchRows.rejected, (state, action) => {
@@ -1062,6 +1195,9 @@ export const selectExistingBomSelectedRows = createSelector(
   [selectExistingBomSelectedRowIds, selectExistingBomSelectedRowsById],
   (ids, byId) => ids.map((id) => byId[id]).filter(Boolean)
 );
+export const selectExistingBomAssociatedCoProductsByGroup = (state) =>
+  (state.bom.existingBomSearch || defaultExistingBomSearchState)
+    .associatedCoProductsByGroup || {};
 
 export const selectExistingItemBomRoutingSearchState = (state) =>
   state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState;
@@ -1084,6 +1220,9 @@ export const selectExistingIbrSelectedRows = createSelector(
   [selectExistingIbrSelectedRowIds, selectExistingIbrSelectedRowsById],
   (ids, byId) => ids.map((id) => byId[id]).filter(Boolean)
 );
+export const selectExistingIbrAssociatedCoProductsByGroup = (state) =>
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
+    .associatedCoProductsByGroup || {};
 
 export const selectEngineeringChangeLogState = (state) =>
   state.bom.engineeringChangeLog || defaultEngineeringChangeLogState;

@@ -190,9 +190,12 @@ const CreateItemBOMRoutingRecord = () => {
   const [error, setError] = useState("");
 
   const routingId = useMemo(() => {
-    if (!producedItem || !location || !selectedResource) return "";
-    return `${producedItem}_${location}_${selectedResource}`;
-  }, [producedItem, location, selectedResource]);
+  if (!producedItem || !selectedResource) return "";
+  return `ROUTING_${String(producedItem ?? "").trim()}_${String(
+    selectedResource ?? ""
+  ).trim()}`;
+}, [producedItem, selectedResource]);
+
 
   const validCoProductRows = useMemo(() => {
     return coProductRows.filter(

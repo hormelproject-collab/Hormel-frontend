@@ -28,7 +28,7 @@ const buildConfigKey = (item, location) => `${item}__${location}`;
 const buildBomId = (bomVersion, item, location) =>
   `${bomVersion}_${item}_${location}`;
 const buildRoutingId = (item, location, resource) =>
-  `ROUTING_${item}_${location}_${resource}`;
+  `ROUTING_${item}_${resource}`;
 
 const makeUniqueId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
