@@ -1090,7 +1090,7 @@ const styles = {
         display: "grid",
         gridTemplateColumns: "295px 300px 295px auto",
         gap: "12px",
-        alignItems: "center",
+        alignItems: "start",
         marginLeft: "5px",
     },
 
@@ -1174,7 +1174,6 @@ const styles = {
         padding: "0 12px",
         fontSize: "14px",
         boxSizing: "border-box",
-        marginTop: "20px"
     },
 
     inputWithError: {
@@ -1192,7 +1191,6 @@ const styles = {
         padding: "0 12px",
         fontSize: "14px",
         boxSizing: "border-box",
-        marginTop: "20px"
     },
 
     inlineError: {
@@ -1201,7 +1199,7 @@ const styles = {
         fontWeight: 600,
         minHeight: "18px",
     },
-        input2: {
+    input2: {
         width: "100%",
         height: "42px",
         borderRadius: "4px",
@@ -1209,7 +1207,6 @@ const styles = {
         padding: "0 12px",
         fontSize: "14px",
         boxSizing: "border-box",
-        marginTop: "20px"
     },
 
     inputWithError: {
@@ -1227,7 +1224,6 @@ const styles = {
         padding: "0 12px",
         fontSize: "14px",
         boxSizing: "border-box",
-        marginTop: "20px"
     },
 
     inlineError: {
@@ -1241,7 +1237,11 @@ const styles = {
         cursor: "pointer",
         border: "none",
         background: "transparent",
-        padding: "10px",
+        padding: "5px 10px",
+        height: "42px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
     },
     iconWrapper: {
         all: "unset",

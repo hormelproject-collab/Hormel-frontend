@@ -26,26 +26,14 @@ const toNumberOrEmpty = (value) => {
     return Number.isFinite(n) ? n : "";
 };
 
-const splitItemAndDescription = (itemValue, descriptionValue = "") => {
-    const rawItem = String(itemValue ?? "").trim();
-    const rawDescription = String(descriptionValue ?? "").trim();
-
-    if (!rawItem) return { item: "", description: rawDescription };
-
-    const hyphenIndex = rawItem.indexOf("-");
-    if (hyphenIndex > 0) {
-        const item = rawItem.slice(0, hyphenIndex).trim();
-        const descriptionFromCombined = rawItem.slice(hyphenIndex + 1).trim();
-        return { item, description: rawDescription || descriptionFromCombined };
-    }
-
-    return { item: rawItem, description: rawDescription };
-};
-
+const normalizeItemAndDescription = (itemValue, descriptionValue = "") => ({
+    item: String(itemValue ?? "").trim(),
+    description: String(descriptionValue ?? "").trim(),
+});
 const getItemOptionLabel = (option) => {
     const item = String(option?.item ?? "").trim();
     const description = String(
-        option?.description ?? option?.desc ?? option?.item_desc ?? option?.item_description ?? ""
+        option?.item_desc ?? option?.description ?? option?.desc ?? option?.item_description ?? ""
     ).trim();
     return description ? `${item} - ${description}` : item;
 };
@@ -71,6 +59,43 @@ const fetchJsonNoLimit = async (baseUrl) => {
     throw lastError ?? new Error(`Failed to fetch ${baseUrl}`);
 };
 
+const searchItemMasterOptions = async ({ search = "", page = 1, pageSize = 50 }) => {
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    params.set("filterBy", "item");
+    params.set("search", String(search || "").trim());
+
+    const response = await fetch(
+        `/api/bigquery/table/item-master-with-releaseflag?${params.toString()}`
+    );
+
+    if (!response.ok) {
+        throw new Error(await response.text());
+    }
+
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+
+    return {
+        rows: rows.map((row) => ({
+            item: row.item ?? row.item_id ?? "",
+            item_desc:
+                row.item_desc ??
+                row.item_description ??
+                row.description ??
+                "",
+        })),
+        pagination: payload?.pagination || {
+            page,
+            pageSize,
+            total: rows.length,
+            totalPages: 1,
+            hasNext: false,
+        },
+    };
+};
+
 const normalizeSelectedBom = (row) => {
     if (!row || typeof row !== "object") return null;
 
@@ -92,10 +117,6 @@ const normalizeSelectedBom = (row) => {
     };
 };
 
-const getItemDescription = (itemMasterMap, item) => {
-    const key = String(item ?? "").trim().toUpperCase();
-    return itemMasterMap.get(key)?.description ?? "";
-};
 
 const getResourceRelevancy = (resourceMasterMap, resource) => {
     const key = String(resource ?? "").trim().toUpperCase();
@@ -103,7 +124,7 @@ const getResourceRelevancy = (resourceMasterMap, resource) => {
 };
 
 const makeComponentRow = (seed = {}) => {
-    const normalized = splitItemAndDescription(
+    const normalized = normalizeItemAndDescription(
         seed.componentItem ?? seed.item ?? seed.component_item ?? "",
         seed.description ?? seed.item_description ?? seed.component_description ?? ""
     );
@@ -124,7 +145,7 @@ const makeComponentRow = (seed = {}) => {
 };
 
 const makeCoProductRow = (seed = {}) => {
-    const normalized = splitItemAndDescription(
+    const normalized = normalizeItemAndDescription(
         seed.coProductItem ?? seed.item ?? seed.co_product_item ?? "",
         seed.description ?? seed.item_description ?? seed.co_product_description ?? ""
     );
@@ -261,14 +282,17 @@ const ModifyExistingBOM = () => {
 
     // Lazy-loaded GCP option states
     const [allResourceOptions, setAllResourceOptions] = useState([]);
-    const [allItemOptions, setAllItemOptions] = useState([]);
-    const [itemMasterMap, setItemMasterMap] = useState(new Map());
     const [resourceMasterMap, setResourceMasterMap] = useState(new Map());
 
     const [resourceOptionsLoaded, setResourceOptionsLoaded] = useState(false);
-    const [itemOptionsLoaded, setItemOptionsLoaded] = useState(false);
     const [loadingResourceOptions, setLoadingResourceOptions] = useState(false);
-    const [loadingItemOptions, setLoadingItemOptions] = useState(false);
+    const itemSearchTimerRef = useRef({});
+    const itemSearchCacheRef = useRef({});
+    const [activeItemDropdownKey, setActiveItemDropdownKey] = useState(null);
+    const [itemSearchByKey, setItemSearchByKey] = useState({});
+    const [itemOptionsByKey, setItemOptionsByKey] = useState({});
+    const [itemLoadingByKey, setItemLoadingByKey] = useState({});
+    const [itemPaginationByKey, setItemPaginationByKey] = useState({});
 
     const loadGcpResourceOptions = async () => {
         if (resourceOptionsLoaded || loadingResourceOptions) return;
@@ -321,50 +345,117 @@ const ModifyExistingBOM = () => {
         }
     };
 
-    const loadGcpItemOptions = async () => {
-        if (itemOptionsLoaded || loadingItemOptions) return;
+    const loadLazyItemOptions = async ({
+        rowKey,
+        searchText = "",
+        page = 1,
+        append = false,
+    }) => {
+        const cleanSearch = String(searchText || "").trim();
+        const cacheKey = `${cleanSearch.toLowerCase()}__${page}`;
 
-        setLoadingItemOptions(true);
-        try {
-            const itemMasterRows = await fetchJsonNoLimit("/api/bigquery/table/item_master");
+        setItemSearchByKey((prev) => ({
+            ...prev,
+            [rowKey]: searchText,
+        }));
 
-            const itemMap = new Map();
-            const itemOptions = [];
-            const seenItems = new Set();
-
-            (Array.isArray(itemMasterRows) ? itemMasterRows : []).forEach((row) => {
-                const normalized = splitItemAndDescription(
-                    row.item ?? row.item_id ?? "",
-                    row.item_desc ?? row.item_description ?? row.description ?? ""
-                );
-                const itemValue = normalized.item;
-                const itemKey = itemValue.toUpperCase();
-                if (!itemKey || !itemKey.startsWith("HRL")) return;
-
-                const description = normalized.description;
-
-                itemMap.set(itemKey, {
-                    description,
-                    status: row.item_status ?? row.status ?? "",
-                });
-
-                if (!seenItems.has(itemKey)) {
-                    seenItems.add(itemKey);
-                    itemOptions.push({
-                        item: itemValue,
-                        description,
-                    });
-                }
-            });
-
-            setItemMasterMap(itemMap);
-            setAllItemOptions(itemOptions);
-            setItemOptionsLoaded(true);
-        } catch (e) {
-            console.error("Error fetching GCP item options:", e);
-        } finally {
-            setLoadingItemOptions(false);
+        if (itemSearchCacheRef.current[cacheKey]) {
+            const cached = itemSearchCacheRef.current[cacheKey];
+            setItemOptionsByKey((prev) => ({
+                ...prev,
+                [rowKey]: append
+                    ? [...(prev[rowKey] || []), ...(cached.rows || [])]
+                    : cached.rows || [],
+            }));
+            setItemPaginationByKey((prev) => ({
+                ...prev,
+                [rowKey]: cached.pagination,
+            }));
+            return;
         }
+
+        setItemLoadingByKey((prev) => ({
+            ...prev,
+            [rowKey]: true,
+        }));
+
+        try {
+            const result = await searchItemMasterOptions({
+                search: cleanSearch,
+                page,
+                pageSize: 50,
+            });
+            itemSearchCacheRef.current[cacheKey] = result;
+            setItemOptionsByKey((prev) => ({
+                ...prev,
+                [rowKey]: append
+                    ? [...(prev[rowKey] || []), ...(result.rows || [])]
+                    : result.rows || [],
+            }));
+            setItemPaginationByKey((prev) => ({
+                ...prev,
+                [rowKey]: result.pagination,
+            }));
+        } catch (error) {
+            console.error("Item master lazy search failed:", error);
+            setItemOptionsByKey((prev) => ({
+                ...prev,
+                [rowKey]: [],
+            }));
+            setItemPaginationByKey((prev) => ({
+                ...prev,
+                [rowKey]: { page: 1, pageSize: 50, total: 0, totalPages: 1, hasNext: false },
+            }));
+        } finally {
+            setItemLoadingByKey((prev) => ({
+                ...prev,
+                [rowKey]: false,
+            }));
+        }
+    };
+
+    const handleLazyItemDropdownOpen = (rowKey, currentValue = "") => {
+        setActiveItemDropdownKey(rowKey);
+        const existingOptions = itemOptionsByKey[rowKey] || [];
+        const existingSearchText = itemSearchByKey[rowKey] ?? currentValue ?? "";
+        if (existingOptions.length > 0) return;
+        loadLazyItemOptions({
+            rowKey,
+            searchText: existingSearchText,
+            page: 1,
+            append: false,
+        });
+    };
+
+    const handleLazyItemSearchChange = (rowKey, value) => {
+        setActiveItemDropdownKey(rowKey);
+        setItemSearchByKey((prev) => ({
+            ...prev,
+            [rowKey]: value,
+        }));
+        if (itemSearchTimerRef.current[rowKey]) {
+            clearTimeout(itemSearchTimerRef.current[rowKey]);
+        }
+        itemSearchTimerRef.current[rowKey] = setTimeout(() => {
+            loadLazyItemOptions({
+                rowKey,
+                searchText: value,
+                page: 1,
+                append: false,
+            });
+        }, 350);
+    };
+
+    const handleLazyItemLoadMore = (rowKey) => {
+        const searchText = itemSearchByKey[rowKey] || "";
+        const pagination = itemPaginationByKey[rowKey] || {};
+        const nextPage = Number(pagination.page || 1) + 1;
+        loadLazyItemOptions({
+            rowKey,
+            searchText,
+            page: nextPage,
+            append: true,
+        });
     };
 
     useEffect(() => {
@@ -415,8 +506,9 @@ const ModifyExistingBOM = () => {
                                 makeComponentRow({
                                     id: row.id ?? row.rec_id,
                                     componentItem: row.component_item ?? row.item ?? "",
+                                    item_desc: row.item_desc ?? row.description ?? row.item_description ?? "",
                                     description:
-                                        row.description ?? row.item_description ?? "",
+                                        row.item_desc ?? row.description ?? row.item_description ?? "",
                                     standardUsage:
                                         row.standard_usage ??
                                         row.erp_bom_quantity_consumed_per ??
@@ -431,8 +523,9 @@ const ModifyExistingBOM = () => {
                                 makeCoProductRow({
                                     id: row.id ?? row.rec_id,
                                     coProductItem: row.co_product_item ?? row.item ?? "",
+                                    item_desc: row.item_desc ?? row.description ?? row.item_description ?? "",
                                     description:
-                                        row.description ?? row.item_description ?? "",
+                                        row.item_desc ?? row.description ?? row.item_description ?? "",
                                     qtyProduced:
                                         row.qty_produced_per ??
                                         row.erp_bom_qty_produced_per ??
@@ -501,7 +594,8 @@ const ModifyExistingBOM = () => {
                         makeComponentRow({
                             id: row.id ?? row.rec_id,
                             componentItem: row.component_item ?? row.item ?? "",
-                            description: row.description ?? row.item_description ?? "",
+                            item_desc: row.item_desc ?? row.description ?? row.item_description ?? "",
+                            description: row.item_desc ?? row.description ?? row.item_description ?? "",
                             standardUsage:
                                 row.standard_usage ??
                                 row.erp_bom_quantity_consumed_per ??
@@ -516,7 +610,8 @@ const ModifyExistingBOM = () => {
                         makeCoProductRow({
                             id: row.id ?? row.rec_id,
                             coProductItem: row.co_product_item ?? row.item ?? "",
-                            description: row.description ?? row.item_description ?? "",
+                            item_desc: row.item_desc ?? row.description ?? row.item_description ?? "",
+                            description: row.item_desc ?? row.description ?? row.item_description ?? "",
                             qtyProduced:
                                 row.qty_produced_per ??
                                 row.erp_bom_qty_produced_per ??
@@ -594,12 +689,42 @@ const ModifyExistingBOM = () => {
                 };
 
                 if (field === "componentItem") {
-                    nextRow.description = getItemDescription(itemMasterMap, value);
+                    nextRow.description = "";
                 }
 
                 return nextRow;
             })
         );
+    };
+
+    const applyComponentItemSelection = (rowId, option) => {
+        setComponentItems((prev) =>
+            prev.map((row) =>
+                row.id === rowId
+                    ? {
+                        ...row,
+                        componentItem: String(option?.item ?? "").trim(),
+                        description: String(option?.item_desc ?? option?.description ?? "").trim(),
+                    }
+                    : row
+            )
+        );
+        setActiveItemDropdownKey(null);
+    };
+
+    const applyCoProductItemSelection = (rowId, option) => {
+        setCoProducts((prev) =>
+            prev.map((row) =>
+                row.id === rowId
+                    ? {
+                        ...row,
+                        coProductItem: String(option?.item ?? "").trim(),
+                        description: String(option?.item_desc ?? option?.description ?? "").trim(),
+                    }
+                    : row
+            )
+        );
+        setActiveItemDropdownKey(null);
     };
 
     const addCoProduct = () => {
@@ -622,7 +747,7 @@ const ModifyExistingBOM = () => {
                 };
 
                 if (field === "coProductItem") {
-                    nextRow.description = getItemDescription(itemMasterMap, value);
+                    nextRow.description = "";
                 }
 
                 return nextRow;
@@ -822,41 +947,68 @@ const ModifyExistingBOM = () => {
 
                             {componentItems.map((row) => {
                                 const currentComponentItem = String(row.componentItem ?? "").trim();
-                                const componentDropdownOptions =
-                                    currentComponentItem &&
-                                    !allItemOptions.some(
-                                        (option) =>
-                                            String(option.item ?? "").trim().toUpperCase() ===
-                                            currentComponentItem.toUpperCase()
-                                    )
-                                        ? [{ item: currentComponentItem, description: row.description ?? "", isExistingValue: true }, ...allItemOptions]
-                                        : allItemOptions;
 
                                 return (
                                     <div key={row.id} style={styles.editTableRow}>
-                                        <select
-                                            value={currentComponentItem}
-                                            onFocus={loadGcpItemOptions}
-                                            onChange={(e) =>
-                                                updateComponent(
-                                                    row.id,
-                                                    "componentItem",
-                                                    e.target.value
-                                                )
-                                            }
-                                            style={styles.tableInput}
-                                        >
-                                            <option value="">
-                                                {loadingItemOptions
-                                                    ? "Loading items..."
-                                                    : "Component Item"}
-                                            </option>
-                                            {componentDropdownOptions.map((option) => (
-                                                <option key={option.item} value={option.item}>
-                                                    {getItemOptionLabel(option)}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        {(() => {
+                                            const rowKey = `component-${row.id}`;
+                                            const options = itemOptionsByKey[rowKey] || [];
+                                            const loading = !!itemLoadingByKey[rowKey];
+                                            const pagination = itemPaginationByKey[rowKey] || {};
+                                            return (
+                                                <div style={styles.lazyDropdownWrap}>
+                                                    <input
+                                                        type="text"
+                                                        value={currentComponentItem}
+                                                        placeholder="Search Component Item"
+                                                        onFocus={() => handleLazyItemDropdownOpen(rowKey, currentComponentItem)}
+                                                        onClick={() => handleLazyItemDropdownOpen(rowKey, currentComponentItem)}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value;
+                                                            updateComponent(row.id, "componentItem", value);
+                                                            handleLazyItemSearchChange(rowKey, value);
+                                                        }}
+                                                        style={styles.tableInput}
+                                                    />
+                                                    {activeItemDropdownKey === rowKey && (
+                                                        <div style={styles.lazyDropdownMenu}>
+                                                            {loading && options.length === 0 ? (
+                                                                <div style={styles.lazyDropdownEmpty}>Loading...</div>
+                                                            ) : options.length === 0 ? (
+                                                                <div style={styles.lazyDropdownEmpty}>No items found</div>
+                                                            ) : (
+                                                                <>
+                                                                    {options.map((option) => (
+                                                                        <div
+                                                                            key={option.item}
+                                                                            style={styles.lazyDropdownRow}
+                                                                            onMouseDown={(e) => {
+                                                                                e.preventDefault();
+                                                                                applyComponentItemSelection(row.id, option);
+                                                                            }}
+                                                                        >
+                                                                            <div style={styles.lazyDropdownItem}>{option.item}</div>
+                                                                            <div style={styles.lazyDropdownDesc}>{option.item_desc || "-"}</div>
+                                                                        </div>
+                                                                    ))}
+                                                                    {pagination.hasNext && (
+                                                                        <button
+                                                                            type="button"
+                                                                            style={styles.lazyLoadMoreBtn}
+                                                                            disabled={loading}
+                                                                            onMouseDown={(e) => e.preventDefault()}
+                                                                            onClick={() => handleLazyItemLoadMore(rowKey)}
+                                                                        >
+                                                                            {loading ? "Loading..." : "Load More"}
+                                                                        </button>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
 
                                     <input
                                         value={row.description}
@@ -944,41 +1096,68 @@ const ModifyExistingBOM = () => {
 
                                 {coProducts.map((row) => {
                                     const currentCoProductItem = String(row.coProductItem ?? "").trim();
-                                    const coProductDropdownOptions =
-                                        currentCoProductItem &&
-                                        !allItemOptions.some(
-                                            (option) =>
-                                                String(option.item ?? "").trim().toUpperCase() ===
-                                                currentCoProductItem.toUpperCase()
-                                        )
-                                            ? [{ item: currentCoProductItem, description: row.description ?? "", isExistingValue: true }, ...allItemOptions]
-                                            : allItemOptions;
 
                                     return (
                                         <div key={row.id} style={styles.editTableRow}>
-                                            <select
-                                                value={currentCoProductItem}
-                                                onFocus={loadGcpItemOptions}
-                                                onChange={(e) =>
-                                                    updateCoProduct(
-                                                        row.id,
-                                                        "coProductItem",
-                                                        e.target.value
-                                                    )
-                                                }
-                                                style={styles.tableInput}
-                                            >
-                                                <option value="">
-                                                    {loadingItemOptions
-                                                        ? "Loading items..."
-                                                        : "Co-Product Item"}
-                                                </option>
-                                                {coProductDropdownOptions.map((option) => (
-                                                    <option key={option.item} value={option.item}>
-                                                        {getItemOptionLabel(option)}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            {(() => {
+                                                const rowKey = `coproduct-${row.id}`;
+                                                const options = itemOptionsByKey[rowKey] || [];
+                                                const loading = !!itemLoadingByKey[rowKey];
+                                                const pagination = itemPaginationByKey[rowKey] || {};
+                                                return (
+                                                    <div style={styles.lazyDropdownWrap}>
+                                                        <input
+                                                            type="text"
+                                                            value={currentCoProductItem}
+                                                            placeholder="Search Co-Product Item"
+                                                            onFocus={() => handleLazyItemDropdownOpen(rowKey, currentCoProductItem)}
+                                                            onClick={() => handleLazyItemDropdownOpen(rowKey, currentCoProductItem)}
+                                                            onChange={(e) => {
+                                                                const value = e.target.value;
+                                                                updateCoProduct(row.id, "coProductItem", value);
+                                                                handleLazyItemSearchChange(rowKey, value);
+                                                            }}
+                                                            style={styles.tableInput}
+                                                        />
+                                                        {activeItemDropdownKey === rowKey && (
+                                                            <div style={styles.lazyDropdownMenu}>
+                                                                {loading && options.length === 0 ? (
+                                                                    <div style={styles.lazyDropdownEmpty}>Loading...</div>
+                                                                ) : options.length === 0 ? (
+                                                                    <div style={styles.lazyDropdownEmpty}>No items found</div>
+                                                                ) : (
+                                                                    <>
+                                                                        {options.map((option) => (
+                                                                            <div
+                                                                                key={option.item}
+                                                                                style={styles.lazyDropdownRow}
+                                                                                onMouseDown={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    applyCoProductItemSelection(row.id, option);
+                                                                                }}
+                                                                            >
+                                                                                <div style={styles.lazyDropdownItem}>{option.item}</div>
+                                                                                <div style={styles.lazyDropdownDesc}>{option.item_desc || "-"}</div>
+                                                                            </div>
+                                                                        ))}
+                                                                        {pagination.hasNext && (
+                                                                            <button
+                                                                                type="button"
+                                                                                style={styles.lazyLoadMoreBtn}
+                                                                                disabled={loading}
+                                                                                onMouseDown={(e) => e.preventDefault()}
+                                                                                onClick={() => handleLazyItemLoadMore(rowKey)}
+                                                                            >
+                                                                                {loading ? "Loading..." : "Load More"}
+                                                                            </button>
+                                                                        )}
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
 
                                         <input
                                             value={row.description}
@@ -1079,6 +1258,7 @@ const styles = {
         background: "#ffffff",
         padding: 18,
         boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+        overflow: "visible",
     },
     topGrid: {
         display: "grid",
@@ -1207,7 +1387,7 @@ const styles = {
     editTableWrap: {
         border: "1px solid #dfe3ea",
         borderRadius: 4,
-        overflow: "hidden",
+        overflow: "visible",
     },
     editTableHeader: {
         display: "grid",
@@ -1267,6 +1447,53 @@ const styles = {
         background: "transparent",
         cursor: "pointer",
         fontSize: "16px",
+    },
+    lazyDropdownWrap: {
+        position: "relative",
+        width: "100%",
+    },
+    lazyDropdownMenu: {
+        position: "absolute",
+        top: "40px",
+        left: 0,
+        right: 0,
+        backgroundColor: "#ffffff",
+        border: "1px solid #d1d5db",
+        borderRadius: "4px",
+        zIndex: 9999,
+        maxHeight: "240px",
+        overflowY: "auto",
+        boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+    },
+    lazyDropdownRow: {
+        padding: "8px 10px",
+        cursor: "pointer",
+        borderBottom: "1px solid #f3f4f6",
+    },
+    lazyDropdownItem: {
+        fontSize: "13px",
+        fontWeight: 600,
+        color: "#111827",
+    },
+    lazyDropdownDesc: {
+        fontSize: "12px",
+        color: "#6b7280",
+        marginTop: "2px",
+    },
+    lazyDropdownEmpty: {
+        padding: "10px",
+        fontSize: "13px",
+        color: "#6b7280",
+    },
+    lazyLoadMoreBtn: {
+        width: "100%",
+        border: "none",
+        backgroundColor: "#f3f4f6",
+        color: "#2563eb",
+        padding: "9px 10px",
+        cursor: "pointer",
+        fontSize: "13px",
+        fontWeight: 600,
     },
     bottom: {
         display: "flex",
