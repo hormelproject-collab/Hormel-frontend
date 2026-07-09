@@ -8,6 +8,8 @@ import {
     setModifyExistingBomState,
 } from "../redux/bomSlice";
 
+const ITEM_MASTER_ENDPOINT = "/api/bigquery/table/item-master-with-releaseflag";
+
 const ModifyExistingBOMData = () => {
 
     // Simple in-file searchable select component to avoid new deps
@@ -120,20 +122,28 @@ const ModifyExistingBOMData = () => {
     useEffect(() => {
         const fetchItemMaster = async () => {
             try {
-                const res = await fetch(
-                    "/api/bigquery/table/item_master"
-                );
+                const res = await fetch(ITEM_MASTER_ENDPOINT);
 
                 const data = await res.json();
 
-                const rows = Array.isArray(data?.data)
-                    ? data.data
-                    : [];
+                const rows = normalizeApiArray(data);
 
                 const lookup = {};
 
                 rows.forEach((row) => {
-                    lookup[row.item] = row.item_desc || "";
+                    const item = String(row.item ?? row.Item ?? "").trim();
+                    const desc = String(
+                        row.item_desc ??
+                        row.item_description ??
+                        row.ItemDesc ??
+                        row.ItemDescription ??
+                        ""
+                    ).trim();
+
+                    if (item) {
+                        lookup[item] = desc;
+                        lookup[item.toUpperCase()] = desc;
+                    }
                 });
 
                 setItemMasterLookup(lookup);
@@ -233,12 +243,38 @@ const ModifyExistingBOMData = () => {
             item.item ?? item.Item ?? item.item_id ?? item.id ?? item.component_item ?? item.componentItem ?? item.routing_id ?? item.RoutingID ?? ""
         ).trim();
         const label = String(
-            item.item_name ?? item.ItemName ?? item.item ?? item.Item ?? item.label ?? item.description ?? item.desc ?? item.component_item ?? item.componentItem ?? value
+            item.item_desc ??
+            item.item_description ??
+            item.ItemDesc ??
+            item.ItemDescription ??
+            item.item_name ??
+            item.ItemName ??
+            item.item ??
+            item.Item ??
+            item.label ??
+            item.description ??
+            item.desc ??
+            item.component_item ??
+            item.componentItem ??
+            value
         ).trim();
         const desc = String(
-            item.description ?? item.desc ?? item.item_desc ?? item.ItemDesc ?? item.item_description ?? item.component_desc ?? ""
+            item.item_desc ??
+            item.item_description ??
+            item.ItemDesc ??
+            item.ItemDescription ??
+            item.description ??
+            item.desc ??
+            item.component_desc ??
+            ""
         ).trim();
-        return { value, label: label || value, desc };
+        const releaseFlag = String(
+            item.item_release_flag ?? item.itemReleaseFlag ?? item.release_flag ?? item.releaseFlag ?? ""
+        ).trim();
+        const status = String(
+            item.item_status ?? item.itemStatus ?? item.status ?? ""
+        ).trim();
+        return { value, label: label || value, desc, releaseFlag, status };
     };
 
 
@@ -479,30 +515,14 @@ const ModifyExistingBOMData = () => {
     useEffect(() => {
         const fetchDropdownData = async () => {
             try {
-                const componentRes = await fetch(
-                    "/api/bigquery/table/item_master"
-                );
-                const componentData = await componentRes.json();
-                
+                const res = await fetch(ITEM_MASTER_ENDPOINT);
+                const data = await res.json();
+                const rows = normalizeApiArray(data);
 
-                const componentRows = normalizeApiArray(componentData);
-                
+                const options = rows.map(buildOption);
 
-                setAllComponentOptions(
-                    componentRows.map(buildOption)
-                );
-
-                const coProductRes = await fetch(
-                    "/api/bigquery/table/item_master"
-                );
-                const coProductData = await coProductRes.json();
-               
-
-                const coProductRows = normalizeApiArray(coProductData);
-              
-                setAllCoProductOptions(
-                    coProductRows.map(buildOption)
-                );
+                setAllComponentOptions(options);
+                setAllCoProductOptions(options);
             } catch (err) {
                 console.error(err);
             }
