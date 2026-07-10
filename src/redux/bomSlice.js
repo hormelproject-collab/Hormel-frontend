@@ -54,6 +54,7 @@ const defaultExistingBomSearchState = {
   query1: "",
   query2: "",
   pagination: defaultPagination,
+  latestRequestId: "",
 };
 
 const defaultEngineeringChangeLogState = {
@@ -136,7 +137,7 @@ const normalizeExistingBomSearchRow = (row, index) => {
   const bomId = String(row.bom_id ?? row.bomId ?? "").trim();
   const rawRoutingId = String(row.routing_id ?? row.routingId ?? "").trim();
   const resource = getRoutingResource(rawRoutingId, row.resource);
-  const routingId = buildRoutingId(producedItem, resource) || rawRoutingId;
+  const routingId = rawRoutingId || buildRoutingId(producedItem, resource);
   const itemReleaseFlag = String(
     row.item_release_flag ??
     row.item_releaseflag ??
@@ -241,9 +242,9 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
   const location = String(row.location ?? "").trim();
   const erpCoProductAssociation = String(
     row.erp_co_product_association ??
-      row.erpCoProductAssociation ??
-      row.co_product_association ??
-      ""
+    row.erpCoProductAssociation ??
+    row.co_product_association ??
+    ""
   ).trim();
   const coProductAssociation = Number(erpCoProductAssociation || "0") >= 1 ? 1 : 0;
   const componentItem = coProductAssociation === 1 ? "" : item;
@@ -338,6 +339,7 @@ export const fetchExistingBomSearchRows = createAsyncThunk(
       query1 = "",
       searchBy2 = "location",
       query2 = "",
+      reloadToken = "",
     } = {},
     { rejectWithValue }
   ) => {
@@ -346,9 +348,14 @@ export const fetchExistingBomSearchRows = createAsyncThunk(
       params.set("page", String(page));
       params.set("pageSize", String(pageSize));
       params.set("searchBy1", String(searchBy1 || ""));
-      params.set("query1", String(query1 || "").trim());
+      params.set("query1", searchBy1 ? String(query1 || "").trim() : "");
       params.set("searchBy2", String(searchBy2 || ""));
-      params.set("query2", String(query2 || "").trim());
+      params.set("query2", searchBy2 ? String(query2 || "").trim() : "");
+
+      // only for cache-busting/debugging; backend can ignore this
+      if (reloadToken !== "") {
+        params.set("_reload", String(reloadToken));
+      }
 
       const res = await fetch(`/api/tables/existing-bom-search?${params.toString()}`);
 
@@ -972,15 +979,16 @@ const bomSlice = createSlice({
         state.items.loading = false;
         state.items.error = action.payload || "Failed to load items";
       })
-      .addCase(fetchExistingBomSearchRows.pending, (state) => {
+      .addCase(fetchExistingBomSearchRows.pending, (state, action) => {
         state.existingBomSearch.loading = true;
         state.existingBomSearch.error = null;
+        state.existingBomSearch.latestRequestId = action.meta.requestId;
       })
       .addCase(fetchExistingBomSearchRows.fulfilled, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
         state.existingBomSearch.loading = false;
-
         const rows = action.payload?.rows || [];
-
         state.existingBomSearch.rows = rows;
         state.existingBomSearch.associatedCoProductsByGroup =
           buildAssociatedCoProductsByGroup(rows);
@@ -990,9 +998,13 @@ const bomSlice = createSlice({
         };
       })
       .addCase(fetchExistingBomSearchRows.rejected, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
         state.existingBomSearch.loading = false;
-        state.existingBomSearch.error = action.payload || "Failed to load existing BOM records";
+        state.existingBomSearch.error =
+          action.payload || "Failed to load existing BOM records";
       })
+
       .addCase(fetchExistingItemBomRoutingSearchRows.pending, (state) => {
         state.existingItemBomRoutingSearch.loading = true;
         state.existingItemBomRoutingSearch.error = null;

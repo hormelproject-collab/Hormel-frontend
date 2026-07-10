@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
-import { clearCreateBomFlowState } from "../redux/bomSlice";
+import {
+  clearCreateBomFlowState,
+  clearExistingBomSearchState,
+  clearModifyExistingBomState,
+} from "../redux/bomSlice";
 import axios from "axios";
 import { layout } from "../styles/layout";
 
@@ -9,8 +13,8 @@ const VALIDATE_URL = "/api/bom-explosion";
 
 const buildConfigKey = (item, location) => `${item}__${location}`;
 const buildBomId = (bomVersion, item, location) => `${bomVersion}_${item}_${location}`;
-const buildRoutingId = (item, location, resource) =>
-  `ROUTING_${item}_${location}_${resource}`;
+const buildRoutingId = (item, _location, resource) =>
+  `ROUTING_${item}_${resource}`;
 
 const toNumberOrNull = (value) => {
   if (value === "" || value === null || value === undefined) return null;
@@ -713,7 +717,12 @@ export default function SummaryPage() {
       setValidationResult(result);
 
       if (isSubmitResponseSuccessful(result)) {
-        dispatch(clearCreateBomFlowState());
+        if (flow === "modify-existing-bom") {
+          dispatch(clearModifyExistingBomState());
+          dispatch(clearExistingBomSearchState());
+        } else {
+          dispatch(clearCreateBomFlowState());
+        }
       }
     } catch (err) {
       const serverData = err?.response?.data;

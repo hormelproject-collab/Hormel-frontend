@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -56,6 +56,8 @@ const SelectExistingBOM = () => {
   const query1 = searchState?.query1 ?? "";
   const query2 = searchState?.query2 ?? "";
   const selectedRowId = searchState?.selectedRowId ?? "";
+  const reloadTokenRef = useRef(0);
+  const mountedRef = useRef(false);
 
   const page = Math.max(1, Number(pagination?.page) || 1);
   const pageSize = Math.max(1, Number(pagination?.pageSize) || PAGE_SIZE);
@@ -69,17 +71,27 @@ const SelectExistingBOM = () => {
   const endRecord = total === 0 ? 0 : Math.min((page - 1) * pageSize + shownCount, total);
 
   useEffect(() => {
+    // Force a fresh fetch whenever landing on Step 1.
+    // Redux still keeps the criteria/selection, but records are reloaded from backend.
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      reloadTokenRef.current += 1;
+    }
+  }, []);
+
+  useEffect(() => {
+    const requestPayload = {
+      page,
+      pageSize: PAGE_SIZE,
+      searchBy1: searchBy1 || "",
+      query1: searchBy1 ? query1 : "",
+      searchBy2: searchBy2 || "",
+      query2: searchBy2 ? query2 : "",
+      reloadToken: reloadTokenRef.current,
+    };
+
     const timer = setTimeout(() => {
-      dispatch(
-        fetchExistingBomSearchRows({
-          page,
-          pageSize: PAGE_SIZE,
-          searchBy1,
-          query1,
-          searchBy2,
-          query2,
-        })
-      );
+      dispatch(fetchExistingBomSearchRows(requestPayload));
     }, 250);
 
     return () => clearTimeout(timer);
@@ -89,6 +101,7 @@ const SelectExistingBOM = () => {
     dispatch(
       setExistingBomSearchState({
         ...payload,
+        selectedRowId: "",
         pagination: {
           page: 1,
           pageSize: PAGE_SIZE,

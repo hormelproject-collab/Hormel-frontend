@@ -535,7 +535,7 @@ export default function ViewBomData() {
               type="text"
               value={criterionValue1}
               onChange={(e) => setCriterionValue1(e.target.value)}
-              placeholder={criterion1 ? getPlaceholder(criterion1) : "Select Criteria 1 first"}
+              placeholder={criterion1 ? getPlaceholder(criterion1) : "Select Criteria 1"}
               disabled={!criterion1}
               style={styles.input}
             />
@@ -567,7 +567,7 @@ export default function ViewBomData() {
               type="text"
               value={criterionValue2}
               onChange={(e) => setCriterionValue2(e.target.value)}
-              placeholder={criterion2 ? getPlaceholder(criterion2) : "Select Criteria 2 first"}
+              placeholder={criterion2 ? getPlaceholder(criterion2) : "Select Criteria 2"}
               disabled={!criterion2}
               style={styles.input}
             />

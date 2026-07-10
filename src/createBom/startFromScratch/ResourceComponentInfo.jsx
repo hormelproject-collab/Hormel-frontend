@@ -29,6 +29,19 @@ const buildBomId = (bomVersion, item, location) =>
   `${bomVersion}_${item}_${location}`;
 const buildRoutingId = (item, location, resource) =>
   `ROUTING_${item}_${resource}`;
+const RESOURCE_PAGE_SIZE = 50;
+
+const fetchJsonNoLimit = async (baseUrl) => {
+  const res = await fetch(baseUrl);
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : data;
+};
+
+const getResourceRelevancy = (resourceMasterMap, resource) => {
+  const key = String(resource ?? "").trim().toUpperCase();
+  return resourceMasterMap.get(key)?.resourceRelevancy ?? "";
+};
 
 const makeUniqueId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -86,6 +99,161 @@ const searchItemMasterOptions = async ({ search = "", page = 1, pageSize = 50 })
   };
 };
 
+
+const MultiSelectDropdown = ({
+  options,
+  selectedValues,
+  onChange,
+  onOpen,
+  searchValue,
+  onSearchChange,
+  onLoadMore,
+  loading = false,
+  hasNext = false,
+  placeholder = "Select resource(s)",
+}) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    const onDocClick = (event) => {
+      if (!ref.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const selectedSet = useMemo(
+    () => new Set((selectedValues || []).map((v) => String(v))),
+    [selectedValues]
+  );
+
+  const visibleOptions = useMemo(() => {
+    const seen = new Set();
+    const merged = [];
+
+    (selectedValues || []).forEach((value) => {
+      const resource = String(value ?? "").trim();
+      if (!resource) return;
+      const key = resource.toUpperCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push({ resource });
+    });
+
+    (options || []).forEach((opt) => {
+      const resource = String(opt?.resource ?? "").trim();
+      if (!resource) return;
+      const key = resource.toUpperCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(opt);
+    });
+
+    return merged;
+  }, [options, selectedValues]);
+
+  const openDropdown = async () => {
+    setOpen(true);
+    await onOpen?.();
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  };
+
+  const toggleValue = (value) => {
+    const strValue = String(value);
+    if (selectedSet.has(strValue)) {
+      onChange((selectedValues || []).filter((x) => String(x) !== strValue));
+    } else {
+      onChange([...(selectedValues || []), strValue]);
+    }
+  };
+
+  const removeValue = (value) => {
+    const strValue = String(value);
+    onChange((selectedValues || []).filter((x) => String(x) !== strValue));
+  };
+
+  return (
+    <div style={styles.multiWrap} ref={ref}>
+      <div style={styles.multiControl} onClick={openDropdown}>
+        <div style={styles.chipWrap}>
+          {(selectedValues || []).length === 0 ? (
+            <span style={styles.placeholderText}>{placeholder}</span>
+          ) : (
+            selectedValues.map((value) => (
+              <span key={value} style={styles.chip}>
+                <span>{value}</span>
+                <button
+                  type="button"
+                  style={styles.chipClose}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeValue(value);
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+        <div style={styles.dropdownArrow}>▾</div>
+      </div>
+
+      {open ? (
+        <div style={styles.multiMenu}>
+          <div style={styles.resourceSearchBox}>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchValue}
+              placeholder="Search resource..."
+              style={styles.resourceSearchInput}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => onSearchChange?.(e.target.value)}
+            />
+          </div>
+
+          {loading && visibleOptions.length === 0 ? (
+            <div style={styles.multiMenuEmpty}>Loading resources...</div>
+          ) : visibleOptions.length === 0 ? (
+            <div style={styles.multiMenuEmpty}>No resources found.</div>
+          ) : (
+            visibleOptions.map((opt) => {
+              const checked = selectedSet.has(String(opt.resource));
+              return (
+                <label key={opt.resource} style={styles.multiMenuRow}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleValue(opt.resource)}
+                  />
+                  <span>{opt.resource}</span>
+                </label>
+              );
+            })
+          )}
+
+          {hasNext ? (
+            <button
+              type="button"
+              style={styles.resourceLoadMoreBtn}
+              disabled={loading}
+              onClick={(e) => {
+                e.stopPropagation();
+                onLoadMore?.();
+              }}
+            >
+              {loading ? "Loading..." : "Load More"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const ResourceComponentInfo = () => {
   const navigate = useNavigate();
   const routerLocation = useLocation();
@@ -105,6 +273,15 @@ const ResourceComponentInfo = () => {
   const bomVersions = useSelector(selectBomVersions);
   const resourceOptionsByKey = useSelector(selectResourceOptionsByKey);
   const resourceComponentConfigs = useSelector(selectResourceComponentConfigs);
+
+  const [allGcpResourceOptions, setAllGcpResourceOptions] = useState([]);
+  const [gcpResourceOptionsByKey, setGcpResourceOptionsByKey] = useState({});
+  const [resourceMasterMap, setResourceMasterMap] = useState(new Map());
+  const [loadingResourceOptionsByKey, setLoadingResourceOptionsByKey] = useState({});
+  const [resourcePageByKey, setResourcePageByKey] = useState({});
+  const [resourceHasNextByKey, setResourceHasNextByKey] = useState({});
+  const resourceSearchTimerRef = useRef({});
+  const resourceOptionsLoadedRef = useRef(false);
 
   const [openItem, setOpenItem] = useState(null);
   const [openLocationKey, setOpenLocationKey] = useState(null);
@@ -340,22 +517,94 @@ const ResourceComponentInfo = () => {
     updateConfig(item, location, { bomVersion: value });
   };
 
-  const handleResourceSearchChange = (key, value) => {
-    setResourceSearchByKey((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-    setResourceDropdownKey(key);
+  const loadGcpResourceOptions = async ({ key, searchText = "", page = 1 } = {}) => {
+    if (!key || loadingResourceOptionsByKey[key]) return;
+
+    setLoadingResourceOptionsByKey((prev) => ({ ...prev, [key]: true }));
+
+    try {
+      let fullResourceOptions = allGcpResourceOptions;
+
+      if (!resourceOptionsLoadedRef.current || fullResourceOptions.length === 0) {
+        const [routingResconsRows, resourceMasterRows] = await Promise.all([
+          fetchJsonNoLimit("/api/bigquery/table/routing_rescons"),
+          fetchJsonNoLimit("/api/bigquery/table/resource_master"),
+        ]);
+
+        const tempResourceMap = new Map();
+        (Array.isArray(resourceMasterRows) ? resourceMasterRows : []).forEach((row) => {
+          const resourceKey = String(row.resource ?? "").trim().toUpperCase();
+          if (!resourceKey) return;
+          tempResourceMap.set(resourceKey, {
+            resourceRelevancy:
+              row.resource_planning_relevance ?? row.resource_relevancy ?? row.relevancy ?? "",
+          });
+        });
+
+        const seenResources = new Set();
+        const tempResourceOptions = [];
+        (Array.isArray(routingResconsRows) ? routingResconsRows : []).forEach((row) => {
+          const resource = String(row.resource ?? "").trim();
+          if (!resource) return;
+          const resourceKey = resource.toUpperCase();
+          if (seenResources.has(resourceKey)) return;
+          seenResources.add(resourceKey);
+          tempResourceOptions.push({
+            resource,
+            resourceRelevancy: tempResourceMap.get(resourceKey)?.resourceRelevancy ?? "",
+          });
+        });
+
+        fullResourceOptions = tempResourceOptions;
+        setAllGcpResourceOptions(tempResourceOptions);
+        setResourceMasterMap(tempResourceMap);
+        resourceOptionsLoadedRef.current = true;
+      }
+
+      const cleanSearch = String(searchText || "").trim().toLowerCase();
+      const filteredOptions = cleanSearch
+        ? fullResourceOptions.filter((opt) =>
+            String(opt.resource ?? "").toLowerCase().includes(cleanSearch)
+          )
+        : fullResourceOptions;
+
+      const endIndex = page * RESOURCE_PAGE_SIZE;
+      setGcpResourceOptionsByKey((prev) => ({
+        ...prev,
+        [key]: filteredOptions.slice(0, endIndex),
+      }));
+      setResourcePageByKey((prev) => ({ ...prev, [key]: page }));
+      setResourceHasNextByKey((prev) => ({
+        ...prev,
+        [key]: endIndex < filteredOptions.length,
+      }));
+    } catch (error) {
+      console.error("Error fetching GCP resource options:", error);
+      setGcpResourceOptionsByKey((prev) => ({ ...prev, [key]: [] }));
+      setResourceHasNextByKey((prev) => ({ ...prev, [key]: false }));
+    } finally {
+      setLoadingResourceOptionsByKey((prev) => ({ ...prev, [key]: false }));
+    }
   };
 
-  const handleResourceToggle = (item, location, resource) => {
-    const config = getConfig(item, location);
-    const resources = Array.isArray(config.resources) ? config.resources : [];
-    const exists = resources.includes(resource);
-    const nextResources = exists
-      ? resources.filter((x) => x !== resource)
-      : [...resources, resource];
+  const handleResourceSearchChange = (key, value) => {
+    setResourceSearchByKey((prev) => ({ ...prev, [key]: value }));
+    if (resourceSearchTimerRef.current[key]) clearTimeout(resourceSearchTimerRef.current[key]);
+    resourceSearchTimerRef.current[key] = setTimeout(() => {
+      loadGcpResourceOptions({ key, searchText: value, page: 1 });
+    }, 300);
+  };
 
+  const handleResourceLoadMore = (key) => {
+    if (!resourceHasNextByKey[key] || loadingResourceOptionsByKey[key]) return;
+    loadGcpResourceOptions({
+      key,
+      searchText: resourceSearchByKey[key] || "",
+      page: Number(resourcePageByKey[key] || 1) + 1,
+    });
+  };
+
+  const handleResourceSelectionChange = (item, location, nextResources) => {
     updateConfig(item, location, { resources: nextResources });
   };
 
@@ -552,14 +801,14 @@ const ResourceComponentInfo = () => {
       locations.map((loc) => {
         const key = buildConfigKey(item.item, loc.location);
         const config = getConfig(item.item, loc.location);
-        const resourceOptions = resourceOptionsByKey[key] || [];
         const selectedResources = Array.isArray(config.resources)
           ? config.resources
           : [];
 
-        const selectedResourceRows = resourceOptions.filter((row) =>
-          selectedResources.includes(row.resource)
-        );
+        const selectedResourceRows = selectedResources.map((resource) => ({
+          resource,
+          resourceRelevancy: getResourceRelevancy(resourceMasterMap, resource),
+        }));
 
         const bomVersion = config.bomVersion || "PRIMARY";
         const bomId = buildBomId(bomVersion, item.item, loc.location);
@@ -606,7 +855,7 @@ const ResourceComponentInfo = () => {
         producedItems,
         locations,
         resourceComponentConfigs,
-        resourceOptionsByKey,
+        resourceOptionsByKey: gcpResourceOptionsByKey,
         summaryConfigSnapshot,
         previousState: routerLocation?.state ?? null,
       },
@@ -675,21 +924,18 @@ const ResourceComponentInfo = () => {
                     const key = buildConfigKey(item.item, loc.location);
                     const config = getConfig(item.item, loc.location);
                     const isOpenLoc = openLocationKey === key;
-                    const resourceOptions = resourceOptionsByKey[key] || [];
+                    const resourceOptions = gcpResourceOptionsByKey[key] || [];
                     const selectedResources = Array.isArray(config.resources)
                       ? config.resources
                       : [];
                     const searchValue = resourceSearchByKey[key] || "";
+                    const loadingResourceOptions = !!loadingResourceOptionsByKey[key];
+                    const resourceHasNext = !!resourceHasNextByKey[key];
 
-                    const filteredResourceOptions = resourceOptions.filter((row) =>
-                      String(row.resource ?? "")
-                        .toLowerCase()
-                        .includes(searchValue.trim().toLowerCase())
-                    );
-
-                    const selectedResourceRows = resourceOptions.filter((row) =>
-                      selectedResources.includes(row.resource)
-                    );
+                    const selectedResourceRows = selectedResources.map((resource) => ({
+                      resource,
+                      resourceRelevancy: getResourceRelevancy(resourceMasterMap, resource),
+                    }));
                     const bomVersion = config.bomVersion || "PRIMARY";
                     const bomId = buildBomId(bomVersion, item.item, loc.location);
 
@@ -712,103 +958,38 @@ const ResourceComponentInfo = () => {
                             <div style={styles.topGrid}>
                               <div>
                                 <div style={styles.label}>Resource(s) *</div>
-                                <div style={styles.multiSelectWrap}>
-                                  <div
-                                    style={styles.multiSelectBox}
-                                    onClick={() => setResourceDropdownKey(key)}
-                                  >
-                                    <div style={styles.chipsWrap}>
-                                      {selectedResources.map((resource) => (
-                                        <span
-                                          key={resource}
-                                          style={styles.chip}
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          {resource}
-                                          <span
-                                            style={styles.chipX}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleResourceToggle(
-                                                item.item,
-                                                loc.location,
-                                                resource
-                                              );
-                                            }}
-                                          >
-                                            ×
-                                          </span>
-                                        </span>
-                                      ))}
-
-                                      <input
-                                        type="text"
-                                        value={searchValue}
-                                        placeholder={
-                                          selectedResources.length === 0
-                                            ? "Select Resource(s)"
-                                            : "Search Resource(s)"
-                                        }
-                                        onClick={(e) => e.stopPropagation()}
-                                        onFocus={() => setResourceDropdownKey(key)}
-                                        onChange={(e) =>
-                                          handleResourceSearchChange(
-                                            key,
-                                            e.target.value
-                                          )
-                                        }
-                                        style={styles.resourceSearchInput}
-                                      />
-                                    </div>
-
-                                    <span
-                                      style={styles.dropdownArrow}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setResourceDropdownKey(
-                                          resourceDropdownKey === key ? null : key
-                                        );
-                                      }}
-                                    >
-                                      ▾
-                                    </span>
-                                  </div>
-
-                                  {resourceDropdownKey === key && (
-                                    <div style={styles.dropdownMenu}>
-                                      {filteredResourceOptions.length === 0 ? (
-                                        <div style={styles.dropdownEmpty}>
-                                          No resources available
-                                        </div>
-                                      ) : (
-                                        filteredResourceOptions.map((row) => {
-                                          const checked = selectedResources.includes(
-                                            row.resource
-                                          );
-
-                                          return (
-                                            <label
-                                              key={row.resource}
-                                              style={styles.dropdownRow}
-                                            >
-                                              <input
-                                                type="checkbox"
-                                                checked={checked}
-                                                onChange={() =>
-                                                  handleResourceToggle(
-                                                    item.item,
-                                                    loc.location,
-                                                    row.resource
-                                                  )
-                                                }
-                                              />
-                                              <span>{row.resource}</span>
-                                            </label>
-                                          );
-                                        })
-                                      )}
-                                    </div>
-                                  )}
+                                <MultiSelectDropdown
+                                  options={resourceOptions}
+                                  selectedValues={selectedResources}
+                                  onChange={(nextResources) =>
+                                    handleResourceSelectionChange(
+                                      item.item,
+                                      loc.location,
+                                      nextResources
+                                    )
+                                  }
+                                  onOpen={() =>
+                                    loadGcpResourceOptions({
+                                      key,
+                                      searchText: searchValue,
+                                      page: 1,
+                                    })
+                                  }
+                                  searchValue={searchValue}
+                                  onSearchChange={(value) =>
+                                    handleResourceSearchChange(key, value)
+                                  }
+                                  onLoadMore={() => handleResourceLoadMore(key)}
+                                  loading={loadingResourceOptions}
+                                  hasNext={resourceHasNext}
+                                  placeholder={
+                                    loadingResourceOptions
+                                      ? "Loading resources..."
+                                      : "Select resource(s)"
+                                  }
+                                />
+                                <div style={styles.helperText}>
+                                  If desired resource is not found, please check Oracle work definitions.
                                 </div>
                               </div>
 
@@ -1479,14 +1660,14 @@ const styles = {
     fontWeight: 600,
   },
   resourceSearchInput: {
-    flex: 1,
-    minWidth: "140px",
-    border: "none",
+    width: "100%",
+    height: "34px",
+    borderRadius: "3px",
+    border: "1px solid #cfd4dc",
+    padding: "0 10px",
+    fontSize: "13px",
     outline: "none",
-    fontSize: "14px",
-    color: "#111827",
-    backgroundColor: "transparent",
-    padding: "2px 0",
+    boxSizing: "border-box",
   },
   dropdownArrow: {
     color: "#6b7280",
@@ -1655,6 +1836,16 @@ const styles = {
     fontSize: "13px",
     fontWeight: 600,
   },
+  multiWrap: { position: "relative", width: "100%" },
+  multiControl: { minHeight: "36px", border: "1px solid #d1d5db", borderRadius: "4px", background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 10px", cursor: "pointer", boxSizing: "border-box" },
+  chipWrap: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: 1 },
+  placeholderText: { fontSize: "14px", color: "#9ca3af" },
+  chipClose: { border: "none", background: "transparent", cursor: "pointer", fontSize: "14px", lineHeight: 1, padding: 0, color: "#6b7280" },
+  multiMenu: { position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxHeight: "260px", overflowY: "auto", background: "#ffffff", border: "1px solid #d1d5db", borderRadius: "4px", boxShadow: "0 8px 20px rgba(0,0,0,0.08)", zIndex: 9999 },
+  resourceSearchBox: { padding: "8px", background: "#ffffff", borderBottom: "1px solid #f3f4f6", position: "sticky", top: 0, zIndex: 2 },
+  multiMenuRow: { display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px", fontSize: "14px", color: "#111827", cursor: "pointer", borderTop: "1px solid #f3f4f6" },
+  multiMenuEmpty: { padding: "12px", fontSize: "13px", color: "#6b7280" },
+  resourceLoadMoreBtn: { width: "100%", border: "none", borderTop: "1px solid #f3f4f6", backgroundColor: "#f3f4f6", color: "#2563eb", padding: "9px 10px", cursor: "pointer", fontSize: "13px", fontWeight: 600 },
   bottomBar: {
     marginTop: "20px",
     display: "flex",

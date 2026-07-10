@@ -61,18 +61,20 @@ const buildRoutingId = (item, resource, fallback = "") => {
 const deriveResourceFromRoutingId = (routingId) => {
   const value = toText(routingId);
   if (!value) return "";
+
   const parts = value
     .split("_")
     .map((part) => part.trim())
     .filter(Boolean);
-  return parts.length >= 3 ? parts.slice(2).join("_") : "";
+
+  return parts.length > 2 ? parts.slice(2).join("_") : "";
 };
 
 const normalizeDisplayRow = (row, index = 0) => {
   const item = getItem(row);
   const rawRoutingId = getRoutingId(row);
-  const resource = getResource(row) || deriveResourceFromRoutingId(rawRoutingId);
-  const routingId = buildRoutingId(item, resource, rawRoutingId);
+const resource = getResource(row) || deriveResourceFromRoutingId(rawRoutingId);
+const routingId = rawRoutingId || buildRoutingId(item, resource, rawRoutingId);
   const coProductAssociation = getCoProductAssociation(row);
   const recId = getRecId(row);
   const rowType = coProductAssociation === 1 ? "COPRODUCT" : "MAIN";
