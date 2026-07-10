@@ -3,7 +3,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { setModifySelectState, selectModifySelectState } from "../redux/bomSlice";
 import { useNavigate } from "react-router-dom";
 
-import { TableLoadingOverlay, ShowingRecordsInfo } from "../components/CommonProgressIndicator";
+import { TableLoadingOverlay } from "../components/CommonProgressIndicator";
+
 const PAGE_SIZE = 50;
 
 const DEFAULT_PAGINATION = {
@@ -260,6 +261,14 @@ const ModifySelectExistingBOM = () => {
             </div>
           </div>
 
+          <div style={styles.searchActions}>
+            <button type="button" style={styles.clearButton} onClick={handleClear} disabled={tableLoading}>
+              Clear
+            </button>
+            <button type="button" style={styles.searchButton} onClick={handleSearch} disabled={tableLoading}>
+              Search
+            </button>
+          </div>
         </div>
 
         {error ? <div style={styles.errorBox}>{error}</div> : null}

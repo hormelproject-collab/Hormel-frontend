@@ -1,6 +1,11 @@
 
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  clearItemBomRoutingCreateState,
+  selectItemBomRoutingCreateState,
+} from "../../redux/bomSlice";
 import { IoIosArrowBack } from "react-icons/io";
 import { MdCheck } from "react-icons/md";
 
@@ -9,8 +14,14 @@ const toText = (value) => (value == null ? "" : String(value));
 
 const ReviewSummary = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const savedCreateState = useSelector(selectItemBomRoutingCreateState);
   const locationHook = useLocation();
-  const state = locationHook.state || {};
+
+  const state =
+    locationHook.state && Object.keys(locationHook.state).length
+      ? locationHook.state
+      : savedCreateState || {};
 
   const {
     bomId = "",
@@ -99,7 +110,7 @@ const ReviewSummary = () => {
         // main item explicitly sent
         mainItem: {
           item: producedItem,
-          erp_co_product_association: 0,
+          erp_co_product_association: "",
         },
 
         // backward compatibility
@@ -144,6 +155,9 @@ const ReviewSummary = () => {
       }
 
       setSuccessData(json?.data || null);
+
+      // Clear Redux only after successful PostgreSQL push
+      dispatch(clearItemBomRoutingCreateState());
     } catch (err) {
       setError(err.message || "Failed to submit");
     } finally {

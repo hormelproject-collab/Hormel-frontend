@@ -77,6 +77,19 @@ const defaultExistingItemBomRoutingSearchState = {
   selectedRowsById: {},
   associatedCoProductsByGroup: {},
 };
+const defaultItemBomRoutingCreateState = {
+  bomId: "",
+  producedItem: "",
+  itemReleaseFlag: "",
+  location: "",
+  resource: "",
+  resourceRelevancy: "",
+  routingPriority: "",
+  routingId: "",
+  addConnectedCoProduct: false,
+  coProductItem: "",
+  coProducts: [],
+};
 
 const getRoutingResource = (routingId, explicitResource = "") => {
   const resourceFromColumn = String(explicitResource ?? "").trim();
@@ -673,6 +686,7 @@ const initialState = {
     resourceOptionsByKey: {},
   },
   resourceComponentConfigs: {},
+  itemBomRoutingCreate: defaultItemBomRoutingCreateState,
 };
 
 const bomSlice = createSlice({
@@ -887,6 +901,15 @@ const bomSlice = createSlice({
     },
     clearResourceComponentConfigs: (state) => {
       state.resourceComponentConfigs = {};
+    },
+    setItemBomRoutingCreateState: (state, action) => {
+      state.itemBomRoutingCreate = {
+        ...state.itemBomRoutingCreate,
+        ...(action.payload || {}),
+      };
+    },
+    clearItemBomRoutingCreateState: (state) => {
+      state.itemBomRoutingCreate = defaultItemBomRoutingCreateState;
     },
     clearCreateBomFlowState: (state) => {
       state.selectedProducedItemIds = [];
@@ -1138,6 +1161,8 @@ export const {
   replicateResourceComponentInfoToLocations,
   clearResourceComponentConfigs,
   clearCreateBomFlowState,
+  setItemBomRoutingCreateState,
+  clearItemBomRoutingCreateState,
 } = bomSlice.actions;
 
 export default bomSlice.reducer;
@@ -1269,3 +1294,6 @@ export const selectCheckoutSummary = createSelector(
     resourceComponentConfigs,
   })
 );
+
+export const selectItemBomRoutingCreateState = (state) =>
+  state.bom.itemBomRoutingCreate || defaultItemBomRoutingCreateState;

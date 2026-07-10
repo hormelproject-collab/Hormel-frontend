@@ -119,11 +119,17 @@ const ModifyExistingBOMSummary = () => {
       const originalQty = String(cp.original_qty ?? cp.qty ?? "");
       const updatedQty = String(cp.qty ?? "");
       const hasQtyChanged = originalQty.trim() !== updatedQty.trim();
+      const originalResource = String(cp.original_resource ?? cp.resource ?? "");
+      const updatedResource = String(cp.resource ?? "");
+      const hasResourceChanged = originalResource.trim() !== updatedResource.trim();
       return {
         ...cp,
         original_qty: originalQty,
         updated_qty: hasQtyChanged ? updatedQty : "No Changes",
+        original_resource: originalResource,
+        updated_resource: hasResourceChanged ? updatedResource : "No Changes",
         hasQtyChanged,
+        hasResourceChanged,
       };
     });
 
@@ -143,12 +149,16 @@ const ModifyExistingBOMSummary = () => {
       fallback.component_desc ||
       fallback.original_desc ||
       "";
+    const originalResource = String(cp.original_resource ?? cp.resource ?? fallback.original_resource ?? fallback.resource ?? "");
     return {
       ...cp,
       original_qty: originalQty,
       desc: coDesc,
+      original_resource: originalResource,
+      updated_resource: "Item Removed",
       updated_qty: "Item Removed",
       hasQtyChanged: true,
+      hasResourceChanged: true,
     };
   });
 
@@ -167,6 +177,11 @@ const ModifyExistingBOMSummary = () => {
       field: `Co-Product Item Description ${index + 1}`,
       original: cp.original_desc || "-",
       updated: cp.desc || "-",
+    },
+    {
+      field: `Co-Product Resource ${index + 1}`,
+      original: cp.original_resource || cp.resource || "-",
+      updated: cp.resource || "-",
     },
     {
       field: `Co-Product Quantity Produced ${index + 1}`,
@@ -234,13 +249,28 @@ const ModifyExistingBOMSummary = () => {
             }),
             coProductItems: coProducts.map((cp) => {
               const parsedStandardUsage = Number(
-                cp?.standard_usage ?? cp?.qty ?? cp?.qty_produced_per
+                cp?.qty ?? cp?.standard_usage ?? cp?.qty_produced_per
               );
+
+              const coProductItem = String(
+                cp?.item || cp?.co_product_item || cp?.coProductItem || ""
+              ).trim();
+
+              const cpResource = String(
+                cp?.resource || cp?.original_resource || ""
+              ).trim();
+
               return {
-                coProductItem: cp?.item || cp?.co_product_item || "",
+                coProductItem,
+                resource: cpResource,
+                routingId:
+                  coProductItem && cpResource
+                    ? `ROUTING_${coProductItem}_${cpResource}`
+                    : "",
                 standardUsage: Number.isFinite(parsedStandardUsage)
                   ? parsedStandardUsage
                   : "",
+                isNew: !!cp?.isNew,
               };
             }),
           },
@@ -348,9 +378,9 @@ const ModifyExistingBOMSummary = () => {
             <div style={styles.emptyBox}>No existing co-product values were changed.</div>
           ) : (
             <table style={styles.changesTable}>
-              <thead><tr><th style={styles.changesHeader}>Co-Product Item</th><th style={styles.changesHeader}>Description</th><th style={styles.changesHeader}>Original Qty Produced</th><th style={styles.changesHeader}>Updated Qty Produced</th></tr></thead>
+              <thead><tr><th style={styles.changesHeader}>Co-Product Item</th><th style={styles.changesHeader}>Description</th><th style={styles.changesHeader}>Original Resource</th><th style={styles.changesHeader}>Updated Resource</th><th style={styles.changesHeader}>Original Qty Produced</th><th style={styles.changesHeader}>Updated Qty Produced</th></tr></thead>
               <tbody>{finalExistingCoProducts.map((item, index) => (
-                <tr key={index} style={item.hasQtyChanged ? styles.changesAltRow : styles.changesRow}><td style={styles.changesCell}>{item.item || "-"}</td><td style={styles.changesCell}>{item.desc || "-"}</td><td style={styles.changesCell}>{item.original_qty || "-"}</td><td style={styles.changesCell}>{item.updated_qty || "-"}</td></tr>
+                <tr key={index} style={item.hasQtyChanged || item.hasResourceChanged ? styles.changesAltRow : styles.changesRow}><td style={styles.changesCell}>{item.item || "-"}</td><td style={styles.changesCell}>{item.desc || "-"}</td><td style={styles.changesCell}>{item.original_resource || "-"}</td><td style={styles.changesCell}>{item.updated_resource || "-"}</td><td style={styles.changesCell}>{item.original_qty || "-"}</td><td style={styles.changesCell}>{item.updated_qty || "-"}</td></tr>
               ))}</tbody>
             </table>
           )}
@@ -362,9 +392,9 @@ const ModifyExistingBOMSummary = () => {
             <div style={styles.emptyBox}>No new co-product values were added.</div>
           ) : (
             <table style={styles.changesTable}>
-              <thead><tr><th style={styles.changesHeader}>Co-Product Item</th><th style={styles.changesHeader}>Description</th><th style={styles.changesHeader}>Qty Produced</th></tr></thead>
+              <thead><tr><th style={styles.changesHeader}>Co-Product Item</th><th style={styles.changesHeader}>Description</th><th style={styles.changesHeader}>Resource</th><th style={styles.changesHeader}>Qty Produced</th></tr></thead>
               <tbody>{addedCoProducts.map((item, index) => (
-                <tr key={index} style={styles.changesAltRow}><td style={styles.changesCell}>{item.item || "-"}</td><td style={styles.changesCell}>{item.desc || "-"}</td><td style={styles.changesCell}>{item.qty || "-"}</td></tr>
+                <tr key={index} style={styles.changesAltRow}><td style={styles.changesCell}>{item.item || "-"}</td><td style={styles.changesCell}>{item.desc || "-"}</td><td style={styles.changesCell}>{item.resource || "-"}</td><td style={styles.changesCell}>{item.qty || "-"}</td></tr>
               ))}</tbody>
             </table>
           )}
