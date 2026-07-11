@@ -5,6 +5,7 @@ import {
   clearCreateBomFlowState,
   clearExistingBomSearchState,
   clearModifyExistingBomState,
+  clearModifyExistingBomFlowState,
 } from "../redux/bomSlice";
 import axios from "axios";
 import { layout } from "../styles/layout";
@@ -723,6 +724,8 @@ export default function SummaryPage() {
         } else {
           dispatch(clearCreateBomFlowState());
         }
+
+        dispatch(clearModifyExistingBomFlowState());
       }
     } catch (err) {
       const serverData = err?.response?.data;

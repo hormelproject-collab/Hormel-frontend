@@ -12,6 +12,15 @@ import { MdCheck } from "react-icons/md";
 const safeArray = (value) => (Array.isArray(value) ? value : []);
 const toText = (value) => (value == null ? "" : String(value));
 
+const buildRoutingId = (item, resource) => {
+  const cleanItem = toText(item).trim();
+  const cleanResource = toText(resource).trim();
+
+  if (!cleanItem || !cleanResource) return "";
+  
+  return `ROUTING_${cleanItem}_${cleanResource}`;
+};
+
 const ReviewSummary = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -56,7 +65,22 @@ const ReviewSummary = () => {
       : [];
 
   const displayCoProducts = coProducts.length ? coProducts : fallbackSingleCoProductRows;
+const resolvedRoutingId =
+  toText(routingId).trim() || buildRoutingId(producedItem, resource);
 
+const displayCoProductsWithRouting = displayCoProducts.map((row) => {
+  const rowResource = toText(row?.resource).trim() || resource;
+
+  return {
+    ...row,
+    resource: rowResource,
+
+    // Co-products must use main produced item
+    routingId: buildRoutingId(producedItem, rowResource),
+
+    erp_co_product_association: 1,
+  };
+});
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -81,7 +105,7 @@ const ReviewSummary = () => {
     !!location &&
     !!resource &&
     !!routingPriority &&
-    !!routingId &&
+    !!resolvedRoutingId &&
     !submitting;
 
   const handleReturnToMainMenu = () => {
@@ -104,12 +128,14 @@ const ReviewSummary = () => {
         resource,
         resourceRelevancy,
         routingPriority,
-        routingId,
+        routingId: resolvedRoutingId,
         addConnectedCoProduct,
 
         // main item explicitly sent
         mainItem: {
           item: producedItem,
+          routingId: resolvedRoutingId,
+          resource,
           erp_co_product_association: "",
         },
 
@@ -120,10 +146,12 @@ const ReviewSummary = () => {
 
         // all co-products explicitly marked
         coProducts: addConnectedCoProduct
-          ? displayCoProducts.map((row) => ({
+          ? displayCoProductsWithRouting.map((row) => ({
             coProductItem: row.coProductItem ?? "",
             itemDescription: row.itemDescription ?? "",
             qtyProduced: row.qtyProduced ?? "",
+            resource: row.resource ?? resource ?? "",
+            routingId: row.routingId ?? "",
             erp_co_product_association: 1,
           }))
           : [],
@@ -201,7 +229,7 @@ const ReviewSummary = () => {
             <strong>Resource Relevancy:</strong> <span>{resourceRelevancy || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
-            <strong>Routing ID:</strong> <span>{routingId || "-"}</span>
+            <strong>Routing ID:</strong> <span>{resolvedRoutingId || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
             <strong>BOM ID:</strong> <span>{bomId || "-"}</span>
@@ -223,10 +251,11 @@ const ReviewSummary = () => {
                       <th style={styles.coProductTh}>Co-Product Item</th>
                       <th style={styles.coProductTh}>Item Description</th>
                       <th style={styles.coProductTh}>Qty Produced</th>
+                      <th style={styles.coProductTh}>Routing ID</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayCoProducts.map((row, index) => (
+                    {displayCoProductsWithRouting.map((row, index) => (
                       <tr key={`${row.coProductItem || "coprod"}_${index}`}>
                         <td style={styles.coProductTd}>
                           {toText(row.coProductItem).trim() || "-"}
@@ -236,6 +265,9 @@ const ReviewSummary = () => {
                         </td>
                         <td style={styles.coProductTd}>
                           {toText(row.qtyProduced).trim() || "-"}
+                        </td>
+                        <td style={styles.coProductTd}>
+                          {toText(row.routingId).trim() || "-"}
                         </td>
                       </tr>
                     ))}

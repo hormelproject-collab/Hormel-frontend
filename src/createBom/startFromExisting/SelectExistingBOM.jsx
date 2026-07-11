@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   fetchExistingBomSearchRows,
   setExistingBomSearchState,
+  setModifyExistingBomSearchCriteria,
   selectExistingBomSearchRows,
   selectExistingBomSearchLoading,
   selectExistingBomSearchError,

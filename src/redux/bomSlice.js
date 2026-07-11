@@ -57,6 +57,29 @@ const defaultExistingBomSearchState = {
   latestRequestId: "",
 };
 
+const defaultModifyExistingBomFlowState = {
+  searchCriteria: {
+    searchBy1: "resource",
+    searchBy2: "location",
+    query1: "",
+    query2: "",
+    selectedRowId: "",
+    pagination: defaultPagination,
+  },
+  bomValues: {
+    record: null,
+    bomVersion: "",
+    selectedResources: [],
+    componentItems: [],
+    coProducts: [],
+    producedCoProduct: false,
+    routingRows: [],
+    resourceSearch: "",
+    resourcePage: 1,
+  },
+  summarySnapshot: null,
+};
+
 const defaultEngineeringChangeLogState = {
   loading: false,
   error: null,
@@ -660,6 +683,7 @@ const initialState = {
     initialCoProducts: [],
     producedCoProduct: false,
   },
+  modifyExistingBomFlow: defaultModifyExistingBomFlowState,
   items: itemsAdapter.getInitialState({
     loading: false,
     error: null,
@@ -860,6 +884,45 @@ const bomSlice = createSlice({
         initialCoProducts: [],
         producedCoProduct: false,
       };
+    },
+    setModifyExistingBomFlowState: (state, action) => {
+      const payload = action.payload || {};
+      state.modifyExistingBomFlow = {
+        ...state.modifyExistingBomFlow,
+        ...payload,
+        searchCriteria: {
+          ...state.modifyExistingBomFlow.searchCriteria,
+          ...(payload.searchCriteria || {}),
+          pagination: {
+            ...state.modifyExistingBomFlow.searchCriteria.pagination,
+            ...(payload.searchCriteria?.pagination || {}),
+          },
+        },
+        bomValues: {
+          ...state.modifyExistingBomFlow.bomValues,
+          ...(payload.bomValues || {}),
+        },
+      };
+    },
+    setModifyExistingBomSearchCriteria: (state, action) => {
+      const payload = action.payload || {};
+      state.modifyExistingBomFlow.searchCriteria = {
+        ...state.modifyExistingBomFlow.searchCriteria,
+        ...payload,
+        pagination: {
+          ...state.modifyExistingBomFlow.searchCriteria.pagination,
+          ...(payload.pagination || {}),
+        },
+      };
+    },
+    setModifyExistingBomValues: (state, action) => {
+      state.modifyExistingBomFlow.bomValues = {
+        ...state.modifyExistingBomFlow.bomValues,
+        ...(action.payload || {}),
+      };
+    },
+    clearModifyExistingBomFlowState: (state) => {
+      state.modifyExistingBomFlow = defaultModifyExistingBomFlowState;
     },
     ensureResourceComponentConfig: (state, action) => {
       const { key, item, location } = action.payload || {};
@@ -1157,6 +1220,10 @@ export const {
   clearModifySelectState,
   setModifyExistingBomState,
   clearModifyExistingBomState,
+  setModifyExistingBomFlowState,
+  setModifyExistingBomSearchCriteria,
+  setModifyExistingBomValues,
+  clearModifyExistingBomFlowState,
   ensureResourceComponentConfig,
   replicateResourceComponentInfoToLocations,
   clearResourceComponentConfigs,
@@ -1206,6 +1273,12 @@ export const selectHasInactiveLocationsSelected = createSelector(
 
 export const selectModifySelectState = (state) => state.bom.modifySelectState;
 export const selectModifyExistingBomState = (state) => state.bom.modifyExistingBomState;
+export const selectModifyExistingBomFlowState = (state) =>
+  state.bom.modifyExistingBomFlow || defaultModifyExistingBomFlowState;
+export const selectModifyExistingBomSearchCriteria = (state) =>
+  (state.bom.modifyExistingBomFlow || defaultModifyExistingBomFlowState).searchCriteria;
+export const selectModifyExistingBomValues = (state) =>
+  (state.bom.modifyExistingBomFlow || defaultModifyExistingBomFlowState).bomValues;
 export const selectItemsLoading = (state) => state.bom.items.loading;
 export const selectItemsError = (state) => state.bom.items.error;
 export const selectItemsPagination = (state) => state.bom.items.pagination;

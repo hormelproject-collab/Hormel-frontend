@@ -6,6 +6,7 @@ import ProgressIndicator from "../../components/CommonProgressIndicator";
 import {
   selectModifyExistingBomState,
   setModifyExistingBomState,
+  setModifyExistingBomValues,
 } from "../../redux/bomSlice";
 
 const NEXT_ROUTE = "/summary";
@@ -602,17 +603,20 @@ const ModifyExistingBOM = () => {
   useEffect(() => {
     if (!selectedBom) return;
 
-    dispatch(
-      setModifyExistingBomState({
-        record: selectedBom,
-        bomVersion,
-        selectedResources,
-        componentItems,
-        coProducts,
-        producedCoProduct,
-        routingRows,
-      })
-    );
+    const snapshot = {
+      record: selectedBom,
+      bomVersion,
+      selectedResources,
+      componentItems,
+      coProducts,
+      producedCoProduct,
+      routingRows,
+      resourceSearch,
+      resourcePage,
+    };
+
+    dispatch(setModifyExistingBomState(snapshot));
+    dispatch(setModifyExistingBomValues(snapshot));
   }, [
     dispatch,
     selectedBom,
@@ -622,6 +626,8 @@ const ModifyExistingBOM = () => {
     coProducts,
     producedCoProduct,
     routingRows,
+    resourceSearch,
+    resourcePage,
   ]);
 
   const originalBomVersion = useMemo(() => getOriginalBomVersion(selectedBom?.bom_id), [selectedBom]);
@@ -718,6 +724,22 @@ const ModifyExistingBOM = () => {
 
   const handleNext = () => {
     if (!validateBeforeNext()) return;
+
+    const snapshot = {
+      record: selectedBom,
+      bomVersion,
+      selectedResources,
+      componentItems,
+      coProducts,
+      producedCoProduct,
+      routingRows,
+      resourceSearch,
+      resourcePage,
+    };
+
+    dispatch(setModifyExistingBomState(snapshot));
+    dispatch(setModifyExistingBomValues(snapshot));
+
     navigate(NEXT_ROUTE, {
       state: {
         flow: "modify-existing-bom",
