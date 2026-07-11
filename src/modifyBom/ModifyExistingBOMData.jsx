@@ -6,6 +6,7 @@ import { MdDelete } from "react-icons/md";
 import {
     selectModifyExistingBomState,
     setModifyExistingBomState,
+    clearModifyExistingBomState,
 } from "../redux/bomSlice";
 
 const ModifyExistingBOMData = () => {
@@ -348,213 +349,167 @@ const ModifyExistingBOMData = () => {
         return lookup;
     };
 
-// Fetch component items and co-products based on bomId
+// Fetch component items and co-products based on selected BOM / produced item / location / resource / routing id
     useEffect(() => {
+        const selectedRecord = state?.record || record || {};
+
         const bomId =
-            state?.record?.bom_id ||
-            state?.record?.BOMID ||
-            state?.record?.bomId ||
-            record?.bom_id ||
-            record?.BOMID ||
-            record?.bomId;
+            selectedRecord?.bom_id ||
+            selectedRecord?.BOMID ||
+            selectedRecord?.bomId ||
+            "";
+
+        const producedItem =
+            selectedRecord?.produced_item ||
+            selectedRecord?.producedItem ||
+            selectedRecord?.item ||
+            "";
+
+        const selectedLocation =
+            selectedRecord?.location ||
+            selectedRecord?.Location ||
+            "";
+
+        const selectedResource =
+            selectedRecord?.resource ||
+            selectedRecord?.Resource ||
+            getResourceFromRoutingId(selectedRecord?.routing_id || selectedRecord?.routingId) ||
+            "";
+
+        const selectedRoutingId =
+            selectedRecord?.routing_id ||
+            selectedRecord?.routingId ||
+            (producedItem && selectedResource
+                ? `ROUTING_${producedItem}_${selectedResource}`
+                : "");
+
         if (!bomId) return;
-
-        if (
-            persistedBomState?.record &&
-            (persistedBomState?.initialComponentItems?.length > 0 ||
-                persistedBomState?.initialCoProducts?.length > 0)
-        ) {
-            return;
-        }
-
-
-
-
-
-
-        const buildComponentRow = (item) => {
-            const componentItem = String(item.item ?? item.Item ?? item.component_item ?? item.componentItem ?? "").trim();
-            const standardUsage = String(
-                item.erp_bom_quantity_consumed_per ?? item.ERPBOMQuantityConsumedPer ?? item.standard_usage ?? item.qty_consumed_per ?? item.qtyConsumedPer ?? item.qty ?? ""
-            ).trim();
-            const componentDesc = String(
-                item.item_desc ?? item.ItemDesc ?? item.description ?? item.desc ?? item.component_desc ?? ""
-            ).trim();
-            return {
-                component_item: componentItem,
-                original_component_item: componentItem,
-                component_desc: componentDesc,
-                original_component_desc: componentDesc,
-                standard_usage: standardUsage,
-                original_standard_usage: standardUsage,
-            };
-        };
-
-        const buildCoProductRow = (item) => {
-            const coProductItem = String(item.item ?? item.Item ?? item.component_item ?? item.componentItem ?? "").trim();
-            const qty = String(
-                item.erp_bom_qty_produced_per ?? item.ERPItemBOMRoutingPriority ?? item.qty_produced_per ?? item.qtyProducedPer ?? item.qty ?? ""
-            ).trim();
-            const desc = String(
-                item.item_desc ?? item.ItemDesc ?? item.description ?? item.desc ?? item.component_desc ?? ""
-            ).trim();
-            return {
-                item: coProductItem,
-                original_item: coProductItem,
-                desc,
-                original_desc: desc,
-                qty,
-                original_qty: qty,
-                resource: String(item.resource ?? item.Resource ?? "").trim() || getResourceFromRoutingId(item.routing_id ?? item.routingId),
-                original_resource: String(item.resource ?? item.Resource ?? "").trim() || getResourceFromRoutingId(item.routing_id ?? item.routingId),
-            };
-        };
-
-        const parseNumericValue = (value) => {
-            const num = Number(String(value).trim());
-            return Number.isFinite(num) ? num : NaN;
-        };
-
-        const hasQtyLessThanOne = (row) => {
-            const value = parseNumericValue(
-                row.erp_bom_qty_produced_per ??
-                row.ERPItemBOMRoutingPriority ??
-                row.qty_produced_per ??
-                row.qtyProducedPer ??
-                row.qty ??
-                row.erp_bom_quantity_consumed_per ??
-                row.ERPBOMQuantityConsumedPer ??
-                row.standard_usage ??
-                row.qty_consumed_per ??
-                row.qtyConsumedPer ??
-                ""
-            );
-            return !Number.isNaN(value) && value < 1;
-        };
-
-        const filterRowsByBomId = (rows, bomIdValue) => {
-            const normalizedBomId = String(bomIdValue ?? "").trim().toLowerCase();
-            return rows.filter((row) => {
-                const rowBomId = String(row.bom_id ?? row.BOM_ID ?? row.BOMID ?? row.bomId ?? "").trim().toLowerCase();
-                return rowBomId && normalizedBomId && rowBomId === normalizedBomId;
-            });
-        };
+        // Always refetch for the currently selected BOM record. Do not reuse persisted Redux rows here.
 
         const fetchItems = async () => {
             try {
                 setItemsLoading(true);
+                setError("");
 
-                const fetchRows = async (directUrl, backupUrl) => {
-                    let res = await fetch(directUrl);
-                    if (!res.ok) {
-                        res = await fetch(backupUrl);
-                    }
-                    if (!res.ok) {
-                        throw new Error(`Failed to fetch data from ${directUrl}`);
-                    }
-                    const data = await res.json();
-                    return normalizeApiArray(data);
-                };
+                const params = new URLSearchParams();
+                params.set("bomId", String(bomId || "").trim());
+                params.set("producedItem", String(producedItem || "").trim());
+                params.set("location", String(selectedLocation || "").trim());
+                params.set("resource", String(selectedResource || "").trim());
+                params.set("routingId", String(selectedRoutingId || "").trim());
 
-                // Fetch Component Items
-                const componentRows = await fetchRows(
-                    `/api/tables/bom_consumed/${encodeURIComponent(bomId)}`,
-                    `/api/tables/bom_consumed`,
+                const response = await fetch(
+                    `/api/tables/modify-existing-bom-details?${params.toString()}`
                 );
 
-                // Components can be more than 1, so do NOT apply qty < 1 filter here.
-                const filteredComponentRows = filterRowsByBomId(componentRows, bomId);
+                const payload = await response.json().catch(() => ({}));
 
-                // Fetch Co-Products from BOM Produced
-                const coProductRows = await fetchRows(
-                    `/api/tables/bom_produced/${encodeURIComponent(bomId)}`,
-                    `/api/tables/bom_produced`,
-                );
-                const filteredCoProductRows = filterRowsByBomId(coProductRows, bomId)
-                    .filter(hasQtyLessThanOne);
-
-                // Fetch existing Co-Product / Resource / BOMID combinations from Item BOM Routing.
-                // This is needed so co-products can flow into item_bom_routing with the correct resource.
-                let itemBomRoutingRows = [];
-                try {
-                    itemBomRoutingRows = await fetchRows(
-                        `/api/tables/item_bom_routing/${encodeURIComponent(bomId)}`,
-                        `/api/tables/item_bom_routing`,
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(
+                        payload?.details
+                            ? `${payload?.error || "Failed to fetch modify existing BOM details"}: ${typeof payload.details === "string" ? payload.details : JSON.stringify(payload.details)}`
+                            : payload?.error || "Failed to fetch modify existing BOM details"
                     );
-                } catch (routingFetchError) {
-                    console.error("Failed to fetch item_bom_routing co-product resources", routingFetchError);
-                    itemBomRoutingRows = [];
                 }
 
-                const filteredCoProductRoutingRows = filterRowsByBomId(itemBomRoutingRows, bomId)
-                    .filter(isCoProductRoutingRow)
-                    .map((row) => ({
-                        ...row,
-                        item: getRowItem(row),
-                        resource: getRowResource(row),
+                const data = payload?.data || {};
+                const fetchedComponents = Array.isArray(data.componentItems)
+                    ? data.componentItems
+                    : [];
+                const fetchedCoProducts = Array.isArray(data.coProducts)
+                    ? data.coProducts
+                    : [];
+
+                const normalizedComponents = fetchedComponents.map((row) => ({
+                    component_item: row.component_item || "",
+                    original_component_item:
+                        row.original_component_item || row.component_item || "",
+                    component_desc:
+                        row.component_desc ||
+                        row.item_desc ||
+                        row.item_description ||
+                        row.description ||
+                        row.desc ||
+                        "",
+                    original_component_desc:
+                        row.original_component_desc ||
+                        row.component_desc ||
+                        row.item_desc ||
+                        row.item_description ||
+                        row.description ||
+                        row.desc ||
+                        "",
+                    standard_usage: row.standard_usage || "",
+                    original_standard_usage:
+                        row.original_standard_usage || row.standard_usage || "",
+                }));
+
+                const normalizedCoProducts = fetchedCoProducts.map((row) => ({
+                    item: row.item || "",
+                    original_item: row.original_item || row.item || "",
+                    desc: row.desc || "",
+                    original_desc: row.original_desc || row.desc || "",
+                    qty: row.qty || "",
+                    original_qty: row.original_qty || row.qty || "",
+                    resource: row.resource || selectedResource || "",
+                    original_resource:
+                        row.original_resource || row.resource || selectedResource || "",
+                    routing_id: row.routing_id || selectedRoutingId || "",
+                    original_routing_id:
+                        row.original_routing_id || row.routing_id || selectedRoutingId || "",
+                    erp_co_product_association:
+                        row.erp_co_product_association || "1",
+                    itemBomRoutingPriority:
+                        row.itemBomRoutingPriority ||
+                        row.item_bom_routing_priority ||
+                        row.erp_item_bom_routing_priority ||
+                        "",
+                }));
+
+                setComponentItemOptions(
+                    normalizedComponents.map((row) => ({
+                        value: row.component_item,
+                        label: row.component_item,
+                        desc: row.component_desc,
                     }))
-                    .filter((row) => row.item && row.resource);
+                );
 
-                const producedByItem = new Map();
-                filteredCoProductRows.forEach((row) => {
-                    const itemKey = getRowItem(row).toUpperCase();
-                    if (!itemKey) return;
-                    if (!producedByItem.has(itemKey)) producedByItem.set(itemKey, row);
-                });
-
-                const coProductSourceRows = filteredCoProductRoutingRows.length
-                    ? filteredCoProductRoutingRows.map((routingRow) => ({
-                        ...(producedByItem.get(String(routingRow.item || "").toUpperCase()) || {}),
-                        ...routingRow,
+                setCoProductOptions(
+                    normalizedCoProducts.map((row) => ({
+                        value: row.item,
+                        label: row.item,
+                        desc: row.desc,
                     }))
-                    : filteredCoProductRows;
+                );
 
-                // Fetch item_desc/item_description from PostgreSQL item_details for both components and co-products.
-                const itemsForDescription = [
-                    ...filteredComponentRows.map((row) => String(row.item ?? row.Item ?? row.component_item ?? row.componentItem ?? "").trim()),
-                    ...coProductSourceRows.map((row) => String(row.item ?? row.Item ?? row.component_item ?? row.componentItem ?? "").trim()),
-                ].filter(Boolean);
+                setComponentItems(normalizedComponents);
+                setInitialComponentItems(normalizedComponents.map((row) => ({ ...row })));
 
-                const itemDetailsLookup = await getItemDescriptionFromItemDetails(itemsForDescription);
-                setItemMasterLookup((prev) => ({ ...prev, ...itemDetailsLookup }));
+                setCoProducts(normalizedCoProducts);
+                setInitialCoProducts(normalizedCoProducts.map((row) => ({ ...row })));
 
-                const builtComponentRows = filteredComponentRows.map((row) => {
-                    const built = buildComponentRow(row);
-                    const desc = built.component_desc || itemDetailsLookup[built.component_item] || itemDetailsLookup[String(built.component_item).toUpperCase()] || "";
-                    return {
-                        ...built,
-                        component_desc: desc,
-                        original_component_desc: desc,
-                    };
-                });
-
-                setComponentItemOptions(filteredComponentRows.map(buildOption));
-                setComponentItems(builtComponentRows);
-                setInitialComponentItems(builtComponentRows.map((row) => ({ ...row })));
-
-                const builtCoProductRows = coProductSourceRows.map((row) => {
-                    const built = buildCoProductRow(row);
-                    const desc = built.desc || itemDetailsLookup[built.item] || itemDetailsLookup[String(built.item).toUpperCase()] || "";
-                    return {
-                        ...built,
-                        desc,
-                        original_desc: desc,
-                    };
-                });
-
-                setCoProductOptions(coProductSourceRows.map(buildOption));
-                setCoProducts(builtCoProductRows);
-                setInitialCoProducts(builtCoProductRows.map((row) => ({ ...row })));
-                setProducedCoProduct(coProductSourceRows.length > 0);
+                setProducedCoProduct(normalizedCoProducts.length > 0);
             } catch (e) {
-                console.error("Error fetching items:", e.message);
+                console.error("Error fetching modify existing BOM details:", e);
+                setError(e.message || "Failed to fetch modify existing BOM details");
+                setComponentItems([]);
+                setInitialComponentItems([]);
+                setCoProducts([]);
+                setInitialCoProducts([]);
+                setProducedCoProduct(false);
             } finally {
                 setItemsLoading(false);
             }
         };
 
         fetchItems();
-    }, [state?.record?.bom_id, record?.bom_id]);
+    }, [
+        state?.record,
+        record,
+        persistedBomState?.record,
+        persistedBomState?.initialComponentItems?.length,
+        persistedBomState?.initialCoProducts?.length,
+    ]);
 
         useEffect(() => {
             dispatch(
@@ -626,17 +581,15 @@ const ModifyExistingBOMData = () => {
         ]);
     };
 
-    const handleComponentItemChange = (index, value) => {
-        const description =
-            itemMasterLookup[value] || "";
-
+    const handleComponentItemChange = (index, value, description = "") => {
+        const descValue = description || itemMasterLookup[value] || "";
         setComponentItems((prev) =>
             prev.map((item, i) =>
                 i === index
                     ? {
                         ...item,
                         component_item: value,
-                        component_desc: description,
+                        component_desc: descValue,
                     }
                     : item
             )
@@ -673,7 +626,9 @@ const ModifyExistingBOMData = () => {
         const missingItem = String(cp.item ?? "").trim() === "";
         const missingQty = String(cp.qty ?? "").trim() === "";
         const missingResource = String(cp.resource ?? "").trim() === "";
-        return missingItem || missingQty || missingResource;
+        const missingPriority =
+            !!cp.isNew && String(cp.itemBomRoutingPriority ?? "").trim() === "";
+        return missingItem || missingQty || missingResource || missingPriority;
     });
 
     const hasInvalidCoProductQty = coProducts.some((cp) => {
@@ -684,7 +639,15 @@ const ModifyExistingBOMData = () => {
         return !Number.isNaN(num) && num >= 1;
     });
 
-    const hasInvalidNumericValues = hasInvalidCoProductQty;
+    const hasInvalidCoProductPriority = coProducts.some((cp) => {
+        if (!producedCoProduct || !cp.isNew) return false;
+        const trimmed = String(cp.itemBomRoutingPriority ?? "").trim();
+        if (trimmed === "") return false;
+        const num = Number(trimmed);
+        return Number.isNaN(num);
+    });
+
+    const hasInvalidNumericValues = hasInvalidCoProductQty || hasInvalidCoProductPriority;
 
     useEffect(() => {
         if (!hasMissingStandardUsage && !hasMissingCoProductFields && !hasInvalidNumericValues) {
@@ -842,7 +805,7 @@ const ModifyExistingBOMData = () => {
                         {isLoading && options.length === 0 ? <div style={styles.lazyDropdownEmpty}>Loading...</div> : options.length === 0 ? <div style={styles.lazyDropdownEmpty}>No items found</div> : (
                             <>
                                 {options.map((option) => (
-                                    <div key={option.item} style={styles.lazyDropdownRow} onMouseDown={(e) => { e.preventDefault(); applySelection(option); }}>
+                                    <div key={option.item} style={styles.lazyDropdownRow} onMouseDown={(e) => { e.preventDefault(); applySelection(option); setActiveItemDropdownKey(null); }}>
                                         <div style={styles.lazyDropdownItem}>{option.item}</div>
                                         <div style={styles.lazyDropdownDesc}>{option.item_desc || "-"}</div>
                                     </div>
@@ -866,14 +829,14 @@ const ModifyExistingBOMData = () => {
 
         if (hasMissingCoProductFields) {
             setValidationError(
-                "Please fill in Item, Resource and Qty Produced for all co-product rows before moving forward."
+                "Please fill in Item, Resource, Item BOM Routing Priority and Qty Produced for all new co-product rows before moving forward."
             );
             return;
         }
 
         if (hasInvalidNumericValues) {
             setValidationError(
-                "Qty Produced values must be numeric and less than 1."
+                "Qty Produced must be numeric and less than 1. Item BOM Routing Priority must be numeric for newly added co-products."
             );
             return;
         }
@@ -905,7 +868,13 @@ const ModifyExistingBOMData = () => {
             .map((it) => ({
                 ...it,
                 removed: true,
-                component_desc: it.component_desc || itemMasterLookup[it.original_component_item || it.component_item] || "",
+                component_desc:
+                    it.component_desc ||
+                    it.original_component_desc ||
+                    it.item_desc ||
+                    it.item_description ||
+                    it.description ||
+                    "",
             }));
 
         const removedCoProducts = initialCoProducts
@@ -947,7 +916,7 @@ const ModifyExistingBOMData = () => {
         return (
             <div style={styles.page}>
                 <div style={styles.wrapper}>
-                    <div style={styles.back} onClick={() => navigate(-1)}>← BACK</div>
+                    <div style={styles.back} onClick={handleBack}>← BACK</div>
                     <div style={styles.error}>{error}</div>
                 </div>
             </div>
@@ -975,18 +944,19 @@ const ModifyExistingBOMData = () => {
                 original_qty: "",
                 resource: "",
                 original_resource: "",
+                itemBomRoutingPriority: "",
                 isNew: true,
             },
         ]);
     };
 
-    const handleCoProductItemChange = (index, value) => {
+    const handleCoProductItemChange = (index, value, description = "") => {
         const updated = [...coProducts];
 
         updated[index] = {
             ...updated[index],
             item: value,
-            desc: itemMasterLookup[value] || itemMasterLookup[String(value).toUpperCase()] || "",
+            desc: description || itemMasterLookup[value] || itemMasterLookup[String(value).toUpperCase()] || "",
         };
 
         setCoProducts(updated);
@@ -1017,11 +987,16 @@ const ModifyExistingBOMData = () => {
         }
     };
 
+    const handleBack = () => {
+        dispatch(clearModifyExistingBomState());
+        navigate(-1);
+    };
+
     return (
         <div style={styles.page}>
             <div style={styles.wrapper}>
                 
-                <div style={styles.back} onClick={() => navigate(-1)}>
+                <div style={styles.back} onClick={handleBack}>
                     ← BACK
                 </div>
 
@@ -1039,6 +1014,16 @@ const ModifyExistingBOMData = () => {
                                 readOnly
                                 style={styles.inputDisabled}
                                 placeholder="BOM ID"
+                            />
+                        </div>
+
+                        <div style={styles.field}>
+                            <label style={styles.label}>Produced Item</label>
+                            <input
+                                value={record?.produced_item || record?.producedItem || record?.item || ""}
+                                readOnly
+                                style={styles.inputDisabled}
+                                placeholder="Produced Item"
                             />
                         </div>
 
@@ -1107,7 +1092,7 @@ const ModifyExistingBOMData = () => {
                                             value: String(item.component_item || "").trim(),
                                             placeholder: "Search Component Item",
                                             updateValue: (value) => handleComponentItemChange(index, value),
-                                            applySelection: (option) => handleComponentItemChange(index, option.item),
+                                            applySelection: (option) => handleComponentItemChange(index, option.item, option.item_desc || option.description || ""),
                                         })
                                     )}
 
@@ -1175,6 +1160,7 @@ const ModifyExistingBOMData = () => {
                                     <div>Co-Product Item</div>
                                     <div>Item Description</div>
                                     <div>Resource</div>
+                                    <div>Item BOM Routing Priority</div>
                                     <div>Qty Produced Per</div>
                                     <div></div>
                                 </div>
@@ -1197,7 +1183,7 @@ const ModifyExistingBOMData = () => {
                                                 value: String(cp.item || "").trim(),
                                                 placeholder: "Search Co-Product Item",
                                                 updateValue: (value) => handleCoProductItemChange(index, value),
-                                                applySelection: (option) => handleCoProductItemChange(index, option.item),
+                                                applySelection: (option) => handleCoProductItemChange(index, option.item, option.item_desc || option.description || ""),
                                             })
                                         )}
 
@@ -1222,6 +1208,19 @@ const ModifyExistingBOMData = () => {
                                                 updateValue: (value) => handleCoProductResourceChange(index, value),
                                             })
                                         )}
+
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            disabled={!cp.isNew}
+                                            value={cp.itemBomRoutingPriority || ""}
+                                            onChange={(e) =>
+                                                updateCoProduct(index, "itemBomRoutingPriority", e.target.value)
+                                            }
+                                            style={cp.isNew ? styles.tableInput : styles.tableInputDisabled}
+                                            placeholder="Priority"
+                                        />
 
                                         <div style={styles.inputWithError}>
                                             <input
@@ -1726,7 +1725,7 @@ const styles = {
 
     coProductEditTableHeader: {
         display: "grid",
-        gridTemplateColumns: "1.15fr 1.35fr 1fr 0.9fr 90px",
+        gridTemplateColumns: "1.1fr 1.25fr 1fr 1fr 0.85fr 70px",
         background: "#f3f4f6",
         padding: "10px 12px",
         fontSize: 12,
@@ -1735,7 +1734,7 @@ const styles = {
     },
     coProductEditTableRow: {
         display: "grid",
-        gridTemplateColumns: "1.15fr 1.35fr 1fr 0.9fr 90px",
+        gridTemplateColumns: "1.1fr 1.25fr 1fr 1fr 0.85fr 70px",
         gap: 10,
         padding: "10px 12px",
         borderTop: "1px solid #eceff3",

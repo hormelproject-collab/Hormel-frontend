@@ -195,15 +195,14 @@ const CreateItemBOMRoutingRecord = () => {
 
     return savedRows.length
       ? savedRows.map((row) => ({
-          id: row.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          coProductItem: row.coProductItem || "",
-          itemDescription: row.itemDescription || "",
-          qtyProduced: row.qtyProduced || "",
-        }))
+        id: row.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        coProductItem: row.coProductItem || "",
+        itemDescription: row.itemDescription || "",
+        qtyProduced: row.qtyProduced || "",
+      }))
       : [createCoProductRow()];
   });
-  const [priorityValidationError, setPriorityValidationError] = useState("");
-  const [validatingPriority, setValidatingPriority] = useState(false);
+
   const [loading, setLoading] = useState({
     bomDetails: false,
     itemReleaseFlag: false,
@@ -447,83 +446,39 @@ const CreateItemBOMRoutingRecord = () => {
     });
   };
 
-  const handleNext = async () => {
-    if (!canProceed || validatingPriority) return;
+  const handleNext = () => {
+    if (!canProceed) return;
 
-    try {
-      setValidatingPriority(true);
-      setPriorityValidationError("");
-      setError("");
+    setError("");
 
-      const validationPayload = {
-        bomId: selectedBomId,
-        resource: selectedResource,
-        routingId,
-        routingPriority,
-      };
+    const coProducts = addConnectedCoProduct
+      ? validCoProductRows.map((row) => ({
+        id: row.id,
+        coProductItem: row.coProductItem,
+        itemDescription: row.itemDescription,
+        qtyProduced: row.qtyProduced,
+      }))
+      : [];
 
-      const res = await fetch("/api/tables/item-bom-routing/validate-priority", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(validationPayload),
-      });
+    const summaryState = {
+      bomId: selectedBomId,
+      producedItem,
+      itemReleaseFlag,
+      location,
+      resource: selectedResource,
+      resourceRelevancy,
+      routingPriority,
+      routingId,
+      addConnectedCoProduct,
+      coProductItem: coProducts[0]?.coProductItem || "",
+      coProducts,
+    };
 
-      const json = await res.json().catch(() => ({}));
+    dispatch(setItemBomRoutingCreateState(summaryState));
 
-      if (!res.ok) {
-        throw new Error(
-          json?.details ||
-            json?.error ||
-            json?.message ||
-            "Failed to validate routing priority"
-        );
-      }
-
-      if (!json?.valid) {
-        setPriorityValidationError(
-          json?.error ||
-            `Priority ${routingPriority} already exists for this BOM ID / Resource combination.`
-        );
-        return;
-      }
-
-      const coProducts = addConnectedCoProduct
-        ? validCoProductRows.map((row) => ({
-            id: row.id,
-            coProductItem: row.coProductItem,
-            itemDescription: row.itemDescription,
-            qtyProduced: row.qtyProduced,
-          }))
-        : [];
-
-      const summaryState = {
-        bomId: selectedBomId,
-        producedItem,
-        itemReleaseFlag,
-        location,
-        resource: selectedResource,
-        resourceRelevancy,
-        routingPriority,
-        routingId,
-        addConnectedCoProduct,
-        coProductItem: coProducts[0]?.coProductItem || "",
-        coProducts,
-      };
-
-      dispatch(setItemBomRoutingCreateState(summaryState));
-
-      navigate("/review-summary", {
-        state: summaryState,
-      });
-    } catch (err) {
-      setPriorityValidationError(
-        err?.message || "Failed to validate routing priority"
-      );
-    } finally {
-      setValidatingPriority(false);
-    }
+    navigate("/review-summary", {
+      state: summaryState,
+    });
   };
   return (
     <div style={styles.page}>
@@ -550,7 +505,6 @@ const CreateItemBOMRoutingRecord = () => {
               getOptionLabel={(opt) => opt.bomId}
               onSelect={(opt) => {
                 setSelectedBomId(opt.bomId);
-                setPriorityValidationError("");
               }}
               searchPlaceholder="Search BOM ID..."
             />
@@ -586,7 +540,6 @@ const CreateItemBOMRoutingRecord = () => {
               onSelect={(opt) => {
                 setSelectedResource(opt.resource);
                 setResourceRelevancy(opt.resourcePlanningRelevance || opt.resource_relevancy || "");
-                setPriorityValidationError("");
               }}
               searchPlaceholder="Search Resource..."
             />
@@ -601,15 +554,12 @@ const CreateItemBOMRoutingRecord = () => {
               value={routingPriority}
               onChange={(e) => {
                 setRoutingPriority(e.target.value);
-                setPriorityValidationError("");
               }}
               placeholder="Enter Routing Priority"
               style={styles.input}
             />
             <div style={styles.helperText}>Enter routing priority for this Resource / Routing ID</div>
-            {priorityValidationError ? (
-              <div style={styles.priorityErrorText}>{priorityValidationError}</div>
-            ) : null}
+
           </div>
 
           <div style={styles.fieldBlock}>
@@ -728,10 +678,10 @@ const CreateItemBOMRoutingRecord = () => {
               opacity: canProceed ? 1 : 0.6,
               cursor: canProceed ? "pointer" : "not-allowed",
             }}
-            disabled={!canProceed || validatingPriority}
+            disabled={!canProceed}
             onClick={handleNext}
           >
-            {validatingPriority ? "VALIDATING..." : "NEXT: REVIEW SUMMARY"}{" "}
+            NEXT: REVIEW SUMMARY{" "}
             <span style={styles.arrow}>→</span>
           </button>
         </div>
@@ -934,13 +884,7 @@ const styles = {
     display: "flex",
     justifyContent: "flex-end",
     marginTop: "24px",
-  },priorityErrorText: {
-  marginTop: "6px",
-  marginLeft: "14px",
-  fontSize: "13px",
-  color: "#dc2626",
-  fontWeight: 500,
-},
+  }, 
   nextButton: {
     display: "inline-flex",
     alignItems: "center",
