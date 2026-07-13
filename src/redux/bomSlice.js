@@ -49,7 +49,7 @@ const defaultExistingBomSearchState = {
   selectedRowIds: [],
   selectedRowsById: {},
   associatedCoProductsByGroup: {},
-  searchBy1: "resource",
+  searchBy1: "bomId",
   searchBy2: "location",
   query1: "",
   query2: "",
@@ -307,6 +307,7 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
 };
 
 /** ------------------ THUNKS ------------------ **/
+
 export const fetchItemMaster = createAsyncThunk(
   "bom/fetchItemMaster",
   async (
@@ -364,7 +365,69 @@ export const fetchItemMaster = createAsyncThunk(
     }
   }
 );
+export const fetchDeleteBomSearchRows = createAsyncThunk(
+  "bom/fetchDeleteBomSearchRows",
+  async (
+    {
+      page = 1,
+      pageSize = 50,
+      searchBy1 = "",
+      query1 = "",
+      searchBy2 = "",
+      query2 = "",
+      reloadToken = "",
+    } = {},
+    { rejectWithValue }
+  ) => {
+    try {
+      const params = new URLSearchParams();
 
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+
+      params.set("searchBy1", String(searchBy1 || ""));
+      params.set("query1", searchBy1 ? String(query1 || "").trim() : "");
+
+      params.set("searchBy2", String(searchBy2 || ""));
+      params.set("query2", searchBy2 ? String(query2 || "").trim() : "");
+
+      if (reloadToken !== "") {
+        params.set("_reload", String(reloadToken));
+      }
+
+      const res = await fetch(
+        `/api/tables/delete-existing-bom-records?${params.toString()}`
+      );
+
+      if (!res.ok) return rejectWithValue(await res.text());
+
+      const payload = await res.json();
+
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+      return {
+        rows: rows.map((row, index) => normalizeExistingBomSearchRow(row, index)),
+        pagination: payload?.pagination || {
+          ...defaultPagination,
+          page,
+          pageSize,
+          total: rows.length,
+          totalPages: Math.max(1, Math.ceil(rows.length / pageSize)),
+          hasPrev: page > 1,
+          hasNext: false,
+        },
+      };
+    } catch (e) {
+      return rejectWithValue(
+        e?.message || "Failed to fetch delete existing BOM records"
+      );
+    }
+  }
+);
 export const fetchExistingBomSearchRows = createAsyncThunk(
   "bom/fetchExistingBomSearchRows",
   async (
@@ -1091,6 +1154,34 @@ const bomSlice = createSlice({
           action.payload || "Failed to load existing BOM records";
       })
 
+      .addCase(fetchDeleteBomSearchRows.pending, (state, action) => {
+        state.existingBomSearch.loading = true;
+        state.existingBomSearch.error = null;
+        state.existingBomSearch.latestRequestId = action.meta.requestId;
+      })
+      .addCase(fetchDeleteBomSearchRows.fulfilled, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
+        state.existingBomSearch.loading = false;
+
+        const rows = action.payload?.rows || [];
+
+        state.existingBomSearch.rows = rows;
+        state.existingBomSearch.associatedCoProductsByGroup =
+          buildAssociatedCoProductsByGroup(rows);
+
+        state.existingBomSearch.pagination = action.payload?.pagination || {
+          ...defaultPagination,
+          total: rows.length || 0,
+        };
+      })
+      .addCase(fetchDeleteBomSearchRows.rejected, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
+        state.existingBomSearch.loading = false;
+        state.existingBomSearch.error =
+          action.payload || "Failed to load delete existing BOM records";
+      })
       .addCase(fetchExistingItemBomRoutingSearchRows.pending, (state) => {
         state.existingItemBomRoutingSearch.loading = true;
         state.existingItemBomRoutingSearch.error = null;

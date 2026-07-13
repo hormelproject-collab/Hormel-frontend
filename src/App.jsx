@@ -1,5 +1,4 @@
 // import './App.css'
-
 import Dashboard from './homePage/Dashboard'
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import SelectLocation from './createBom/startFromScratch/SelectedLocation';
@@ -27,70 +26,90 @@ import DeleteItemBomRoutingSummaryStep2 from './DeleteBOM/DeleteExistingIBRSumma
 import EngineeringChangeDetailAdd from './EngineeringChange/EngineeringChangesDetail_Add';
 import EngineeringChangeDetailDeleteBOM from './EngineeringChange/EngineeringChangesDetail_Delete';
 import ViewBomData from './ViewBomData/ViewBomData';
+import Login from './auth/Login';
+import ProtectedRoute from './auth/ProtectedRoute';
+import { AuthProvider } from './auth/AuthProvider';
+
+const protect = (element) => <ProtectedRoute>{element}</ProtectedRoute>;
 
 function App() {
-
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Home */}
-        <Route path="/" element={<Dashboard />} />
-        {/* Engineering-change log */}
-        <Route path="/change-log" element={<EngineeringChangeLog />} />
-        <Route path="/change-log/engineering-change-detail-add" 
-        element={<EngineeringChangeDetailAdd />} />
+      <AuthProvider>
+        <Routes>
+          {/* Login */}
+          {/*<Route path="/login" element={<Login />} />*/}
 
-        <Route
-          path="/change-log/engineering-change-detail-delete-bom"
-          element={<EngineeringChangeDetailDeleteBOM />}
-        />
-        <Route
-          path="/change-log/engineering-change-detail-modify"
-          element={<EngineeringChangeDetailModify />}
-        />
+          {/* Home */}
+          <Route path="/" element={protect(<Dashboard />)} />
 
-        {/* Download BOM */}
-        <Route path="/download-bom" element={<DownloadBOM />} />
-        {/* CreateBOM */}
-        <Route path="/create-bom" element={<CreateBOM />} />
+          {/* Engineering-change log */}
+          <Route path="/change-log" element={protect(<EngineeringChangeLog />)} />
+          <Route
+            path="/change-log/engineering-change-detail-add"
+            element={protect(<EngineeringChangeDetailAdd />)}
+          />
+          <Route
+            path="/change-log/engineering-change-detail-delete-bom"
+            element={protect(<EngineeringChangeDetailDeleteBOM />)}
+          />
+          <Route
+            path="/change-log/engineering-change-detail-modify"
+            element={protect(<EngineeringChangeDetailModify />)}
+          />
 
-        {/* start from scratch  */}
-        <Route path="/produced-items" element={<ProducedItems />} />  {/* step 1 */}
-        <Route path="/select-location" element={<SelectedLocation />} />{/* step 2 */}
-        <Route path="/resource-component" element={<ResourceComponentInfo />} /> {/* step 3 */}
-        <Route path="/summary" element={<SummaryPage />} /> {/* step 4 */}
+          {/* Download BOM */}
+          <Route path="/download-bom" element={protect(<DownloadBOM />)} />
 
-        {/* Start from Existing BOM*/}
-        <Route path="/select-existing-bom" element={<SelectExistingBOM />} /> {/* step 1 */}
-        <Route path="/modify-existing-bom/:id" element={<ModifyExistingBOM />} /> {/* step 2 */}
+          {/* Create BOM */}
+          <Route path="/create-bom" element={protect(<CreateBOM />)} />
 
-        {/* Add Item BOM Routing Record */}
-        <Route path="/create-item-bom-routing-record" element={<CreateItemBOMRoutingRecord />} /> {/* step 1 */}
+          {/* Start from Scratch */}
+          <Route path="/produced-items" element={protect(<ProducedItems />)} />
+          <Route path="/select-location" element={protect(<SelectedLocation />)} />
+          <Route path="/resource-component" element={protect(<ResourceComponentInfo />)} />
+          <Route path="/summary" element={protect(<SummaryPage />)} />
 
-        {/* Modify Select Existing BOM */}
-        {/* step 1 */}
-        <Route path="/modify-select-existing-bom" element={<ModifySelectExistingBOM />} /> 
-        {/* step 2 */}
-        <Route path="/modify-existing-bom-data/:id" element={<ModifyExistingBOMData />} /> 
-        {/* step 3 */}
-        <Route path="/review-changes" element={<ModifyExistingBOMSummary />} /> 
+          {/* Start from Existing BOM */}
+          <Route path="/select-existing-bom" element={protect(<SelectExistingBOM />)} />
+          <Route path="/modify-existing-bom/:id" element={protect(<ModifyExistingBOM />)} />
 
-        <Route path="/review-summary" element={<ReviewSummary />} />
-        {/* Delete BOM */}
-        <Route path="/delete-bom-dashboard" element={<DeleteBomHome />} />
-        <Route path="/delete-bom-dashboard/delete-existing-bom" element={<DeleteExistingBomStep1 />} />
-        <Route path="/delete-bom-dashboard/delete-existing-bom/summary" element={<DeleteBomSummaryStep2 />} />
-        {/* Delete IBR */}
-        <Route path="/delete-bom-dashboard/delete-existing-ibr" element={<DeleteExistingItemBomRoutingStep1 />} />
-        <Route path="/delete-bom-dashboard/delete-existing-ibr/summary" element={<DeleteItemBomRoutingSummaryStep2 />} />
-       {/* View Bom */}
-        <Route path="/view-bom-data" element={<ViewBomData />} />
-       
-      
-      </Routes>
+          {/* Add Item BOM Routing Record */}
+          <Route path="/create-item-bom-routing-record" element={protect(<CreateItemBOMRoutingRecord />)} />
+
+          {/* Modify Existing BOM */}
+          <Route path="/modify-select-existing-bom" element={protect(<ModifySelectExistingBOM />)} />
+          <Route path="/modify-existing-bom-data/:id" element={protect(<ModifyExistingBOMData />)} />
+          <Route path="/review-changes" element={protect(<ModifyExistingBOMSummary />)} />
+          <Route path="/review-summary" element={protect(<ReviewSummary />)} />
+
+          {/* Delete BOM */}
+          <Route path="/delete-bom-dashboard" element={protect(<DeleteBomHome />)} />
+          <Route
+            path="/delete-bom-dashboard/delete-existing-bom"
+            element={protect(<DeleteExistingBomStep1 />)}
+          />
+          <Route
+            path="/delete-bom-dashboard/delete-existing-bom/summary"
+            element={protect(<DeleteBomSummaryStep2 />)}
+          />
+
+          {/* Delete IBR */}
+          <Route
+            path="/delete-bom-dashboard/delete-existing-ibr"
+            element={protect(<DeleteExistingItemBomRoutingStep1 />)}
+          />
+          <Route
+            path="/delete-bom-dashboard/delete-existing-ibr/summary"
+            element={protect(<DeleteItemBomRoutingSummaryStep2 />)}
+          />
+
+          {/* View BOM */}
+          <Route path="/view-bom-data" element={protect(<ViewBomData />)} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
-
 }
 
-export default App
+export default App;

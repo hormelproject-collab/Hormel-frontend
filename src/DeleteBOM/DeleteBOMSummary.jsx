@@ -5,6 +5,7 @@ import {
   clearExistingBomSelectedRows,
   selectExistingBomSelectedRows,
 } from "../redux/bomSlice";
+import ProgressIndicator from "../components/CommonProgressIndicator";
 
 const DELETE_BOM_SUMMARY_API = `/api/tables/delete-bom/summary`;
 const DELETE_BOM_EXECUTE_API = `/api/tables/delete-bom/execute`;
@@ -54,13 +55,25 @@ const uniqueByBomId = (rows) => {
 
 const uniqueRoutingRows = (rows) => {
   const seen = new Set();
+
   return rows.filter((row) => {
     const bomIdValue = toText(row?.bom_id ?? row?.bomId).toUpperCase();
-    const routingIdValue = toText(row?.routing_id ?? row?.routingId).toUpperCase();
-    const resourceValue = toText(row?.resource).toUpperCase();
-    const key = [bomIdValue, routingIdValue, resourceValue].join("__");
+    const rawRoutingId = toText(row?.routing_id ?? row?.routingId);
+    const producedItem = toText(row?.produced_item ?? row?.item);
+    const resourceValue = (
+      getRowResource(row) || deriveResourceFromRoutingId(rawRoutingId, producedItem)
+    ).toUpperCase();
 
-    if (!bomIdValue && !routingIdValue && !resourceValue) return false;
+    const routingIdValue = rawRoutingId.toUpperCase();
+
+    // Main item and co-product can point to the same resource/routing.
+    // Show it only once in connected routing table.
+    const key = [
+      bomIdValue,
+      resourceValue || routingIdValue,
+    ].join("__");
+
+    if (!bomIdValue && !resourceValue && !routingIdValue) return false;
     if (seen.has(key)) return false;
 
     seen.add(key);
@@ -210,7 +223,6 @@ export default function DeleteBomSummaryStep2() {
           <span>Warning: The following records will be permanently deleted</span>
         </div>
 
-        {loading ? <div style={{ ...styles.stateBox, ...styles.loadingBox }}>Loading deleted BOM summary...</div> : null}
         {error ? <div style={{ ...styles.stateBox, ...styles.errorBox }}>{error}</div> : null}
 
         <div style={styles.sectionCard}>
@@ -258,25 +270,56 @@ export default function DeleteBomSummaryStep2() {
               </tr>
             </thead>
             <tbody>
-              {!loading && dedupedRoutingRows.length === 0 ? (
-                <tr><td colSpan={3} style={styles.emptyRow}>No connected routing rows found.</td></tr>
+              {loading ? (
+                <tr>
+                  <td colSpan={3} style={styles.f}>
+                    <ProgressIndicator label="Loading connected routing IDs..." />
+                  </td>
+                </tr>
               ) : null}
 
-              {dedupedRoutingRows.map((row, index) => {
-                const bomIdValue = toText(row.bom_id ?? row.bomId);
-                const producedItem = bomIdToProducedItem.get(bomIdValue.toUpperCase()) || toText(row.produced_item ?? row.item);
-                const rawRoutingId = toText(row.routing_id ?? row.routingId);
-                const resourceValue = getRowResource(row) || deriveResourceFromRoutingId(rawRoutingId, producedItem);
-                const formattedRoutingId = buildRoutingId(producedItem, resourceValue) || rawRoutingId || "-";
+              {!loading && dedupedRoutingRows.length === 0 ? (
+                <tr>
+                  <td colSpan={3} style={styles.emptyRow}>
+                    No connected routing rows found.
+                  </td>
+                </tr>
+              ) : null}
 
-                return (
-                  <tr key={`${bomIdValue}__${formattedRoutingId}__${resourceValue}__${index}`}>
-                    <td style={{ ...styles.td, ...styles.bomIdCol }}>{bomIdValue || "-"}</td>
-                    <td style={{ ...styles.td, ...styles.resourceCol }}>{resourceValue || "-"}</td>
-                    <td style={{ ...styles.td, ...styles.routingIdCol }}>{formattedRoutingId}</td>
-                  </tr>
-                );
-              })}
+              {!loading &&
+                dedupedRoutingRows.map((row, index) => {
+                  const bomIdValue = toText(row.bom_id ?? row.bomId);
+                  const producedItem =
+                    bomIdToProducedItem.get(bomIdValue.toUpperCase()) ||
+                    toText(row.produced_item ?? row.item);
+
+                  const rawRoutingId = toText(row.routing_id ?? row.routingId);
+
+                  const resourceValue =
+                    getRowResource(row) ||
+                    deriveResourceFromRoutingId(rawRoutingId, producedItem);
+
+                  const formattedRoutingId =
+                    buildRoutingId(producedItem, resourceValue) ||
+                    rawRoutingId ||
+                    "-";
+
+                  return (
+                    <tr
+                      key={`${bomIdValue}__${formattedRoutingId}__${resourceValue}__${index}`}
+                    >
+                      <td style={{ ...styles.td, ...styles.bomIdCol }}>
+                        {bomIdValue || "-"}
+                      </td>
+                      <td style={{ ...styles.td, ...styles.resourceCol }}>
+                        {resourceValue || "-"}
+                      </td>
+                      <td style={{ ...styles.td, ...styles.routingIdCol }}>
+                        {formattedRoutingId}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -364,4 +407,10 @@ const styles = {
   successPanel: { marginTop: "16px", background: "#ecfdf3", border: "1px solid #bbf7d0", borderRadius: "6px", padding: "14px 16px", color: "#166534" },
   successTitle: { margin: "0 0 10px", fontSize: "15px", fontWeight: 700 },
   emptyRow: { textAlign: "center", color: "#6b7280", padding: "18px 12px", fontSize: "13px" },
+  loadingRow: {
+    padding: "24px",
+    textAlign: "center",
+    background: "#ffffff",
+    borderBottom: "1px solid #d5d7db",
+  },
 };

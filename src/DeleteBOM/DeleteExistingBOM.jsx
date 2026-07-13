@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import ProgressIndicator from "../components/CommonProgressIndicator";
 import {
-  fetchExistingBomSearchRows,
+  fetchDeleteBomSearchRows,
   setExistingBomSearchState,
   toggleExistingBomSelectedRow,
   toggleExistingBomSelectedPageRows,
@@ -27,7 +27,6 @@ const CRITERIA_OPTIONS = [
   { value: "producedItem", label: "Produced Item" },
   { value: "producedItemDescription", label: "Produced Item Description" },
   { value: "releaseFlag", label: "Item Release Flag" },
-  { value: "resource", label: "Resource" },
 ];
 
 const toText = (value) => String(value ?? "").trim();
@@ -38,34 +37,31 @@ const getRowProducedItem = (row) => toText(row?.produced_item ?? row?.producedIt
 const getRowProducedDesc = (row) =>
   toText(
     row?.produced_item_desc ??
-      row?.producedItemDescription ??
-      row?.item_description ??
-      row?.item_desc
+    row?.producedItemDescription ??
+    row?.item_description ??
+    row?.item_desc
   );
 const getRowReleaseFlag = (row) =>
   toText(
     row?.item_release_flag ??
-      row?.item_releaseflag ??
-      row?.release_flag ??
-      row?.release
+    row?.item_releaseflag ??
+    row?.release_flag ??
+    row?.release
   );
 const isCoProductRow = (row) =>
   toText(row?.erp_co_product_association ?? row?.erpCoProductAssociation) === "1";
 
-const getConnectedGroupKey = (row) =>
-  [getRowBomId(row), getRowResource(row), getRowLocation(row)]
-    .map((value) => toText(value).toUpperCase())
-    .join("__");
-
 const getStableRowId = (row) =>
   [
     getRowBomId(row) || "NOBOM",
-    getRowResource(row) || "NORESOURCE",
     getRowLocation(row) || "NOLOCATION",
     getRowProducedItem(row) || "NOITEM",
     isCoProductRow(row) ? "COPRODUCT" : "MAIN",
   ].join("__");
-
+const getConnectedGroupKey = (row) =>
+  [getRowBomId(row), getRowLocation(row)]
+    .map((value) => toText(value).toUpperCase())
+    .join("__");
 const normalizeRowForSelection = (row) => ({
   ...row,
   id: getStableRowId(row),
@@ -79,6 +75,24 @@ const getShowingText = ({ page, pageSize, shownCount, total }) => {
   const end = Math.min(start + Number(shownCount || 0) - 1, safeTotal);
 
   return `Showing ${start}-${end} of ${safeTotal.toLocaleString()} item(s)`;
+};
+
+const sortBomRows = (a, b) => {
+  const bomCompare = getRowBomId(a).localeCompare(getRowBomId(b));
+  if (bomCompare !== 0) return bomCompare;
+
+  const aIsCoProduct = isCoProductRow(a);
+  const bIsCoProduct = isCoProductRow(b);
+
+  // Main item first, co-products after
+  if (aIsCoProduct !== bIsCoProduct) {
+    return aIsCoProduct ? 1 : -1;
+  }
+
+  const locationCompare = getRowLocation(a).localeCompare(getRowLocation(b));
+  if (locationCompare !== 0) return locationCompare;
+
+  return getRowProducedItem(a).localeCompare(getRowProducedItem(b));
 };
 
 export default function DeleteExistingBomStep1() {
@@ -95,7 +109,7 @@ export default function DeleteExistingBomStep1() {
 
   const criteria1Field = searchState?.searchBy1 ?? "bomId";
   const criteria1Value = searchState?.query1 ?? "";
-  const criteria2Field = searchState?.searchBy2 ?? "producedItem";
+  const criteria2Field = searchState?.searchBy2 ?? "location";
   const criteria2Value = searchState?.query2 ?? "";
 
   const page = Math.max(1, Number(pagination?.page || 1));
@@ -108,7 +122,7 @@ export default function DeleteExistingBomStep1() {
   useEffect(() => {
     const timer = setTimeout(() => {
       dispatch(
-        fetchExistingBomSearchRows({
+        fetchDeleteBomSearchRows({
           page,
           pageSize: PAGE_SIZE,
           searchBy1: criteria1Field,
@@ -123,41 +137,11 @@ export default function DeleteExistingBomStep1() {
   }, [dispatch, page, criteria1Field, criteria1Value, criteria2Field, criteria2Value]);
 
   const pageRows = useMemo(() => {
-    return [...rows].map(normalizeRowForSelection).sort((a, b) => {
-      const bomCompare = getRowBomId(a).localeCompare(getRowBomId(b));
-      if (bomCompare !== 0) return bomCompare;
-
-      const resourceCompare = getRowResource(a).localeCompare(getRowResource(b));
-      if (resourceCompare !== 0) return resourceCompare;
-
-      const locationCompare = getRowLocation(a).localeCompare(getRowLocation(b));
-      if (locationCompare !== 0) return locationCompare;
-
-      const aIsCoProduct = isCoProductRow(a);
-      const bIsCoProduct = isCoProductRow(b);
-      if (aIsCoProduct !== bIsCoProduct) return aIsCoProduct ? 1 : -1;
-
-      return getRowProducedItem(a).localeCompare(getRowProducedItem(b));
-    });
+    return [...rows].map(normalizeRowForSelection).sort(sortBomRows);
   }, [rows]);
 
   const selectedSummaryRows = useMemo(() => {
-    return [...selectedRows].map(normalizeRowForSelection).sort((a, b) => {
-      const bomCompare = getRowBomId(a).localeCompare(getRowBomId(b));
-      if (bomCompare !== 0) return bomCompare;
-
-      const resourceCompare = getRowResource(a).localeCompare(getRowResource(b));
-      if (resourceCompare !== 0) return resourceCompare;
-
-      const locationCompare = getRowLocation(a).localeCompare(getRowLocation(b));
-      if (locationCompare !== 0) return locationCompare;
-
-      const aIsCoProduct = isCoProductRow(a);
-      const bIsCoProduct = isCoProductRow(b);
-      if (aIsCoProduct !== bIsCoProduct) return aIsCoProduct ? 1 : -1;
-
-      return getRowProducedItem(a).localeCompare(getRowProducedItem(b));
-    });
+    return [...selectedRows].map(normalizeRowForSelection).sort(sortBomRows);
   }, [selectedRows]);
 
   const selectedCount = selectedIds.length;
@@ -195,13 +179,15 @@ export default function DeleteExistingBomStep1() {
   const getMainItemConnectedRows = (row) => {
     const stableRow = normalizeRowForSelection(row);
     const groupKey = getConnectedGroupKey(stableRow);
-    if (!groupKey || groupKey === "____") return [stableRow];
+
+    if (!groupKey || groupKey === "__") return [stableRow];
 
     const connectedRows = pageRows.filter(
       (candidate) => getConnectedGroupKey(candidate) === groupKey
     );
 
     const byId = new Map();
+
     [stableRow, ...connectedRows].forEach((candidate) => {
       const stableCandidate = normalizeRowForSelection(candidate);
       byId.set(stableCandidate.id, stableCandidate);
@@ -213,7 +199,10 @@ export default function DeleteExistingBomStep1() {
   const toggleRowsKeepingRedux = (rowsToToggle) => {
     const stableRows = rowsToToggle.map(normalizeRowForSelection);
     const selectedIdSet = new Set(selectedIds);
-    const allRowsAlreadySelected = stableRows.every((row) => selectedIdSet.has(row.id));
+
+    const allRowsAlreadySelected = stableRows.every((row) =>
+      selectedIdSet.has(row.id)
+    );
 
     stableRows.forEach((row) => {
       const isSelected = selectedIdSet.has(row.id);
@@ -254,7 +243,6 @@ export default function DeleteExistingBomStep1() {
       },
     });
   };
-
   const renderSearchRow = ({ label, value, query, searchByKey, queryKey }) => (
     <div style={styles.criteriaRow}>
       <div style={styles.fieldGroup}>
@@ -448,8 +436,8 @@ export default function DeleteExistingBomStep1() {
               <div>
                 <div style={styles.selectedTitle}>Selected BOM Records</div>
                 <div style={styles.selectedSubText}>
-                  If a main item is selected, connected co-products with the same BOM ID,
-                  Resource, and Location are also selected. Co-products are highlighted in yellow.
+                  Main produced item and attached co-products with the same BOM ID and Location
+                  are selected together. Co-products are highlighted in yellow.
                 </div>
               </div>
               <button type="button" onClick={handleDeselectAll} style={styles.deselectAllBtn}>
