@@ -92,13 +92,110 @@ const formatNumber = (value) => {
   return num.toFixed(6).replace(/\.?0+$/, "");
 };
 
+const normalizeValidationEntries = (validationResult) => {
+  if (!validationResult) return [];
+  const output = [];
+
+  const pushEntry = (entry, index = 0, parent = {}) => {
+    if (!entry) return;
+    const code = String(
+      entry.validationSequence ??
+        entry.validation_sequence ??
+        entry.seq ??
+        entry.sequence ??
+        entry.code ??
+        parent.validationSequence ??
+        parent.validation_sequence ??
+        parent.seq ??
+        parent.sequence ??
+        parent.code ??
+        index + 1
+    );
+    const desc =
+      entry.validation ??
+      entry.desc ??
+      entry.description ??
+      entry.validation_description ??
+      entry.validationDescription ??
+      parent.validation ??
+      parent.desc ??
+      parent.description ??
+      parent.validation_description ??
+      parent.validationDescription ??
+      "";
+    const error =
+      entry.errorDetails ??
+      entry.error ??
+      entry.validation_error_detail ??
+      entry.validationErrorDetail ??
+      entry.message ??
+      entry.detail ??
+      parent.errorDetails ??
+      parent.error ??
+      parent.validation_error_detail ??
+      parent.validationErrorDetail ??
+      "";
+    const rm =
+      entry.remediationMessage ??
+      entry.rm ??
+      entry.remediation_message ??
+      entry.remediation ??
+      parent.remediationMessage ??
+      parent.rm ??
+      parent.remediation_message ??
+      parent.remediation ??
+      "";
+    output.push({ code, desc, error, rm });
+  };
+
+  const manualErrorList = Array.isArray(validationResult?.errorList)
+    ? validationResult.errorList
+    : Array.isArray(validationResult?.data?.errorList)
+      ? validationResult.data.errorList
+      : [];
+
+  if (manualErrorList.length > 0) {
+    manualErrorList.forEach((row, rowIndex) => {
+      const messages = Array.isArray(row?.messages) ? row.messages : [];
+      if (messages.length) {
+        messages.forEach((msg, msgIndex) => pushEntry(msg, `${rowIndex}-${msgIndex}`, row));
+      } else {
+        pushEntry(row, rowIndex);
+      }
+    });
+  }
+
+  const fallbackArray =
+    validationResult?.validationErrors ??
+    validationResult?.errors ??
+    validationResult?.data?.validationErrors ??
+    validationResult?.data?.errors;
+
+  if (Array.isArray(fallbackArray)) {
+    fallbackArray.forEach((entry, index) => pushEntry(entry, index));
+  }
+  if (fallbackArray && !Array.isArray(fallbackArray) && typeof fallbackArray === "object") {
+    Object.entries(fallbackArray).forEach(([code, entry], index) => {
+      pushEntry({ code, ...entry }, index);
+    });
+  }
+
+  const seen = new Set();
+  return output.filter((entry) => {
+    const sig = JSON.stringify(entry);
+    if (seen.has(sig)) return false;
+    seen.add(sig);
+    return true;
+  });
+};
+
 const ModifyExistingBOMSummary = () => {
   const routerLocation = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
   const [notes, setNotes] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [validationResult, setValidationResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const record = routerLocation?.state?.record ?? {};
@@ -248,6 +345,55 @@ const ModifyExistingBOMSummary = () => {
     (cp) => cp.isNew || !cp.original_item
   );
 
+  const validationEntries = useMemo(() => {
+    return normalizeValidationEntries(validationResult).filter((entry) => {
+      return String(entry?.desc || "").trim() ||
+        String(entry?.error || "").trim() ||
+        String(entry?.rm || "").trim();
+    });
+  }, [validationResult]);
+  const responseStatus = String(validationResult?.status || "").toLowerCase();
+  const responseSuccessFlag = validationResult?.success === true;
+  const responseFailureFlag =
+    validationResult?.success === false ||
+    responseStatus === "failure" ||
+    responseStatus === "failed" ||
+    responseStatus === "error";
+  const validationFailed = validationEntries.length > 0;
+  const validationPassedButNotPushed =
+    !!validationResult &&
+    !validationFailed &&
+    responseFailureFlag &&
+    (validationResult?.validationPassed === true ||
+      validationResult?.validated === true ||
+      validationResult?.savedToDb === false ||
+      validationResult?.pushedToDb === false ||
+      responseStatus === "failure" ||
+      responseStatus === "failed");
+  const topLevelError = validationPassedButNotPushed
+    ? "Validation is successful but the records are not pushed to DB. Please try again."
+    : !validationFailed && responseFailureFlag
+      ? validationResult?.messageForUser ||
+        validationResult?.message ||
+        validationResult?.error ||
+        "Failed to submit BOM changes."
+      : !validationFailed
+        ? validationResult?.error || validationResult?.data?.error || ""
+        : "";
+  const isSuccess =
+    !!validationResult &&
+    !validationFailed &&
+    !validationPassedButNotPushed &&
+    !topLevelError &&
+    !responseFailureFlag &&
+    (responseSuccessFlag || responseStatus === "success");
+  const successEcNumber =
+    validationResult?.engineeringChangeId ||
+    validationResult?.engineering_change_id ||
+    validationResult?.data?.engineeringChangeId ||
+    validationResult?.data?.engineering_change_id ||
+    "";
+
   const clearModifyReduxState = () => {
     dispatch(clearModifyExistingBomState());
     dispatch(clearModifyExistingBomFlowState());
@@ -260,7 +406,7 @@ const ModifyExistingBOMSummary = () => {
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
-      setSuccessMessage("");
+      setValidationResult(null);
 
       const payload = {
         bomId: record?.bom_id || record?.bomId || "",
@@ -326,20 +472,20 @@ const ModifyExistingBOMSummary = () => {
       });
 
       const result = await response.json().catch(() => ({}));
+      setValidationResult(result);
 
-      if (!response.ok) {
-        throw new Error(
-          result?.message ||
-            result?.error ||
-            `Failed to submit BOM changes (${response.status})`
-        );
+      if (!response.ok || result?.success === false) {
+        return;
       }
 
       clearModifyReduxState();
-      setSuccessMessage("✓ BOM changes submitted successfully!");
     } catch (error) {
       console.error("Error submitting BOM changes:", error);
-      setSuccessMessage(`✗ Error: ${error.message}`);
+      setValidationResult({
+        success: false,
+        status: "error",
+        message: error?.message || "Failed to submit BOM changes.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -540,6 +686,53 @@ const ModifyExistingBOMSummary = () => {
           />
         </div>
 
+        {validationFailed ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Errors</div>
+            <div style={styles.validationTableWrap}>
+              <table style={styles.validationTable}>
+                <thead>
+                  <tr style={styles.validationHeaderRow}>
+                    <th style={styles.validationTh}>Validation Sequence</th>
+                    <th style={styles.validationTh}>Validation Description</th>
+                    <th style={styles.validationTh}>Error Details</th>
+                    <th style={styles.validationTh}>Remediation Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validationEntries.map((entry, index) => (
+                    <tr key={`${entry.code}-${index}`} style={styles.validationBodyRow}>
+                      <td style={styles.validationTd}>{entry.code}</td>
+                      <td style={styles.validationTd}>{entry.desc || "-"}</td>
+                      <td style={styles.validationTd}>{entry.error || "-"}</td>
+                      <td style={styles.validationTd}>{entry.rm || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : validationPassedButNotPushed ? (
+          <div style={styles.warningCard}>
+            <div style={styles.resultTitle}>Validation Success - Records Not Pushed</div>
+            <div style={styles.warningText}>
+              Validation is successful but the records are not pushed to DB. Please try again.
+            </div>
+          </div>
+        ) : isSuccess ? (
+          <div style={styles.successCard}>
+            <div style={styles.resultTitle}>Validation Success</div>
+            <div style={styles.successText}>
+              {`Validation was successful and the records are saved successfully${successEcNumber ? ` with ${successEcNumber}.` : "."}`}
+            </div>
+          </div>
+        ) : topLevelError ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Error</div>
+            <div style={styles.errorText}>{topLevelError}</div>
+          </div>
+        ) : null}
+
         <div style={styles.footer}>
           <button
             type="button"
@@ -563,17 +756,6 @@ const ModifyExistingBOMSummary = () => {
           </button>
         </div>
 
-        {successMessage ? (
-          <div
-            style={
-              successMessage.includes("✓")
-                ? styles.successNotification
-                : styles.errorNotification
-            }
-          >
-            {successMessage}
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -709,7 +891,7 @@ const styles = {
     justifyContent: "flex-end",
     alignItems: "center",
     gap: "12px",
-    marginTop: "8px",
+    marginTop: "20px",
   },
   secondaryBtn: {
     height: "44px",
@@ -748,33 +930,80 @@ const styles = {
     opacity: 0.65,
     cursor: "not-allowed",
   },
-  successNotification: {
-    position: "fixed",
-    bottom: "24px",
-    right: "24px",
-    background: "#10b981",
-    color: "#fff",
-    padding: "16px 20px",
-    borderRadius: "6px",
-    fontSize: "14px",
-    fontWeight: 600,
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-    animation: "slideIn 0.3s ease-out",
-    zIndex: 1000,
+  resultTitle: {
+    fontSize: "15px",
+    fontWeight: 700,
+    marginBottom: "10px",
   },
-  errorNotification: {
-    position: "fixed",
-    bottom: "24px",
-    right: "24px",
-    background: "#ef4444",
-    color: "#fff",
-    padding: "16px 20px",
+  errorCard: {
+    background: "#fff5f5",
+    border: "1px solid #fecaca",
     borderRadius: "6px",
+    padding: "16px",
+    marginBottom: "16px",
+  },
+  successCard: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "6px",
+    padding: "16px",
+    marginBottom: "16px",
+  },
+  warningCard: {
+    background: "#fff7ed",
+    border: "1px solid #fdba74",
+    borderRadius: "6px",
+    padding: "16px",
+    marginBottom: "16px",
+  },
+  errorText: {
     fontSize: "14px",
-    fontWeight: 600,
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-    animation: "slideIn 0.3s ease-out",
-    zIndex: 1000,
+    color: "#991b1b",
+    whiteSpace: "pre-wrap",
+  },
+  successText: {
+    fontSize: "14px",
+    color: "#166534",
+    whiteSpace: "pre-wrap",
+  },
+  warningText: {
+    fontSize: "14px",
+    color: "#9a3412",
+    whiteSpace: "pre-wrap",
+  },
+  validationTableWrap: {
+    overflowX: "auto",
+    border: "1px solid #f3d0d0",
+    borderRadius: "4px",
+    background: "#ffffff",
+    marginTop: "12px",
+  },
+  validationTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+  },
+  validationHeaderRow: {
+    background: "#fee2e2",
+  },
+  validationBodyRow: {
+    borderTop: "1px solid #f3d0d0",
+  },
+  validationTh: {
+    textAlign: "left",
+    padding: "12px 14px",
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "#7f1d1d",
+    whiteSpace: "nowrap",
+    verticalAlign: "top",
+  },
+  validationTd: {
+    padding: "12px 14px",
+    fontSize: "14px",
+    color: "#111827",
+    verticalAlign: "top",
+    whiteSpace: "pre-wrap",
+    lineHeight: 1.5,
   },
 };
 

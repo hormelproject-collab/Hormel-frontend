@@ -1,19 +1,19 @@
-import { Navigate, useLocation } from "react-router-dom";
-import { useAuth } from "./AuthProvider";
+import { useMsal } from "@azure/msal-react";
+import { loginRequest } from "../auth/msalConfig";
 
-// const ProtectedRoute = ({ children }) => {
-//   const location = useLocation();
-//   const { isAuthenticated } = useAuth();
+const ProtectedRoute = ({ children }) => {
+    const { instance, accounts } = useMsal();
 
-//   if (!isAuthenticated) {
-//     return <Navigate to="/login" replace state={{ from: location }} />;
-//   }
+    if (!accounts || accounts.length === 0) {
+        instance.loginRedirect(loginRequest);
+        return <div>Redirecting to Microsoft Login...</div>;
+    }
 
+    return children;
+};
+
+export default ProtectedRoute;
+
+// export default function ProtectedRoute({ children }) {
 //   return children;
-// };
-
-// export default ProtectedRoute;
-
-export default function ProtectedRoute({ children }) {
-  return children;
-}
+// }

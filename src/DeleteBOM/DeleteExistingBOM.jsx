@@ -335,7 +335,7 @@ export default function DeleteExistingBomStep1() {
     <div style={styles.page}>
       <div style={styles.topRule} />
       <div style={styles.shell}>
-        <button type="button" onClick={() => navigate(-1)} style={styles.backBtn}>
+        <button type="button" onClick={() => navigate("/delete-bom-dashboard")} style={styles.backBtn}>
           <span style={{ fontSize: "16px", lineHeight: 1 }}>←</span>
           <span>BACK</span>
         </button>

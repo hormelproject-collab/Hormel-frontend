@@ -2,8 +2,9 @@ import Card from "../createBom/startFromScratch/Card";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useMsal } from "@azure/msal-react";
 
-// ✅ Import icons
+// Icons
 import {
     FaPlus,
     FaEdit,
@@ -16,8 +17,14 @@ import {
 const Dashboard = () => {
     const selectedAction = useSelector((state) => state.bom.selectedAction);
     const navigate = useNavigate();
+    const { accounts } = useMsal();
 
     const [lastFetchTime, setLastFetchTime] = useState(null);
+
+    const userName =
+        accounts?.[0]?.name ||
+        accounts?.[0]?.username ||
+        "Unknown User";
 
     const fetchLastFetchTime = async () => {
         try {
@@ -98,6 +105,10 @@ const Dashboard = () => {
                     Selected Action: {selectedAction}
                 </p>
             )}
+
+            <div style={styles.loggedInUser}>
+                Logged in as: <strong>{userName}</strong>
+            </div>
         </div>
     );
 };
@@ -131,6 +142,18 @@ const styles = {
     selected: {
         marginTop: "20px",
         fontWeight: "bold",
+    },
+    loggedInUser: {
+        position: "fixed",
+        bottom: "15px",
+        right: "20px",
+        backgroundColor: "#f5f5f5",
+        padding: "10px 15px",
+        borderRadius: "8px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        fontSize: "14px",
+        fontWeight: "500",
+        zIndex: 1000,
     },
 };
 

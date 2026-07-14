@@ -34,6 +34,23 @@ const deriveResourceFromRoutingId = (routingId) => {
   return parts.slice(2).join("_");
 };
 
+const getRoutingGroupSortKey = (row) => {
+  const resource = toText(row?.resource);
+  if (resource) return resource;
+
+  const routingId = toText(row?.routingId ?? row?.routing_id);
+  const parts = routingId
+    .split("_")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length > 2 && parts[0].toUpperCase() === "ROUTING") {
+    return parts.slice(2).join("_");
+  }
+
+  return routingId;
+};
+
 const normalizeSelectedRow = (row, index) => {
   const bomId = toText(row?.bomId ?? row?.bom_id);
   const item = toText(row?.item);
@@ -43,10 +60,18 @@ const normalizeSelectedRow = (row, index) => {
   const coProductAssociation = Number(
     toText(
       row?.coProductAssociation ??
-        row?.co_product_association ??
-        row?.erp_co_product_association
+      row?.co_product_association ??
+      row?.erp_co_product_association
     ) || "0"
   ) >= 1 ? 1 : 0;
+  const itemBomPriority = toText(
+    row?.itemBomRoutingPriority ??
+    row?.erp_item_bom_routing_priority ??
+    row?.erpItemBomRoutingPriority ??
+    row?.item_bom_routing_priority ??
+    row?.itemBomPriority ??
+    row?.item_bom_priority
+  );
 
   return {
     id:
@@ -60,6 +85,7 @@ const normalizeSelectedRow = (row, index) => {
     routingId,
     location: toText(row?.location) || deriveLocationFromBomId(bomId),
     resource,
+    itemBomPriority,
     coProductItem: toText(row?.coProductItem ?? row?.co_product_item),
     coProductAssociation,
     raw: row,
@@ -68,17 +94,30 @@ const normalizeSelectedRow = (row, index) => {
 
 const sortRows = (rows) =>
   [...rows].sort((a, b) => {
-    const bomCompare = toText(a.bomId).localeCompare(toText(b.bomId));
+    const bomCompare = toText(a.bomId).localeCompare(toText(b.bomId), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
     if (bomCompare !== 0) return bomCompare;
+
+    const routingGroupCompare = getRoutingGroupSortKey(a).localeCompare(
+      getRoutingGroupSortKey(b),
+      undefined,
+      {
+        numeric: true,
+        sensitivity: "base",
+      }
+    );
+    if (routingGroupCompare !== 0) return routingGroupCompare;
 
     const aPriority = Number(a.coProductAssociation || 0) >= 1 ? 1 : 0;
     const bPriority = Number(b.coProductAssociation || 0) >= 1 ? 1 : 0;
     if (aPriority !== bPriority) return aPriority - bPriority;
 
-    const routingCompare = toText(a.routingId).localeCompare(toText(b.routingId));
-    if (routingCompare !== 0) return routingCompare;
-
-    return toText(a.item).localeCompare(toText(b.item));
+    return toText(a.item).localeCompare(toText(b.item), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
   });
 
 export default function DeleteItemBomRoutingSummaryStep2() {
@@ -86,7 +125,6 @@ export default function DeleteItemBomRoutingSummaryStep2() {
   const navigate = useNavigate();
   const location = useLocation();
   const reduxSelectedRows = useSelector(selectExistingIbrSelectedRows);
-
   const selectedRows = useMemo(() => {
     const rows = Array.isArray(location.state?.selectedRows) && location.state.selectedRows.length
       ? location.state.selectedRows
@@ -126,6 +164,8 @@ export default function DeleteItemBomRoutingSummaryStep2() {
         routing_id: row.routingId,
         item: row.item,
         location: row.location,
+        erp_item_bom_routing_priority: row.itemBomPriority,
+        item_bom_priority: row.itemBomPriority,
         co_product_item: row.coProductItem,
         co_product_association: row.coProductAssociation,
       }));
@@ -137,6 +177,7 @@ export default function DeleteItemBomRoutingSummaryStep2() {
       });
 
       const payload = await response.json();
+
       if (!response.ok) {
         throw new Error(
           payload?.details || payload?.error || "Failed to delete item BOM routing records"
@@ -173,20 +214,21 @@ export default function DeleteItemBomRoutingSummaryStep2() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.headRow}>
-                <th style={{ ...styles.th, width: "110px" }}>Location</th>
-                <th style={{ ...styles.th, width: "100px" }}>Item</th>
-                <th style={{ ...styles.th, width: "220px" }}>BOM ID</th>
-                <th style={{ ...styles.th, width: "120px" }}>Resource</th>
-                <th style={{ ...styles.th, width: "230px" }}>Routing ID</th>
+                <th style={{ ...styles.th, width: "70px" }}>Location</th>
+                <th style={{ ...styles.th, width: "90px" }}>Item</th>
+                <th style={{ ...styles.th, width: "180px" }}>BOM ID</th>
+                <th style={{ ...styles.th, width: "260px" }}>Resource</th>
+                <th style={{ ...styles.th, width: "80px" }}>Priority</th>
+                <th style={{ ...styles.th, width: "550px" }}>Routing ID</th>
+                `
               </tr>
             </thead>
             <tbody>
               {selectedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={styles.emptyRow}>No item BOM routing records selected.</td>
+                  <td colSpan={6} style={styles.emptyRow}>No item BOM routing records selected.</td>
                 </tr>
               ) : null}
-
               {selectedRows.map((row) => {
                 const isCoProduct = row.coProductAssociation === 1;
                 return (
@@ -194,9 +236,30 @@ export default function DeleteItemBomRoutingSummaryStep2() {
                     <td style={{ ...styles.td, ...(isCoProduct ? styles.coProductRow : {}) }}>{row.location || "-"}</td>
                     <td style={{ ...styles.td, ...(isCoProduct ? styles.coProductRow : {}) }}>{row.item || "-"}</td>
                     <td style={{ ...styles.td, ...(isCoProduct ? styles.coProductRow : {}) }}>{row.bomId || "-"}</td>
-                    <td style={{ ...styles.td, ...(isCoProduct ? styles.coProductRow : {}) }}>{row.resource || "-"}</td>
-                    <td style={{ ...styles.td, ...(isCoProduct ? styles.coProductRow : {}) }}>{row.routingId || "-"}</td>
-                  </tr>
+                    <td
+                      style={{
+                        ...styles.td,
+                        ...(isCoProduct ? styles.coProductRow : {}),
+                        whiteSpace: "normal",
+                        overflow: "visible",
+                        textOverflow: "unset",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {row.resource || "-"}
+                    </td>  <td style={{ ...styles.td, ...(isCoProduct ? styles.coProductRow : {}) }}>{row.itemBomPriority || "-"}</td>
+                    <td
+                      style={{
+                        ...styles.td,
+                        ...(isCoProduct ? styles.coProductRow : {}),
+                        whiteSpace: "normal",
+                        overflow: "visible",
+                        textOverflow: "unset",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {row.routingId || "-"}
+                    </td>   </tr>
                 );
               })}
             </tbody>
@@ -275,7 +338,13 @@ const styles = {
   td: { fontSize: "12px", color: "#111827", padding: "12px 12px", borderBottom: "1px solid #d1d5db", verticalAlign: "middle", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   textarea: { width: "100%", minHeight: "76px", marginTop: "18px", border: "1px solid #bfc6cf", borderRadius: "3px", background: "#ffffff", padding: "12px 10px", resize: "vertical", boxSizing: "border-box", outline: "none", fontSize: "14px", fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
   buttonRow: { display: "flex", gap: "12px", alignItems: "center", marginTop: "12px" },
-  confirmBtn: { height: "28px", border: "none", borderRadius: "3px", background: "#d93025", color: "#ffffff", fontSize: "12px", fontWeight: 700, padding: "0 14px", cursor: "pointer", boxShadow: "0 2px 4px rgba(0,0,0,0.14)" },
+  confirmBtn: {
+    height: "46px",
+    minWidth: "180px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center", border: "none", borderRadius: "3px", background: "#d93025", color: "#ffffff", fontSize: "12px", fontWeight: 700, padding: "0 14px", cursor: "pointer", boxShadow: "0 2px 4px rgba(0,0,0,0.14)"
+  },
   mainMenuButton: { height: "46px", border: "1px solid #6da0e1", borderRadius: "4px", background: "#ffffff", color: "#1e63b5", fontSize: "13px", fontWeight: 600, padding: "0 16px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "8px" },
   disabledBtn: { opacity: 0.6, cursor: "not-allowed" },
   backBtn: { display: "inline-flex", alignItems: "center", gap: "8px", border: "none", background: "transparent", color: "#2563eb", fontSize: "13px", fontWeight: 500, padding: 0, cursor: "pointer", marginBottom: "8px" },

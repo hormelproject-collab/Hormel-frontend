@@ -39,6 +39,15 @@ const getRoutingId = (row) => toText(row?.routing_id ?? row?.routingId);
 const getLocation = (row) => toText(row?.location);
 const getResource = (row) => toText(row?.resource);
 const getRecId = (row) => toText(row?.rec_id ?? row?.recId);
+const getItemBomRoutingPriority = (row) =>
+  toText(
+    row?.erp_item_bom_routing_priority ??
+      row?.erpItemBomRoutingPriority ??
+      row?.itemBomRoutingPriority ??
+      row?.item_bom_routing_priority ??
+      row?.itemBomPriority ??
+      row?.item_bom_priority
+  );
 const getCoProductAssociation = (row) =>
   Number(
     toText(
@@ -73,10 +82,11 @@ const deriveResourceFromRoutingId = (routingId) => {
 const normalizeDisplayRow = (row, index = 0) => {
   const item = getItem(row);
   const rawRoutingId = getRoutingId(row);
-const resource = getResource(row) || deriveResourceFromRoutingId(rawRoutingId);
-const routingId = rawRoutingId || buildRoutingId(item, resource, rawRoutingId);
+  const resource = getResource(row) || deriveResourceFromRoutingId(rawRoutingId);
+  const routingId = rawRoutingId || buildRoutingId(item, resource, rawRoutingId);
   const coProductAssociation = getCoProductAssociation(row);
   const recId = getRecId(row);
+  const itemBomRoutingPriority = getItemBomRoutingPriority(row);
   const rowType = coProductAssociation === 1 ? "COPRODUCT" : "MAIN";
   const stableId =
     toText(row?.id) ||
@@ -91,6 +101,10 @@ const routingId = rawRoutingId || buildRoutingId(item, resource, rawRoutingId);
     item,
     bomId: getBomId(row),
     bom_id: getBomId(row),
+    itemBomRoutingPriority,
+    itemBomPriority: itemBomRoutingPriority,
+    erp_item_bom_routing_priority: itemBomRoutingPriority,
+    item_bom_priority: itemBomRoutingPriority,
     routingId,
     routing_id: routingId,
     location: getLocation(row),
@@ -113,23 +127,60 @@ const buildParentGroupKey = (row) =>
     .map((value) => toText(value).toUpperCase())
     .join("__");
 
+const getRoutingGroupSortKey = (row) => {
+  const resource = getResource(row);
+  if (resource) return resource;
+
+  const routingId = getRoutingId(row);
+
+  // Expected format:
+  // ROUTING_HRL00068_1009_20024_8_WEILER_GRINDER
+  // We need only: 1009_20024_8_WEILER_GRINDER
+  const parts = routingId
+    .split("_")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length > 2 && parts[0].toUpperCase() === "ROUTING") {
+    return parts.slice(2).join("_");
+  }
+
+  return routingId;
+};
+
 const sortIbrRows = (rows) =>
   [...rows].sort((a, b) => {
-    const bomCompare = getBomId(a).localeCompare(getBomId(b));
+    // 1. BOM ID first
+    const bomCompare = getBomId(a).localeCompare(getBomId(b), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
     if (bomCompare !== 0) return bomCompare;
 
+    // 2. Then routing group/resource.
+    // Do NOT use full routingId because item is inside routingId.
+    const routingGroupCompare = getRoutingGroupSortKey(a).localeCompare(
+      getRoutingGroupSortKey(b),
+      undefined,
+      {
+        numeric: true,
+        sensitivity: "base",
+      }
+    );
+    if (routingGroupCompare !== 0) return routingGroupCompare;
+
+    // 3. Inside same routing group, main item first, co-products below
     const aPriority = isCoProductRow(a) ? 1 : 0;
     const bPriority = isCoProductRow(b) ? 1 : 0;
     if (aPriority !== bPriority) return aPriority - bPriority;
 
-    const resourceCompare = getResource(a).localeCompare(getResource(b));
-    if (resourceCompare !== 0) return resourceCompare;
-
-    const routingCompare = getRoutingId(a).localeCompare(getRoutingId(b));
-    if (routingCompare !== 0) return routingCompare;
-
-    return getItem(a).localeCompare(getItem(b));
+    // 4. Stable item order inside main/co-product group
+    return getItem(a).localeCompare(getItem(b), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
   });
+
 
 export default function DeleteExistingItemBomRoutingStep1() {
   const navigate = useNavigate();

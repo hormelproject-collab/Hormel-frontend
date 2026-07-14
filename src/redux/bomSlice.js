@@ -282,6 +282,15 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
     row.co_product_association ??
     ""
   ).trim();
+  const erpItemBomRoutingPriority = String(
+    row.erp_item_bom_routing_priority ??
+      row.erpItemBomRoutingPriority ??
+      row.item_bom_routing_priority ??
+      row.itemBomRoutingPriority ??
+      row.item_bom_priority ??
+      row.itemBomPriority ??
+      ""
+  ).trim();
   const coProductAssociation = Number(erpCoProductAssociation || "0") >= 1 ? 1 : 0;
   const componentItem = coProductAssociation === 1 ? "" : item;
   const coProductItem = coProductAssociation === 1 ? item : "";
@@ -295,6 +304,10 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
     routing_id: routingId,
     location,
     resource,
+    erp_item_bom_routing_priority: erpItemBomRoutingPriority,
+    itemBomRoutingPriority: erpItemBomRoutingPriority,
+    itemBomPriority: erpItemBomRoutingPriority,
+    item_bom_priority: erpItemBomRoutingPriority,
     erp_co_product_association: erpCoProductAssociation,
     co_product_association: coProductAssociation,
     component_item: componentItem,
