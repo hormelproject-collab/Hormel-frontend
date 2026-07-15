@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  selectItemBomRoutingCreateState,
+  setItemBomRoutingCreateState,
+} from "../../redux/bomSlice";
 import { IoIosArrowBack, IoIosArrowDown, IoMdClose, IoMdTrash } from "react-icons/io";
 
 const PAGE_SIZE = 50;
@@ -173,15 +178,31 @@ const LazyDropdown = ({
 
 const CreateItemBOMRoutingRecord = () => {
   const navigate = useNavigate();
-  const [selectedBomId, setSelectedBomId] = useState("");
-  const [producedItem, setProducedItem] = useState("");
-  const [itemReleaseFlag, setItemReleaseFlag] = useState("");
-  const [location, setLocation] = useState("");
-  const [selectedResource, setSelectedResource] = useState("");
-  const [resourceRelevancy, setResourceRelevancy] = useState("");
-  const [routingPriority, setRoutingPriority] = useState("");
-  const [addConnectedCoProduct, setAddConnectedCoProduct] = useState(false);
-  const [coProductRows, setCoProductRows] = useState([createCoProductRow()]);
+  const dispatch = useDispatch();
+  const savedCreateState = useSelector(selectItemBomRoutingCreateState);
+  const [selectedBomId, setSelectedBomId] = useState(savedCreateState?.bomId || "");
+  const [producedItem, setProducedItem] = useState(savedCreateState?.producedItem || "");
+  const [itemReleaseFlag, setItemReleaseFlag] = useState(savedCreateState?.itemReleaseFlag || "");
+  const [location, setLocation] = useState(savedCreateState?.location || "");
+  const [selectedResource, setSelectedResource] = useState(savedCreateState?.resource || "");
+  const [resourceRelevancy, setResourceRelevancy] = useState(savedCreateState?.resourceRelevancy || "");
+  const [routingPriority, setRoutingPriority] = useState(savedCreateState?.routingPriority || "");
+  const [addConnectedCoProduct, setAddConnectedCoProduct] = useState(!!savedCreateState?.addConnectedCoProduct);
+  const [coProductRows, setCoProductRows] = useState(() => {
+    const savedRows = Array.isArray(savedCreateState?.coProducts)
+      ? savedCreateState.coProducts
+      : [];
+
+    return savedRows.length
+      ? savedRows.map((row) => ({
+        id: row.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        coProductItem: row.coProductItem || "",
+        itemDescription: row.itemDescription || "",
+        qtyProduced: row.qtyProduced || "",
+      }))
+      : [createCoProductRow()];
+  });
+
   const [loading, setLoading] = useState({
     bomDetails: false,
     itemReleaseFlag: false,
@@ -190,11 +211,11 @@ const CreateItemBOMRoutingRecord = () => {
   const [error, setError] = useState("");
 
   const routingId = useMemo(() => {
-  if (!producedItem || !selectedResource) return "";
-  return `ROUTING_${String(producedItem ?? "").trim()}_${String(
-    selectedResource ?? ""
-  ).trim()}`;
-}, [producedItem, selectedResource]);
+    if (!producedItem || !selectedResource) return "";
+    return `ROUTING_${String(producedItem ?? "").trim()}_${String(
+      selectedResource ?? ""
+    ).trim()}`;
+  }, [producedItem, selectedResource]);
 
 
   const validCoProductRows = useMemo(() => {
@@ -226,6 +247,41 @@ const CreateItemBOMRoutingRecord = () => {
     !!selectedResource &&
     !!routingPriority &&
     (!addConnectedCoProduct || allCoProductRowsValid);
+
+  useEffect(() => {
+    dispatch(
+      setItemBomRoutingCreateState({
+        bomId: selectedBomId,
+        producedItem,
+        itemReleaseFlag,
+        location,
+        resource: selectedResource,
+        resourceRelevancy,
+        routingPriority,
+        routingId,
+        addConnectedCoProduct,
+        coProductItem: validCoProductRows[0]?.coProductItem || "",
+        coProducts: validCoProductRows.map((row) => ({
+          id: row.id,
+          coProductItem: row.coProductItem || "",
+          itemDescription: row.itemDescription || "",
+          qtyProduced: row.qtyProduced || "",
+        })),
+      })
+    );
+  }, [
+    dispatch,
+    selectedBomId,
+    producedItem,
+    itemReleaseFlag,
+    location,
+    selectedResource,
+    resourceRelevancy,
+    routingPriority,
+    routingId,
+    addConnectedCoProduct,
+    validCoProductRows,
+  ]);
 
   const loadItemReleaseFlag = async (item) => {
     if (!item) {
@@ -264,6 +320,11 @@ const CreateItemBOMRoutingRecord = () => {
 
   useEffect(() => {
     const loadBomDetails = async () => {
+      const shouldPreserveSavedCoProducts =
+        selectedBomId === String(savedCreateState?.bomId || "") &&
+        Array.isArray(savedCreateState?.coProducts) &&
+        savedCreateState.coProducts.length > 0;
+
       if (!selectedBomId) {
         setProducedItem("");
         setItemReleaseFlag("");
@@ -301,12 +362,16 @@ const CreateItemBOMRoutingRecord = () => {
           setItemReleaseFlag("");
         }
 
-        setCoProductRows([createCoProductRow()]);
+        if (!shouldPreserveSavedCoProducts) {
+          setCoProductRows([createCoProductRow()]);
+        }
       } catch (err) {
         setProducedItem("");
         setItemReleaseFlag("");
         setLocation("");
-        setCoProductRows([createCoProductRow()]);
+        if (!shouldPreserveSavedCoProducts) {
+          setCoProductRows([createCoProductRow()]);
+        }
         setError(err?.message || "Failed to load BOM details");
       } finally {
         setLoading((prev) => ({ ...prev, bomDetails: false }));
@@ -384,31 +449,37 @@ const CreateItemBOMRoutingRecord = () => {
   const handleNext = () => {
     if (!canProceed) return;
 
+    setError("");
+
     const coProducts = addConnectedCoProduct
       ? validCoProductRows.map((row) => ({
-          coProductItem: row.coProductItem,
-          itemDescription: row.itemDescription,
-          qtyProduced: row.qtyProduced,
-        }))
+        id: row.id,
+        coProductItem: row.coProductItem,
+        itemDescription: row.itemDescription,
+        qtyProduced: row.qtyProduced,
+      }))
       : [];
 
+    const summaryState = {
+      bomId: selectedBomId,
+      producedItem,
+      itemReleaseFlag,
+      location,
+      resource: selectedResource,
+      resourceRelevancy,
+      routingPriority,
+      routingId,
+      addConnectedCoProduct,
+      coProductItem: coProducts[0]?.coProductItem || "",
+      coProducts,
+    };
+
+    dispatch(setItemBomRoutingCreateState(summaryState));
+
     navigate("/review-summary", {
-      state: {
-        bomId: selectedBomId,
-        producedItem,
-        itemReleaseFlag,
-        location,
-        resource: selectedResource,
-        resourceRelevancy,
-        routingPriority,
-        routingId,
-        addConnectedCoProduct,
-        coProductItem: coProducts[0]?.coProductItem || "",
-        coProducts,
-      },
+      state: summaryState,
     });
   };
-
   return (
     <div style={styles.page}>
       <div style={styles.contentWrapper}>
@@ -432,7 +503,9 @@ const CreateItemBOMRoutingRecord = () => {
               fetchUrl="/api/bigquery/table/bom-routing-step1/bom-ids-lazy"
               getOptionKey={(opt) => opt.bomId}
               getOptionLabel={(opt) => opt.bomId}
-              onSelect={(opt) => setSelectedBomId(opt.bomId)}
+              onSelect={(opt) => {
+                setSelectedBomId(opt.bomId);
+              }}
               searchPlaceholder="Search BOM ID..."
             />
           </div>
@@ -470,7 +543,7 @@ const CreateItemBOMRoutingRecord = () => {
               }}
               searchPlaceholder="Search Resource..."
             />
-           
+
           </div>
 
           <div style={styles.fieldBlock}>
@@ -479,11 +552,14 @@ const CreateItemBOMRoutingRecord = () => {
               type="number"
               min="1"
               value={routingPriority}
-              onChange={(e) => setRoutingPriority(e.target.value)}
+              onChange={(e) => {
+                setRoutingPriority(e.target.value);
+              }}
               placeholder="Enter Routing Priority"
               style={styles.input}
             />
             <div style={styles.helperText}>Enter routing priority for this Resource / Routing ID</div>
+
           </div>
 
           <div style={styles.fieldBlock}>
@@ -540,10 +616,10 @@ const CreateItemBOMRoutingRecord = () => {
                           prev.map((r) =>
                             r.id === row.id
                               ? {
-                                  ...r,
-                                  coProductItem: opt.item || "",
-                                  itemDescription: opt.item_desc || opt.description || "",
-                                }
+                                ...r,
+                                coProductItem: opt.item || "",
+                                itemDescription: opt.item_desc || opt.description || "",
+                              }
                               : r
                           )
                         );
@@ -605,7 +681,8 @@ const CreateItemBOMRoutingRecord = () => {
             disabled={!canProceed}
             onClick={handleNext}
           >
-            NEXT: REVIEW SUMMARY <span style={styles.arrow}>→</span>
+            NEXT: REVIEW SUMMARY{" "}
+            <span style={styles.arrow}>→</span>
           </button>
         </div>
       </div>
@@ -807,7 +884,7 @@ const styles = {
     display: "flex",
     justifyContent: "flex-end",
     marginTop: "24px",
-  },
+  }, 
   nextButton: {
     display: "inline-flex",
     alignItems: "center",

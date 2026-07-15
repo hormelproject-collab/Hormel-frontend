@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { setModifySelectState, selectModifySelectState } from "../redux/bomSlice";
+import {
+  setModifySelectState,
+  selectModifySelectState,
+  clearModifyExistingBomState,
+} from "../redux/bomSlice";
 import { useNavigate } from "react-router-dom";
+import ProgressIndicator from "../components/CommonProgressIndicator";
 
-import { TableLoadingOverlay, ShowingRecordsInfo } from "../components/CommonProgressIndicator";
 const PAGE_SIZE = 50;
+const TABLE_GRID_COLUMNS =
+  "110px 180px minmax(330px, 2.2fr) minmax(240px, 1.3fr) 180px";
 
 const DEFAULT_PAGINATION = {
   page: 1,
@@ -16,10 +22,11 @@ const DEFAULT_PAGINATION = {
 };
 
 const SEARCH_FIELDS = [
+  { label: "None", value: "" },
   { label: "Location", value: "location" },
   { label: "Produced Item", value: "produced_item" },
-  { label: "Produced Item Description", value: "produced_item_desc" },
-  { label: "BOM ID", value: "bom_id" },
+  { label: "Produced Item Desc", value: "produced_item_desc" },
+  { label: "BOMID", value: "bom_id" },
   { label: "Item Release Flag", value: "item_release_flag" },
 ];
 
@@ -28,6 +35,23 @@ const normalizeApiArray = (payload) => {
   if (Array.isArray(payload?.data)) return payload.data;
   if (Array.isArray(payload?.rows)) return payload.rows;
   return [];
+};
+
+const getReleaseStyle = (flag) => {
+  const text = String(flag ?? "").trim();
+  const isWarn =
+    text.includes("3") || /warning/i.test(text) || text.includes("△");
+
+  return {
+    color: isWarn ? "#dc2626" : "#111827",
+    fontWeight: isWarn ? 500 : 400,
+  };
+};
+
+const getSearchPlaceholder = (fieldValue) => {
+  const selectedField = SEARCH_FIELDS.find((f) => f.value === fieldValue);
+  if (!selectedField || !selectedField.value) return "Search...";
+  return `Search ${selectedField.label}`;
 };
 
 const buildRoutingId = (producedItem, resource) => {
@@ -46,43 +70,116 @@ const mapExistingBomRow = (row, index) => ({
   resource: row.resource || "-",
   routing_id: row.routing_id || buildRoutingId(row.produced_item, row.resource),
   item_release_flag: row.item_release_flag || "-",
+  __raw: row.__raw ?? row,
 });
+
+const makeGroupKey = (row) => {
+  const location = String(row?.location ?? "").trim().toUpperCase();
+  const producedItem = String(row?.produced_item ?? "").trim().toUpperCase();
+  const bomId = String(row?.bom_id ?? "").trim().toUpperCase();
+  return `${location}__${producedItem}__${bomId}`;
+};
+
+const mergeRowsByLocationItemBom = (rows = []) => {
+  const groupedMap = new Map();
+
+  for (const row of rows || []) {
+    const key = makeGroupKey(row);
+
+    if (!groupedMap.has(key)) {
+      groupedMap.set(key, {
+        ...row,
+        id: `GROUP__${key}`,
+        resourceList: [],
+        routingIdList: [],
+        __groupedRows: [],
+      });
+    }
+
+    const groupedRow = groupedMap.get(key);
+    const resource = String(row?.resource ?? "").trim();
+
+    if (
+      resource &&
+      resource !== "-" &&
+      !groupedRow.resourceList.some(
+        (existing) => String(existing).trim().toUpperCase() === resource.toUpperCase()
+      )
+    ) {
+      groupedRow.resourceList.push(resource);
+    }
+
+    const routingId = String(row?.routing_id ?? "").trim();
+    if (
+      routingId &&
+      routingId !== "-" &&
+      !groupedRow.routingIdList.some(
+        (existing) => String(existing).trim().toUpperCase() === routingId.toUpperCase()
+      )
+    ) {
+      groupedRow.routingIdList.push(routingId);
+    }
+
+    groupedRow.__groupedRows.push(row);
+    groupedRow.resource = groupedRow.resourceList.join(", ") || "-";
+    groupedRow.routing_id = groupedRow.routingIdList.join(", ") || "-";
+    groupedRow.__raw = groupedRow.__groupedRows.map((x) => x.__raw ?? x);
+  }
+
+  return Array.from(groupedMap.values());
+};
 
 const ModifySelectExistingBOM = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-
   const modifySelectState = useSelector(selectModifySelectState) || {};
+
   const {
-    searchBy1 = "",
-    searchBy2 = "",
+    searchBy1 = "resource",
+    searchBy2 = "location",
     query1 = "",
     query2 = "",
     rows = [],
     pagination = DEFAULT_PAGINATION,
+    selectedRowId = "",
   } = modifySelectState;
 
   const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState("");
+  const mountedRef = useRef(false);
 
   const safePagination = {
     ...DEFAULT_PAGINATION,
     ...(pagination || {}),
   };
 
+  const page = Math.max(1, Number(safePagination.page) || 1);
+  const pageSize = Math.max(1, Number(safePagination.pageSize) || PAGE_SIZE);
+  const total = Math.max(0, Number(safePagination.total) || 0);
+  const totalPages = Math.max(1, Number(safePagination.totalPages) || 1);
+  const hasPrev = Boolean(safePagination.hasPrev ?? page > 1);
+  const hasNext = Boolean(safePagination.hasNext ?? page < totalPages);
+  const shownCount = Array.isArray(rows) ? rows.length : 0;
+  const startRecord = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endRecord = total === 0 ? 0 : Math.min((page - 1) * pageSize + shownCount, total);
+
+  const uniqueRows = useMemo(() => {
+    return mergeRowsByLocationItemBom(rows);
+  }, [rows]);
+
   const fetchBomData = useCallback(
-    async ({ page = 1 } = {}) => {
+    async ({ page: requestedPage = 1 } = {}) => {
       try {
         setTableLoading(true);
         setError("");
 
         const params = new URLSearchParams();
-        params.set("page", String(page));
+        params.set("page", String(requestedPage));
         params.set("pageSize", String(PAGE_SIZE));
         params.set("searchBy1", String(searchBy1 || ""));
-        params.set("query1", String(query1 || "").trim());
+        params.set("query1", searchBy1 ? String(query1 || "").trim() : "");
         params.set("searchBy2", String(searchBy2 || ""));
-        params.set("query2", String(query2 || "").trim());
+        params.set("query2", searchBy2 ? String(query2 || "").trim() : "");
 
         const response = await fetch(`/api/tables/existing-bom-search?${params.toString()}`);
         const payload = await response.json().catch(() => ({}));
@@ -122,225 +219,230 @@ const ModifySelectExistingBOM = () => {
   );
 
   useEffect(() => {
-    fetchBomData({ page: safePagination.page || 1 });
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      fetchBomData({ page });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCriteriaChange = (payload) => {
+  useEffect(() => {
+    if (!mountedRef.current) return;
+
+    const timer = setTimeout(() => {
+      fetchBomData({ page });
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [fetchBomData, page]);
+
+  const updateSearchState = (payload) => {
     dispatch(
       setModifySelectState({
         ...payload,
+        selectedRowId: "",
         pagination: {
-          ...safePagination,
           page: 1,
+          pageSize: PAGE_SIZE,
         },
       })
     );
   };
 
-  const handleSearch = () => {
-    fetchBomData({ page: 1 });
-  };
+  const goToPrevPage = () => {
+    if (!hasPrev || tableLoading) return;
 
-  const handleClear = () => {
     dispatch(
       setModifySelectState({
-        searchBy1: "",
-        searchBy2: "",
-        query1: "",
-        query2: "",
-        rows: [],
-        pagination: DEFAULT_PAGINATION,
+        pagination: {
+          page: page - 1,
+          pageSize: PAGE_SIZE,
+        },
       })
     );
-    setTimeout(() => fetchBomData({ page: 1 }), 0);
   };
 
-  const goToPage = (page) => {
-    const targetPage = Math.min(Math.max(1, page), safePagination.totalPages || 1);
-    if (targetPage === safePagination.page || tableLoading) return;
-    fetchBomData({ page: targetPage });
+  const goToNextPage = () => {
+    if (!hasNext || tableLoading) return;
+
+    dispatch(
+      setModifySelectState({
+        pagination: {
+          page: page + 1,
+          pageSize: PAGE_SIZE,
+        },
+      })
+    );
   };
 
-  const showingText = useMemo(() => {
-    const shownCount = rows.length;
-    const total = Number(safePagination.total || 0);
-    const page = Number(safePagination.page || 1);
-    const pageSize = Number(safePagination.pageSize || 50);
+  const handleRowClick = (row) => {
+    dispatch(clearModifyExistingBomState());
+    dispatch(setModifySelectState({ selectedRowId: row.id }));
 
-    if (total === 0) {
-      return "Showing 0 of 0 item(s)";
-    }
-
-    const startRecord = (page - 1) * pageSize + 1;
-    const endRecord = Math.min(startRecord + shownCount - 1, total);
-
-    return `Showing ${startRecord}-${endRecord} of ${total} item(s)`;
-  }, [rows.length, safePagination.total, safePagination.page, safePagination.pageSize]);
-
-  const getReleaseStyle = (flag) => {
-    const text = String(flag || "");
-    const isWarn = text.includes("3");
-    return {
-      color: isWarn ? "red" : "black",
-      fontWeight: isWarn ? 600 : 400,
-    };
+    navigate(`/modify-existing-bom-data/${encodeURIComponent(row.id)}`, {
+      state: {
+        record: row,
+        selectedBom: row,
+        selectedBomId: row.id,
+        selectedBomRaw: row.__raw,
+      },
+    });
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.wrapper}>
+    <div style={styles.pageBg}>
+      <div style={styles.page}>
         <div style={styles.back} onClick={() => navigate(-1)}>
           ← BACK
         </div>
 
-        <h1 style={styles.title}>Step 1: Select Existing BOM</h1>
-        <p style={styles.subtitle}>Find and select a BOM to modify</p>
+        <h1 style={styles.h1}>Step 1: Select Existing BOM</h1>
+        <p style={styles.sub}>Find and select a BOM to modify</p>
 
-        <div style={styles.searchContainer}>
+        <div style={styles.searchSection}>
           <div style={styles.searchRow}>
-            <div style={styles.field}>
-              <label style={styles.label}>Search By (Criteria 1)</label>
+            <div style={styles.searchColLeft}>
+              <div style={styles.criteriaLabel}>Search By (Criteria 1)</div>
               <select
                 value={searchBy1}
-                onChange={(e) => handleCriteriaChange({ searchBy1: e.target.value })}
-                style={styles.select}
+                onChange={(e) => updateSearchState({ searchBy1: e.target.value })}
+                style={styles.dropdown}
               >
-                <option value="">Select</option>
                 {SEARCH_FIELDS.map((f) => (
-                  <option key={f.value} value={f.value}>
+                  <option key={`criteria1-${f.value}`} value={f.value}>
                     {f.label}
                   </option>
                 ))}
               </select>
             </div>
-
-            <div style={styles.field}>
-              <label style={styles.label}>Search Value</label>
+            <div style={styles.searchColRight}>
+              <div style={styles.criteriaLabel}>Search Value</div>
               <input
+                type="text"
                 value={query1}
-                onChange={(e) => handleCriteriaChange({ query1: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-                placeholder={searchBy1 ? `Search ${searchBy1}` : ""}
-                style={styles.input}
+                onChange={(e) => updateSearchState({ query1: e.target.value })}
+                placeholder={getSearchPlaceholder(searchBy1)}
+                style={styles.searchInput}
+                disabled={!searchBy1}
               />
             </div>
           </div>
 
           <div style={styles.searchRow}>
-            <div style={styles.field}>
-              <label style={styles.label}>Search By (Criteria 2)</label>
+            <div style={styles.searchColLeft}>
+              <div style={styles.criteriaLabel}>Search By (Criteria 2)</div>
               <select
                 value={searchBy2}
-                onChange={(e) => handleCriteriaChange({ searchBy2: e.target.value })}
-                style={styles.select}
+                onChange={(e) => updateSearchState({ searchBy2: e.target.value })}
+                style={styles.dropdown}
               >
-                <option value="">Select</option>
                 {SEARCH_FIELDS.map((f) => (
-                  <option key={f.value} value={f.value}>
+                  <option key={`criteria2-${f.value}`} value={f.value}>
                     {f.label}
                   </option>
                 ))}
               </select>
             </div>
-
-            <div style={styles.field}>
-              <label style={styles.label}>Search Value</label>
+            <div style={styles.searchColRight}>
+              <div style={styles.criteriaLabel}>Search Value</div>
               <input
+                type="text"
                 value={query2}
-                onChange={(e) => handleCriteriaChange({ query2: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-                placeholder={searchBy2 ? `Search ${searchBy2}` : ""}
-                style={styles.input}
+                onChange={(e) => updateSearchState({ query2: e.target.value })}
+                placeholder={getSearchPlaceholder(searchBy2)}
+                style={styles.searchInput}
+                disabled={!searchBy2}
               />
             </div>
           </div>
-
         </div>
 
-        {error ? <div style={styles.errorBox}>{error}</div> : null}
+        {error ? <div style={styles.errorText}>Error: {error}</div> : null}
 
-        <div style={styles.tableTopBar}>
-          <div style={styles.showingText}>{showingText}</div>
-          <div style={styles.pageText}>
-            Page {safePagination.page || 1} of {safePagination.totalPages || 1}
-          </div>
+        <div style={styles.paginationInfo}>
+          {uniqueRows.length === 0
+            ? "Showing 0 unique BOM record(s)"
+            : `Showing ${uniqueRows.length.toLocaleString()} unique BOM record(s)`}
         </div>
 
-        <div style={styles.tableWrap}>
-          <TableLoadingOverlay loading={tableLoading} label="Loading BOM records..." headerOffset={43} />
-
-          <div style={{ ...styles.table, position: "relative" }}>
-            <div style={styles.header}>
-              <div style={styles.headerCell}>Location</div>
-              <div style={styles.headerCell}>Produced Item</div>
-              <div style={styles.headerCell}>Produced Item Description</div>
-              <div style={styles.headerCell}>BOM ID</div>
-              <div style={styles.headerCell}>Item Release Flag</div>
+        <div style={styles.tableScrollWrap}>
+          <div style={{ ...styles.tableCard, position: "relative" }}>
+            <div style={styles.tableHeader}>
+              <div>Location</div>
+              <div>Produced Item</div>
+              <div>Produced Item Description</div>
+              <div>BOMID</div>
+              <div>Item Release Flag</div>
             </div>
 
-            {!tableLoading && rows.length === 0 ? (
-              <div style={styles.noRows}>No records found.</div>
-            ) : null}
-
-            {rows.map((r) => (
-              <div
-                key={r.id}
-                style={styles.row}
-                onClick={() =>
-                  navigate(`/modify-existing-bom-data/${encodeURIComponent(r.id)}`, {
-                    state: { record: r },
-                  })
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    navigate(`/modify-existing-bom-data/${encodeURIComponent(r.id)}`, {
-                      state: { record: r },
-                    });
-                  }
-                }}
-                tabIndex={0}
-              >
-                <div style={styles.cell}>{r.location}</div>
-                <div style={styles.cell}>{r.produced_item}</div>
-                <div style={styles.cell}>{r.produced_item_desc}</div>
-                <div style={styles.cell}>{r.bom_id}</div>
-                <div style={{ ...styles.cell, ...getReleaseStyle(r.item_release_flag) }}>
-                  {r.item_release_flag}
-                  {String(r.item_release_flag || "").includes("3") && " ⚠️"}
-                </div>
+            {tableLoading ? (
+              <div style={styles.loadingBodyRow}>
+                <ProgressIndicator label="Loading BOM records..." />
               </div>
-            ))}
+            ) : uniqueRows.length === 0 ? (
+              <div style={styles.emptyState}>No BOM records found.</div>
+            ) : (
+              uniqueRows.map((row, index) => {
+                const safeKey =
+                  row.id || `${row.bom_id}-${row.location || "NOLOCATION"}-${row.produced_item || "NOITEM"}-${index}`;
+                const isSelected = selectedRowId === row.id;
+
+                return (
+                  <div
+                    key={safeKey}
+                    style={{
+                      ...styles.tableRow,
+                      ...(isSelected ? styles.tableRowSelected : {}),
+                    }}
+                    onClick={() => handleRowClick(row)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleRowClick(row);
+                    }}
+                    tabIndex={0}
+                  >
+                    <div style={styles.cell}>{row.location || "-"}</div>
+                    <div style={styles.cell}>{row.produced_item || "-"}</div>
+                    <div style={styles.cell}>{row.produced_item_desc || "-"}</div>
+                    <div style={styles.cell}>{row.bom_id || "-"}</div>
+                    
+                    <div
+                      style={{
+                        ...styles.cell,
+                        ...getReleaseStyle(row.item_release_flag),
+                      }}
+                    >
+                      {row.item_release_flag || "-"}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
-        <div style={styles.paginationBar}>
+        <div style={styles.paginationContainer}>
           <button
             type="button"
+            disabled={!hasPrev || tableLoading}
+            onClick={goToPrevPage}
             style={{
               ...styles.pageButton,
-              opacity: safePagination.hasPrev && !tableLoading ? 1 : 0.5,
+              ...(!hasPrev || tableLoading ? styles.pageButtonDisabled : {}),
             }}
-            disabled={!safePagination.hasPrev || tableLoading}
-            onClick={() => goToPage((safePagination.page || 1) - 1)}
           >
             ← Prev
           </button>
-
-          <span style={styles.currentPage}>{safePagination.page || 1}</span>
-
+          <span style={styles.pageText}>
+            Page {page} of {totalPages}
+          </span>
           <button
             type="button"
+            disabled={!hasNext || tableLoading}
+            onClick={goToNextPage}
             style={{
               ...styles.pageButton,
-              opacity: safePagination.hasNext && !tableLoading ? 1 : 0.5,
+              ...(!hasNext || tableLoading ? styles.pageButtonDisabled : {}),
             }}
-            disabled={!safePagination.hasNext || tableLoading}
-            onClick={() => goToPage((safePagination.page || 1) + 1)}
           >
             Next →
           </button>
@@ -353,218 +455,189 @@ const ModifySelectExistingBOM = () => {
 export default ModifySelectExistingBOM;
 
 const styles = {
-  page: {
-    background: "#f3f4f6",
+  pageBg: {
     minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
+    background: "#f3f4f6",
+    padding: "24px 0 40px",
   },
-  wrapper: {
-    maxWidth: "1200px",
-    width: "100%",
-    padding: "20px",
+  page: {
+    maxWidth: 1280,
+    margin: "0 auto",
+    padding: "0 18px",
+    boxSizing: "border-box",
   },
   back: {
     color: "#2563eb",
     cursor: "pointer",
     marginBottom: 10,
+    fontSize: 14,
+    fontWeight: 400,
+    width: "fit-content",
   },
-  title: {
-    fontSize: 30,
-    fontWeight: 700,
+  h1: {
+    fontSize: 22,
+    lineHeight: "30px",
+    fontWeight: 600,
+    color: "#111827",
     margin: "0 0 6px",
   },
-  subtitle: {
-    color: "#666",
-    marginBottom: 20,
+  sub: {
+    color: "#6b7280",
+    margin: "0 0 14px",
+    fontSize: 14,
   },
-  errorBox: {
-    padding: "16px",
-    background: "#fee2e2",
-    border: "1px solid #fca5a5",
-    borderRadius: "6px",
-    color: "#991b1b",
-    fontSize: "14px",
-    marginBottom: "14px",
-  },
-  searchContainer: {
+  searchSection: {
     display: "flex",
     flexDirection: "column",
-    gap: "16px",
-    marginBottom: "18px",
-    background: "#fff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "6px",
-    padding: "16px",
+    gap: 12,
+    width: "100%",
+    maxWidth: 980,
+    marginBottom: 18,
   },
   searchRow: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "20px",
-  },
-  field: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  label: {
-    fontSize: "13px",
-    marginBottom: "6px",
-    color: "#6b7280",
-  },
-  select: {
+    columnGap: 14,
+    alignItems: "end",
     width: "100%",
-    height: "44px",
-    borderRadius: "4px",
-    border: "1px solid #c7c7c7",
-    padding: "0 10px",
-    fontSize: "14px",
-    background: "#fff",
   },
-  input: {
+  searchColLeft: {
     width: "100%",
-    height: "44px",
-    borderRadius: "4px",
-    border: "1px solid #c7c7c7",
-    padding: "0 10px",
-    fontSize: "14px",
-    boxSizing: "border-box",
-  },
-  searchActions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "10px",
-  },
-  searchButton: {
-    height: "38px",
-    padding: "0 18px",
-    border: "none",
-    borderRadius: "4px",
-    background: "#2563eb",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  clearButton: {
-    height: "38px",
-    padding: "0 18px",
-    border: "1px solid #c7c7c7",
-    borderRadius: "4px",
-    background: "#fff",
-    color: "#111827",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  tableTopBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "8px",
-    color: "#374151",
-    fontSize: "14px",
-  },
-  showingText: {
-    fontWeight: 600,
-  },
-  pageText: {
-    color: "#6b7280",
-  },
-  tableWrap: {
-    position: "relative",
-  },
-  tableLoadingOverlay: {
-    position: "absolute",
-    zIndex: 5,
-    inset: 0,
-    minHeight: "120px",
-    background: "rgba(255,255,255,0.72)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    color: "#374151",
-    fontWeight: 600,
-  },
-  table: {
-    border: "1px solid #ddd",
-    borderRadius: 6,
-    overflowX: "auto",
-    overflowY: "hidden",
-    background: "#fff",
-  },
-  header: {
-    display: "grid",
-    gridTemplateColumns: "110px 150px minmax(260px, 1.6fr) minmax(230px, 1.4fr) 150px",
-    columnGap: "14px",
-    alignItems: "stretch",
-    minWidth: "900px",
-    background: "#e5e7eb",
-    padding: "0 14px",
-    borderBottom: "1px solid #d1d5db",
-  },
-  headerCell: {
-    padding: "12px 0",
-    fontSize: "13px",
-    fontWeight: 700,
-    color: "#111827",
-    display: "flex",
-    alignItems: "center",
-    boxSizing: "border-box",
     minWidth: 0,
   },
-  row: {
-    display: "grid",
-    gridTemplateColumns: "110px 150px minmax(260px, 1.6fr) minmax(230px, 1.4fr) 150px",
-    columnGap: "14px",
-    alignItems: "stretch",
-    minWidth: "900px",
+  searchColRight: {
+    width: "100%",
+    minWidth: 0,
+  },
+  criteriaLabel: {
+    fontSize: 11,
+    color: "#2563eb",
+    marginBottom: 6,
+    marginLeft: 2,
+    lineHeight: "14px",
+    minHeight: 14,
+  },
+  dropdown: {
+    width: "100%",
+    height: 42,
+    padding: "0 12px",
+    borderRadius: 3,
+    border: "1px solid #cfd4dc",
+    background: "#ffffff",
+    color: "#111827",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+  searchInput: {
+    width: "100%",
+    height: 42,
     padding: "0 14px",
-    borderTop: "1px solid #eee",
+    borderRadius: 3,
+    border: "1px solid #cfd4dc",
+    background: "#ffffff",
+    color: "#111827",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#dc2626",
+    marginBottom: 12,
+    whiteSpace: "pre-wrap",
+  },
+  paginationInfo: {
+    marginBottom: 12,
+    fontSize: 14,
+    color: "#4b5563",
+  },
+  tableScrollWrap: {
+    width: "100%",
+    overflowX: "auto",
+  },
+  tableCard: {
+    minWidth: 1180,
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 4,
+    overflow: "hidden",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+  },
+  tableHeader: {
+    display: "grid",
+    gridTemplateColumns: TABLE_GRID_COLUMNS,
+    columnGap: 16,
+    background: "#f3f4f6",
+    padding: "12px 14px",
+    fontSize: 13,
+    fontWeight: 500,
+    color: "#111827",
+    borderBottom: "1px solid #e5e7eb",
+    alignItems: "center",
+  },
+  tableRow: {
+    display: "grid",
+    gridTemplateColumns: TABLE_GRID_COLUMNS,
+    columnGap: 16,
+    padding: "0 14px",
+    minHeight: 52,
+    alignItems: "center",
+    borderTop: "1px solid #eeeeee",
     cursor: "pointer",
-    background: "#fff",
+    background: "#ffffff",
+  },
+  tableRowSelected: {
+    background: "#f9fafb",
   },
   cell: {
-    padding: "12px 0",
-    fontSize: "13px",
+    padding: "11px 0",
+    fontSize: 14,
     color: "#111827",
+    lineHeight: 1.35,
+    wordBreak: "break-word",
+    overflowWrap: "anywhere",
+    minWidth: 0,
+  },
+  loadingBodyRow: {
+    padding: "28px 16px",
     display: "flex",
     alignItems: "center",
-    boxSizing: "border-box",
-    minWidth: 0,
-    overflowWrap: "anywhere",
-    wordBreak: "break-word",
-    lineHeight: 1.35,
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+    minHeight: "120px",
   },
-  noRows: {
-    padding: "22px",
-    textAlign: "center",
+  emptyState: {
+    padding: "18px 12px",
+    fontSize: 14,
     color: "#6b7280",
-    fontSize: "14px",
+    textAlign: "center",
+    background: "#ffffff",
   },
-  paginationBar: {
+  paginationContainer: {
+    marginTop: 16,
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    gap: "14px",
-    marginTop: "16px",
+    gap: 16,
   },
   pageButton: {
-    height: "36px",
-    padding: "0 14px",
-    border: "1px solid #2563eb",
-    borderRadius: "4px",
-    background: "#fff",
-    color: "#2563eb",
+    padding: "8px 14px",
+    border: "1px solid #d1d5db",
+    borderRadius: 4,
+    backgroundColor: "#ffffff",
+    color: "#111827",
     cursor: "pointer",
-    fontWeight: 600,
+    fontSize: 14,
   },
-  currentPage: {
-    minWidth: "34px",
-    height: "34px",
-    borderRadius: "4px",
-    background: "#2563eb",
-    color: "#fff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
+  pageButtonDisabled: {
+    backgroundColor: "#f3f4f6",
+    color: "#9ca3af",
+    cursor: "not-allowed",
+  },
+  pageText: {
+    fontSize: 14,
+    fontWeight: 500,
+    color: "#111827",
   },
 };

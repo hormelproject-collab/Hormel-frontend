@@ -49,11 +49,35 @@ const defaultExistingBomSearchState = {
   selectedRowIds: [],
   selectedRowsById: {},
   associatedCoProductsByGroup: {},
-  searchBy1: "resource",
+  searchBy1: "bomId",
   searchBy2: "location",
   query1: "",
   query2: "",
   pagination: defaultPagination,
+  latestRequestId: "",
+};
+
+const defaultModifyExistingBomFlowState = {
+  searchCriteria: {
+    searchBy1: "resource",
+    searchBy2: "location",
+    query1: "",
+    query2: "",
+    selectedRowId: "",
+    pagination: defaultPagination,
+  },
+  bomValues: {
+    record: null,
+    bomVersion: "",
+    selectedResources: [],
+    componentItems: [],
+    coProducts: [],
+    producedCoProduct: false,
+    routingRows: [],
+    resourceSearch: "",
+    resourcePage: 1,
+  },
+  summarySnapshot: null,
 };
 
 const defaultEngineeringChangeLogState = {
@@ -75,6 +99,19 @@ const defaultExistingItemBomRoutingSearchState = {
   selectedRowIds: [],
   selectedRowsById: {},
   associatedCoProductsByGroup: {},
+};
+const defaultItemBomRoutingCreateState = {
+  bomId: "",
+  producedItem: "",
+  itemReleaseFlag: "",
+  location: "",
+  resource: "",
+  resourceRelevancy: "",
+  routingPriority: "",
+  routingId: "",
+  addConnectedCoProduct: false,
+  coProductItem: "",
+  coProducts: [],
 };
 
 const getRoutingResource = (routingId, explicitResource = "") => {
@@ -136,7 +173,7 @@ const normalizeExistingBomSearchRow = (row, index) => {
   const bomId = String(row.bom_id ?? row.bomId ?? "").trim();
   const rawRoutingId = String(row.routing_id ?? row.routingId ?? "").trim();
   const resource = getRoutingResource(rawRoutingId, row.resource);
-  const routingId = buildRoutingId(producedItem, resource) || rawRoutingId;
+  const routingId = rawRoutingId || buildRoutingId(producedItem, resource);
   const itemReleaseFlag = String(
     row.item_release_flag ??
     row.item_releaseflag ??
@@ -241,8 +278,17 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
   const location = String(row.location ?? "").trim();
   const erpCoProductAssociation = String(
     row.erp_co_product_association ??
-      row.erpCoProductAssociation ??
-      row.co_product_association ??
+    row.erpCoProductAssociation ??
+    row.co_product_association ??
+    ""
+  ).trim();
+  const erpItemBomRoutingPriority = String(
+    row.erp_item_bom_routing_priority ??
+      row.erpItemBomRoutingPriority ??
+      row.item_bom_routing_priority ??
+      row.itemBomRoutingPriority ??
+      row.item_bom_priority ??
+      row.itemBomPriority ??
       ""
   ).trim();
   const coProductAssociation = Number(erpCoProductAssociation || "0") >= 1 ? 1 : 0;
@@ -258,6 +304,10 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
     routing_id: routingId,
     location,
     resource,
+    erp_item_bom_routing_priority: erpItemBomRoutingPriority,
+    itemBomRoutingPriority: erpItemBomRoutingPriority,
+    itemBomPriority: erpItemBomRoutingPriority,
+    item_bom_priority: erpItemBomRoutingPriority,
     erp_co_product_association: erpCoProductAssociation,
     co_product_association: coProductAssociation,
     component_item: componentItem,
@@ -270,6 +320,7 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
 };
 
 /** ------------------ THUNKS ------------------ **/
+
 export const fetchItemMaster = createAsyncThunk(
   "bom/fetchItemMaster",
   async (
@@ -327,7 +378,69 @@ export const fetchItemMaster = createAsyncThunk(
     }
   }
 );
+export const fetchDeleteBomSearchRows = createAsyncThunk(
+  "bom/fetchDeleteBomSearchRows",
+  async (
+    {
+      page = 1,
+      pageSize = 50,
+      searchBy1 = "",
+      query1 = "",
+      searchBy2 = "",
+      query2 = "",
+      reloadToken = "",
+    } = {},
+    { rejectWithValue }
+  ) => {
+    try {
+      const params = new URLSearchParams();
 
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+
+      params.set("searchBy1", String(searchBy1 || ""));
+      params.set("query1", searchBy1 ? String(query1 || "").trim() : "");
+
+      params.set("searchBy2", String(searchBy2 || ""));
+      params.set("query2", searchBy2 ? String(query2 || "").trim() : "");
+
+      if (reloadToken !== "") {
+        params.set("_reload", String(reloadToken));
+      }
+
+      const res = await fetch(
+        `/api/tables/delete-existing-bom-records?${params.toString()}`
+      );
+
+      if (!res.ok) return rejectWithValue(await res.text());
+
+      const payload = await res.json();
+
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+
+      return {
+        rows: rows.map((row, index) => normalizeExistingBomSearchRow(row, index)),
+        pagination: payload?.pagination || {
+          ...defaultPagination,
+          page,
+          pageSize,
+          total: rows.length,
+          totalPages: Math.max(1, Math.ceil(rows.length / pageSize)),
+          hasPrev: page > 1,
+          hasNext: false,
+        },
+      };
+    } catch (e) {
+      return rejectWithValue(
+        e?.message || "Failed to fetch delete existing BOM records"
+      );
+    }
+  }
+);
 export const fetchExistingBomSearchRows = createAsyncThunk(
   "bom/fetchExistingBomSearchRows",
   async (
@@ -338,6 +451,7 @@ export const fetchExistingBomSearchRows = createAsyncThunk(
       query1 = "",
       searchBy2 = "location",
       query2 = "",
+      reloadToken = "",
     } = {},
     { rejectWithValue }
   ) => {
@@ -346,9 +460,14 @@ export const fetchExistingBomSearchRows = createAsyncThunk(
       params.set("page", String(page));
       params.set("pageSize", String(pageSize));
       params.set("searchBy1", String(searchBy1 || ""));
-      params.set("query1", String(query1 || "").trim());
+      params.set("query1", searchBy1 ? String(query1 || "").trim() : "");
       params.set("searchBy2", String(searchBy2 || ""));
-      params.set("query2", String(query2 || "").trim());
+      params.set("query2", searchBy2 ? String(query2 || "").trim() : "");
+
+      // only for cache-busting/debugging; backend can ignore this
+      if (reloadToken !== "") {
+        params.set("_reload", String(reloadToken));
+      }
 
       const res = await fetch(`/api/tables/existing-bom-search?${params.toString()}`);
 
@@ -640,6 +759,7 @@ const initialState = {
     initialCoProducts: [],
     producedCoProduct: false,
   },
+  modifyExistingBomFlow: defaultModifyExistingBomFlowState,
   items: itemsAdapter.getInitialState({
     loading: false,
     error: null,
@@ -666,6 +786,7 @@ const initialState = {
     resourceOptionsByKey: {},
   },
   resourceComponentConfigs: {},
+  itemBomRoutingCreate: defaultItemBomRoutingCreateState,
 };
 
 const bomSlice = createSlice({
@@ -840,6 +961,45 @@ const bomSlice = createSlice({
         producedCoProduct: false,
       };
     },
+    setModifyExistingBomFlowState: (state, action) => {
+      const payload = action.payload || {};
+      state.modifyExistingBomFlow = {
+        ...state.modifyExistingBomFlow,
+        ...payload,
+        searchCriteria: {
+          ...state.modifyExistingBomFlow.searchCriteria,
+          ...(payload.searchCriteria || {}),
+          pagination: {
+            ...state.modifyExistingBomFlow.searchCriteria.pagination,
+            ...(payload.searchCriteria?.pagination || {}),
+          },
+        },
+        bomValues: {
+          ...state.modifyExistingBomFlow.bomValues,
+          ...(payload.bomValues || {}),
+        },
+      };
+    },
+    setModifyExistingBomSearchCriteria: (state, action) => {
+      const payload = action.payload || {};
+      state.modifyExistingBomFlow.searchCriteria = {
+        ...state.modifyExistingBomFlow.searchCriteria,
+        ...payload,
+        pagination: {
+          ...state.modifyExistingBomFlow.searchCriteria.pagination,
+          ...(payload.pagination || {}),
+        },
+      };
+    },
+    setModifyExistingBomValues: (state, action) => {
+      state.modifyExistingBomFlow.bomValues = {
+        ...state.modifyExistingBomFlow.bomValues,
+        ...(action.payload || {}),
+      };
+    },
+    clearModifyExistingBomFlowState: (state) => {
+      state.modifyExistingBomFlow = defaultModifyExistingBomFlowState;
+    },
     ensureResourceComponentConfig: (state, action) => {
       const { key, item, location } = action.payload || {};
       if (!key) return;
@@ -880,6 +1040,15 @@ const bomSlice = createSlice({
     },
     clearResourceComponentConfigs: (state) => {
       state.resourceComponentConfigs = {};
+    },
+    setItemBomRoutingCreateState: (state, action) => {
+      state.itemBomRoutingCreate = {
+        ...state.itemBomRoutingCreate,
+        ...(action.payload || {}),
+      };
+    },
+    clearItemBomRoutingCreateState: (state) => {
+      state.itemBomRoutingCreate = defaultItemBomRoutingCreateState;
     },
     clearCreateBomFlowState: (state) => {
       state.selectedProducedItemIds = [];
@@ -972,15 +1141,16 @@ const bomSlice = createSlice({
         state.items.loading = false;
         state.items.error = action.payload || "Failed to load items";
       })
-      .addCase(fetchExistingBomSearchRows.pending, (state) => {
+      .addCase(fetchExistingBomSearchRows.pending, (state, action) => {
         state.existingBomSearch.loading = true;
         state.existingBomSearch.error = null;
+        state.existingBomSearch.latestRequestId = action.meta.requestId;
       })
       .addCase(fetchExistingBomSearchRows.fulfilled, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
         state.existingBomSearch.loading = false;
-
         const rows = action.payload?.rows || [];
-
         state.existingBomSearch.rows = rows;
         state.existingBomSearch.associatedCoProductsByGroup =
           buildAssociatedCoProductsByGroup(rows);
@@ -990,8 +1160,40 @@ const bomSlice = createSlice({
         };
       })
       .addCase(fetchExistingBomSearchRows.rejected, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
         state.existingBomSearch.loading = false;
-        state.existingBomSearch.error = action.payload || "Failed to load existing BOM records";
+        state.existingBomSearch.error =
+          action.payload || "Failed to load existing BOM records";
+      })
+
+      .addCase(fetchDeleteBomSearchRows.pending, (state, action) => {
+        state.existingBomSearch.loading = true;
+        state.existingBomSearch.error = null;
+        state.existingBomSearch.latestRequestId = action.meta.requestId;
+      })
+      .addCase(fetchDeleteBomSearchRows.fulfilled, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
+        state.existingBomSearch.loading = false;
+
+        const rows = action.payload?.rows || [];
+
+        state.existingBomSearch.rows = rows;
+        state.existingBomSearch.associatedCoProductsByGroup =
+          buildAssociatedCoProductsByGroup(rows);
+
+        state.existingBomSearch.pagination = action.payload?.pagination || {
+          ...defaultPagination,
+          total: rows.length || 0,
+        };
+      })
+      .addCase(fetchDeleteBomSearchRows.rejected, (state, action) => {
+        if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
+
+        state.existingBomSearch.loading = false;
+        state.existingBomSearch.error =
+          action.payload || "Failed to load delete existing BOM records";
       })
       .addCase(fetchExistingItemBomRoutingSearchRows.pending, (state) => {
         state.existingItemBomRoutingSearch.loading = true;
@@ -1122,10 +1324,16 @@ export const {
   clearModifySelectState,
   setModifyExistingBomState,
   clearModifyExistingBomState,
+  setModifyExistingBomFlowState,
+  setModifyExistingBomSearchCriteria,
+  setModifyExistingBomValues,
+  clearModifyExistingBomFlowState,
   ensureResourceComponentConfig,
   replicateResourceComponentInfoToLocations,
   clearResourceComponentConfigs,
   clearCreateBomFlowState,
+  setItemBomRoutingCreateState,
+  clearItemBomRoutingCreateState,
 } = bomSlice.actions;
 
 export default bomSlice.reducer;
@@ -1169,6 +1377,12 @@ export const selectHasInactiveLocationsSelected = createSelector(
 
 export const selectModifySelectState = (state) => state.bom.modifySelectState;
 export const selectModifyExistingBomState = (state) => state.bom.modifyExistingBomState;
+export const selectModifyExistingBomFlowState = (state) =>
+  state.bom.modifyExistingBomFlow || defaultModifyExistingBomFlowState;
+export const selectModifyExistingBomSearchCriteria = (state) =>
+  (state.bom.modifyExistingBomFlow || defaultModifyExistingBomFlowState).searchCriteria;
+export const selectModifyExistingBomValues = (state) =>
+  (state.bom.modifyExistingBomFlow || defaultModifyExistingBomFlowState).bomValues;
 export const selectItemsLoading = (state) => state.bom.items.loading;
 export const selectItemsError = (state) => state.bom.items.error;
 export const selectItemsPagination = (state) => state.bom.items.pagination;
@@ -1257,3 +1471,6 @@ export const selectCheckoutSummary = createSelector(
     resourceComponentConfigs,
   })
 );
+
+export const selectItemBomRoutingCreateState = (state) =>
+  state.bom.itemBomRoutingCreate || defaultItemBomRoutingCreateState;

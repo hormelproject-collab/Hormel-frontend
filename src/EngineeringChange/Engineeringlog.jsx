@@ -1305,7 +1305,7 @@ export default function Engineeringlog() {
               value={criteriaValue1}
               onChange={(e) => setCriteriaValue1(e.target.value)}
               placeholder={
-                criteriaField1 ? getSearchPlaceholder(criteriaField1) : "Select Criteria 1 first"
+                criteriaField1 ? getSearchPlaceholder(criteriaField1) : "Select Criteria 1"
               }
               disabled={!criteriaField1}
               style={styles.input}
@@ -1342,7 +1342,7 @@ export default function Engineeringlog() {
               value={criteriaValue2}
               onChange={(e) => setCriteriaValue2(e.target.value)}
               placeholder={
-                criteriaField2 ? getSearchPlaceholder(criteriaField2) : "Select Criteria 2 first"
+                criteriaField2 ? getSearchPlaceholder(criteriaField2) : "Select Criteria 2"
               }
               disabled={!criteriaField2}
               style={styles.input}

@@ -1,16 +1,162 @@
-
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  clearItemBomRoutingCreateState,
+  selectItemBomRoutingCreateState,
+} from "../../redux/bomSlice";
 import { IoIosArrowBack } from "react-icons/io";
 import { MdCheck } from "react-icons/md";
 
 const safeArray = (value) => (Array.isArray(value) ? value : []);
 const toText = (value) => (value == null ? "" : String(value));
 
+const buildRoutingId = (item, resource) => {
+  const cleanItem = toText(item).trim();
+  const cleanResource = toText(resource).trim();
+
+  if (!cleanItem || !cleanResource) return "";
+
+  return `ROUTING_${cleanItem}_${cleanResource}`;
+};
+
+const normalizeValidationEntries = (validationResult) => {
+  if (!validationResult) return [];
+
+  const output = [];
+
+  const pushEntry = (entry, index = 0, parent = {}) => {
+    if (!entry) return;
+
+    const code = String(
+      entry.validationSequence ??
+        entry.validation_sequence ??
+        entry.seq ??
+        entry.sequence ??
+        entry.code ??
+        parent.validationSequence ??
+        parent.validation_sequence ??
+        parent.seq ??
+        parent.sequence ??
+        parent.code ??
+        index + 1
+    );
+
+    const desc =
+      entry.validation ??
+      entry.desc ??
+      entry.description ??
+      entry.validation_description ??
+      entry.validationDescription ??
+      parent.validation ??
+      parent.desc ??
+      parent.description ??
+      parent.validation_description ??
+      parent.validationDescription ??
+      "";
+
+    const error =
+      entry.errorDetails ??
+      entry.error ??
+      entry.validation_error_detail ??
+      entry.validationErrorDetail ??
+      entry.message ??
+      entry.detail ??
+      parent.errorDetails ??
+      parent.error ??
+      parent.validation_error_detail ??
+      parent.validationErrorDetail ??
+      "";
+
+    const rm =
+      entry.remediationMessage ??
+      entry.rm ??
+      entry.remediation_message ??
+      entry.remediation ??
+      parent.remediationMessage ??
+      parent.rm ??
+      parent.remediation_message ??
+      parent.remediation ??
+      "";
+
+    output.push({ code, desc, error, rm });
+  };
+
+  const manualErrorList = Array.isArray(validationResult?.errorList)
+    ? validationResult.errorList
+    : Array.isArray(validationResult?.data?.errorList)
+      ? validationResult.data.errorList
+      : [];
+
+  if (manualErrorList.length > 0) {
+    manualErrorList.forEach((row, rowIndex) => {
+      const messages = Array.isArray(row?.messages) ? row.messages : [];
+
+      if (messages.length === 0) {
+        pushEntry(row, rowIndex);
+      } else {
+        messages.forEach((msg, msgIndex) => {
+          pushEntry(msg, `${rowIndex}-${msgIndex}`, row);
+        });
+      }
+    });
+  }
+
+  const fallbackArray =
+    validationResult?.validationErrors ??
+    validationResult?.errors ??
+    validationResult?.data?.validationErrors ??
+    validationResult?.data?.errors;
+
+  if (Array.isArray(fallbackArray)) {
+    fallbackArray.forEach((entry, index) => pushEntry(entry, index));
+  }
+
+  if (
+    fallbackArray &&
+    !Array.isArray(fallbackArray) &&
+    typeof fallbackArray === "object"
+  ) {
+    Object.entries(fallbackArray).forEach(([code, entry], index) => {
+      pushEntry({ code, ...entry }, index);
+    });
+  }
+
+  const seen = new Set();
+  return output.filter((entry) => {
+    const sig = JSON.stringify(entry);
+    if (seen.has(sig)) return false;
+    seen.add(sig);
+    return true;
+  });
+};
+
+const getSuccessEcNumber = (validationResult) => {
+  return (
+    validationResult?.engineeringChangeId ??
+    validationResult?.engineering_change_id ??
+    validationResult?.ecNumber ??
+    validationResult?.ec_number ??
+    validationResult?.data?.engineeringChangeId ??
+    validationResult?.data?.engineering_change_id ??
+    validationResult?.data?.ecNumber ??
+    validationResult?.data?.ec_number ??
+    validationResult?.result?.engineeringChangeId ??
+    validationResult?.result?.ecNumber ??
+    ""
+  );
+};
+
 const ReviewSummary = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const savedCreateState = useSelector(selectItemBomRoutingCreateState);
   const locationHook = useLocation();
-  const state = locationHook.state || {};
+
+  const state =
+    locationHook.state && Object.keys(locationHook.state).length
+      ? locationHook.state
+      : savedCreateState || {};
 
   const {
     bomId = "",
@@ -36,20 +182,33 @@ const ReviewSummary = () => {
   const fallbackSingleCoProductRows =
     addConnectedCoProduct && !coProducts.length && coProductItem
       ? [
-        {
-          coProductItem,
-          itemDescription: "",
-          qtyProduced: "",
-        },
-      ]
+          {
+            coProductItem,
+            itemDescription: "",
+            qtyProduced: "",
+          },
+        ]
       : [];
 
   const displayCoProducts = coProducts.length ? coProducts : fallbackSingleCoProductRows;
 
+  const resolvedRoutingId =
+    toText(routingId).trim() || buildRoutingId(producedItem, resource);
+
+  const displayCoProductsWithRouting = displayCoProducts.map((row) => {
+    const rowResource = toText(row?.resource).trim() || resource;
+
+    return {
+      ...row,
+      resource: rowResource,
+      routingId: buildRoutingId(producedItem, rowResource),
+      erp_co_product_association: 1,
+    };
+  });
+
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [successData, setSuccessData] = useState(null);
+  const [validationResult, setValidationResult] = useState(null);
 
   const currentUser = useMemo(() => {
     return {
@@ -64,14 +223,80 @@ const ReviewSummary = () => {
     };
   }, []);
 
+  const validationEntries = useMemo(() => {
+    return normalizeValidationEntries(validationResult);
+  }, [validationResult]);
+
+  const responseStatus = String(validationResult?.status || "").toLowerCase();
+  const responseSuccessFlag = validationResult?.success === true;
+  const responseFailureFlag =
+    validationResult?.success === false ||
+    responseStatus === "failure" ||
+    responseStatus === "failed" ||
+    responseStatus === "error";
+  const validationFailed = validationEntries.length > 0;
+  const recordsNotPushed =
+    !!validationResult &&
+    !validationFailed &&
+    responseFailureFlag &&
+    (responseStatus === "failure" ||
+      responseStatus === "failed" ||
+      responseStatus === "error");
+  const topLevelError = recordsNotPushed
+    ? validationResult?.messageForUser ||
+      validationResult?.message ||
+      validationResult?.error ||
+      validationResult?.details ||
+      "Validation was successful but the records are not yet pushed to PostgreSQL table."
+    : !validationFailed
+      ? validationResult?.error ??
+        validationResult?.details ??
+        validationResult?.data?.error ??
+        ""
+      : "";
+  const isSuccess =
+    !!validationResult &&
+    !validationFailed &&
+    !recordsNotPushed &&
+    !topLevelError &&
+    (responseSuccessFlag || responseStatus === "success" || responseStatus === "");
+  const successEcNumber = useMemo(() => {
+    return getSuccessEcNumber(validationResult);
+  }, [validationResult]);
+
   const canSubmit =
     !!bomId &&
     !!producedItem &&
     !!location &&
     !!resource &&
     !!routingPriority &&
-    !!routingId &&
+    !!resolvedRoutingId &&
     !submitting;
+
+  const isSubmitResponseSuccessful = (result) => {
+    const status = String(result?.status || "").toLowerCase();
+    const explicitSuccess = result?.success === true || status === "success";
+    const explicitFailure =
+      result?.success === false ||
+      status === "failure" ||
+      status === "failed" ||
+      status === "error";
+    const responseValidationEntries = normalizeValidationEntries(result);
+    const responseTopLevelError =
+      result?.error ??
+      result?.details ??
+      result?.messageForUser ??
+      (explicitFailure ? result?.message : "") ??
+      result?.data?.error ??
+      "";
+
+    return (
+      explicitSuccess &&
+      !explicitFailure &&
+      !responseTopLevelError &&
+      responseValidationEntries.length === 0
+    );
+  };
 
   const handleReturnToMainMenu = () => {
     navigate("/");
@@ -82,8 +307,7 @@ const ReviewSummary = () => {
 
     try {
       setSubmitting(true);
-      setError("");
-      setSuccessData(null);
+      setValidationResult(null);
 
       const payload = {
         bomId,
@@ -93,30 +317,27 @@ const ReviewSummary = () => {
         resource,
         resourceRelevancy,
         routingPriority,
-        routingId,
+        routingId: resolvedRoutingId,
         addConnectedCoProduct,
-
-        // main item explicitly sent
         mainItem: {
           item: producedItem,
-          erp_co_product_association: 0,
+          routingId: resolvedRoutingId,
+          resource,
+          erp_co_product_association: "",
         },
-
-        // backward compatibility
         coProductItem: addConnectedCoProduct
           ? (displayCoProducts[0]?.coProductItem ?? coProductItem ?? "")
           : "",
-
-        // all co-products explicitly marked
         coProducts: addConnectedCoProduct
-          ? displayCoProducts.map((row) => ({
-            coProductItem: row.coProductItem ?? "",
-            itemDescription: row.itemDescription ?? "",
-            qtyProduced: row.qtyProduced ?? "",
-            erp_co_product_association: 1,
-          }))
+          ? displayCoProductsWithRouting.map((row) => ({
+              coProductItem: row.coProductItem ?? "",
+              itemDescription: row.itemDescription ?? "",
+              qtyProduced: row.qtyProduced ?? "",
+              resource: row.resource ?? resource ?? "",
+              routingId: row.routingId ?? "",
+              erp_co_product_association: 1,
+            }))
           : [],
-
         notes,
         changeType: "Added",
         user: {
@@ -133,19 +354,32 @@ const ReviewSummary = () => {
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          json?.details ||
-          json?.error ||
-          json?.message ||
-          "Failed to create item BOM routing record"
-        );
+      let json = null;
+      try {
+        json = await res.json();
+      } catch {
+        json = {
+          success: false,
+          status: "failure",
+          error: "Failed to parse server response",
+        };
       }
 
-      setSuccessData(json?.data || null);
+      setValidationResult(json);
+
+      if (!res.ok) {
+        return;
+      }
+
+      if (isSubmitResponseSuccessful(json)) {
+        dispatch(clearItemBomRoutingCreateState());
+      }
     } catch (err) {
-      setError(err.message || "Failed to submit");
+      setValidationResult({
+        success: false,
+        status: "failure",
+        error: err.message || "Failed to submit",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -160,17 +394,6 @@ const ReviewSummary = () => {
         </div>
 
         <h2 style={styles.title}>Step 2: New Item BOM Routing Record Summary</h2>
-
-        {error ? <div style={styles.errorBox}>{error}</div> : null}
-
-        {successData ? (
-          <div style={styles.successBox}>
-            <div style={styles.successTitle}>Record created successfully</div>
-            <div>
-              <strong>Engineering Change ID:</strong> {successData.engineeringChangeId}
-            </div>
-          </div>
-        ) : null}
 
         <div style={styles.card}>
           <div style={styles.summaryRow}>
@@ -187,12 +410,11 @@ const ReviewSummary = () => {
             <strong>Resource Relevancy:</strong> <span>{resourceRelevancy || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
-            <strong>Routing ID:</strong> <span>{routingId || "-"}</span>
+            <strong>Routing ID:</strong> <span>{resolvedRoutingId || "-"}</span>
           </div>
           <div style={styles.summaryRow}>
             <strong>BOM ID:</strong> <span>{bomId || "-"}</span>
           </div>
-
 
           {addConnectedCoProduct ? (
             <div style={styles.coProductSection}>
@@ -209,10 +431,11 @@ const ReviewSummary = () => {
                       <th style={styles.coProductTh}>Co-Product Item</th>
                       <th style={styles.coProductTh}>Item Description</th>
                       <th style={styles.coProductTh}>Qty Produced</th>
+                      <th style={styles.coProductTh}>Routing ID</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayCoProducts.map((row, index) => (
+                    {displayCoProductsWithRouting.map((row, index) => (
                       <tr key={`${row.coProductItem || "coprod"}_${index}`}>
                         <td style={styles.coProductTd}>
                           {toText(row.coProductItem).trim() || "-"}
@@ -222,6 +445,9 @@ const ReviewSummary = () => {
                         </td>
                         <td style={styles.coProductTd}>
                           {toText(row.qtyProduced).trim() || "-"}
+                        </td>
+                        <td style={styles.coProductTd}>
+                          {toText(row.routingId).trim() || "-"}
                         </td>
                       </tr>
                     ))}
@@ -246,6 +472,51 @@ const ReviewSummary = () => {
             style={styles.textArea}
           />
         </div>
+
+        {validationFailed ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Errors</div>
+            <div style={styles.validationTableWrap}>
+              <table style={styles.validationTable}>
+                <thead>
+                  <tr style={styles.validationHeaderRow}>
+                    <th style={styles.validationTh}>Validation Sequence</th>
+                    <th style={styles.validationTh}>Validation Description</th>
+                    <th style={styles.validationTh}>Error Details</th>
+                    <th style={styles.validationTh}>Remediation Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validationEntries.map((entry, index) => (
+                    <tr key={`${entry.code}-${index}`} style={styles.validationBodyRow}>
+                      <td style={styles.validationTd}>{entry.code}</td>
+                      <td style={styles.validationTd}>{entry.desc || "-"}</td>
+                      <td style={styles.validationTd}>{entry.error || "-"}</td>
+                      <td style={styles.validationTd}>{entry.rm || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : recordsNotPushed ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Success - Records Not Pushed</div>
+            <div style={styles.errorText}>{topLevelError}</div>
+          </div>
+        ) : isSuccess ? (
+          <div style={styles.successCard}>
+            <div style={styles.resultTitle}>Validation Success</div>
+            <div style={styles.successText}>
+              {`Validation was successful and the records are saved successfully${successEcNumber ? ` with ${successEcNumber}.` : "."}`}
+            </div>
+          </div>
+        ) : topLevelError ? (
+          <div style={styles.errorCard}>
+            <div style={styles.resultTitle}>Validation Error</div>
+            <div style={styles.errorText}>{topLevelError}</div>
+          </div>
+        ) : null}
 
         <div style={styles.footer}>
           <button
@@ -317,17 +588,16 @@ const styles = {
     padding: "20px 24px",
     minHeight: "220px",
   },
-coProductNote: {
-  marginBottom: "12px",
-  padding: "10px 12px",
-  borderRadius: "4px",
-  backgroundColor: "#fff7ed",
-  border: "1px solid #fed7aa",
-  color: "#9a3412",
-  fontSize: "14px",
-  fontWeight: 500,
-},
-
+  coProductNote: {
+    marginBottom: "12px",
+    padding: "10px 12px",
+    borderRadius: "4px",
+    backgroundColor: "#fff7ed",
+    border: "1px solid #fed7aa",
+    color: "#9a3412",
+    fontSize: "14px",
+    fontWeight: 500,
+  },
   summaryRow: {
     display: "flex",
     gap: "8px",
@@ -423,28 +693,69 @@ coProductNote: {
     letterSpacing: "0.2px",
     boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
   },
-  errorBox: {
-    marginBottom: "16px",
-    padding: "12px 14px",
-    borderRadius: "6px",
-    backgroundColor: "#fee2e2",
-    border: "1px solid #fecaca",
-    color: "#b91c1c",
-    fontSize: "14px",
-  },
-  successBox: {
-    marginBottom: "16px",
-    padding: "14px",
-    borderRadius: "6px",
-    backgroundColor: "#dcfce7",
-    border: "1px solid #86efac",
-    color: "#166534",
-    fontSize: "14px",
-    display: "grid",
-    gap: "6px",
-  },
-  successTitle: {
+  resultTitle: {
+    fontSize: "15px",
     fontWeight: 700,
-    marginBottom: "4px",
+    marginBottom: "10px",
+  },
+  errorCard: {
+    background: "#fff5f5",
+    border: "1px solid #fecaca",
+    borderRadius: "6px",
+    padding: "16px",
+    marginTop: "16px",
+    marginBottom: "16px",
+  },
+  successCard: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "6px",
+    padding: "16px",
+    marginTop: "16px",
+    marginBottom: "16px",
+  },
+  errorText: {
+    fontSize: "14px",
+    color: "#991b1b",
+    whiteSpace: "pre-wrap",
+  },
+  successText: {
+    fontSize: "14px",
+    color: "#166534",
+    whiteSpace: "pre-wrap",
+  },
+  validationTableWrap: {
+    overflowX: "auto",
+    border: "1px solid #f3d0d0",
+    borderRadius: "4px",
+    background: "#ffffff",
+    marginTop: "12px",
+  },
+  validationTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+  },
+  validationHeaderRow: {
+    background: "#fee2e2",
+  },
+  validationBodyRow: {
+    borderTop: "1px solid #f3d0d0",
+  },
+  validationTh: {
+    textAlign: "left",
+    padding: "12px 14px",
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "#7f1d1d",
+    whiteSpace: "nowrap",
+    verticalAlign: "top",
+  },
+  validationTd: {
+    padding: "12px 14px",
+    fontSize: "14px",
+    color: "#111827",
+    verticalAlign: "top",
+    whiteSpace: "pre-wrap",
+    lineHeight: 1.5,
   },
 };

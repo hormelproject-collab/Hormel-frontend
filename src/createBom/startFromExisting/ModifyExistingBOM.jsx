@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import { MdDelete } from "react-icons/md";
 import ProgressIndicator from "../../components/CommonProgressIndicator";
+import {
+  selectModifyExistingBomState,
+  setModifyExistingBomState,
+  setModifyExistingBomValues,
+} from "../../redux/bomSlice";
 
 const NEXT_ROUTE = "/summary";
 const BOM_VERSION_OPTIONS = [
@@ -280,6 +286,9 @@ const ModifyExistingBOM = () => {
   const navigate = useNavigate();
   const routerLocation = useLocation();
   const { id } = useParams();
+  const dispatch = useDispatch();
+  const savedModifyState = useSelector(selectModifyExistingBomState);
+  const savedModifyStateRef = useRef(savedModifyState);
 
   const [selectedBom, setSelectedBom] = useState(normalizeSelectedBom(routerLocation?.state?.selectedBom));
   const [loading, setLoading] = useState(false);
@@ -309,6 +318,11 @@ const ModifyExistingBOM = () => {
   const [itemOptionsByKey, setItemOptionsByKey] = useState({});
   const [itemLoadingByKey, setItemLoadingByKey] = useState({});
   const [itemPaginationByKey, setItemPaginationByKey] = useState({});
+  const [pageError, setPageError] = useState("");
+
+  useEffect(() => {
+    savedModifyStateRef.current = savedModifyState;
+  }, [savedModifyState]);
 
   const loadGcpResourceOptions = async ({ searchText = resourceSearch, page = 1 } = {}) => {
     if (loadingResourceOptions) return;
@@ -454,6 +468,43 @@ const ModifyExistingBOM = () => {
   useEffect(() => {
     const loadDetailsToState = (baseBom, details) => {
       const originalVersion = getOriginalBomVersion(baseBom.bom_id);
+      const savedState = savedModifyStateRef.current || {};
+      const savedResources = Array.isArray(savedState.selectedResources)
+        ? savedState.selectedResources
+        : [];
+      const savedComponents = Array.isArray(savedState.componentItems)
+        ? savedState.componentItems
+        : [];
+      const savedCoProducts = Array.isArray(savedState.coProducts)
+        ? savedState.coProducts
+        : [];
+      const savedRoutingRows = Array.isArray(savedState.routingRows)
+        ? savedState.routingRows
+        : [];
+
+      const savedHasMeaningfulStep2Data =
+        String(savedState.bomVersion || "").trim() !== "" ||
+        savedResources.length > 0 ||
+        savedComponents.length > 0 ||
+        savedCoProducts.length > 0 ||
+        savedRoutingRows.length > 0;
+
+      const canRestoreSavedState =
+        savedState?.record?.bom_id &&
+        baseBom?.bom_id &&
+        String(savedState.record.bom_id) === String(baseBom.bom_id) &&
+        savedHasMeaningfulStep2Data;
+
+      if (canRestoreSavedState) {
+        setBomVersion(savedState.bomVersion || "");
+        setSelectedResources(savedResources);
+        setComponentItems(savedComponents);
+        setCoProducts(savedCoProducts);
+        setProducedCoProduct(!!savedState.producedCoProduct);
+        setRoutingRows(savedRoutingRows);
+        return;
+      }
+
       setBomVersion(BOM_VERSION_OPTIONS.find((v) => v !== originalVersion) ?? "");
 
       const resourceRows = Array.isArray(details?.resources) ? details.resources : [];
@@ -532,6 +583,13 @@ const ModifyExistingBOM = () => {
   }, [id, routerLocation?.state?.selectedBom]);
 
   useEffect(() => {
+    if (!selectedBom || resourceOptionsLoadedRef.current) return;
+    loadGcpResourceOptions({ searchText: resourceSearch, page: 1 });
+    // Load resource master once so Resource Relevancy is available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBom]);
+
+  useEffect(() => {
     if (!selectedBom) return;
     setRoutingRows(
       selectedResources.map((resource) => ({
@@ -541,6 +599,36 @@ const ModifyExistingBOM = () => {
       }))
     );
   }, [selectedResources, selectedBom, resourceMasterMap]);
+
+  useEffect(() => {
+    if (!selectedBom) return;
+
+    const snapshot = {
+      record: selectedBom,
+      bomVersion,
+      selectedResources,
+      componentItems,
+      coProducts,
+      producedCoProduct,
+      routingRows,
+      resourceSearch,
+      resourcePage,
+    };
+
+    dispatch(setModifyExistingBomState(snapshot));
+    dispatch(setModifyExistingBomValues(snapshot));
+  }, [
+    dispatch,
+    selectedBom,
+    bomVersion,
+    selectedResources,
+    componentItems,
+    coProducts,
+    producedCoProduct,
+    routingRows,
+    resourceSearch,
+    resourcePage,
+  ]);
 
   const originalBomVersion = useMemo(() => getOriginalBomVersion(selectedBom?.bom_id), [selectedBom]);
   const bomVersionOptions = useMemo(
@@ -607,8 +695,51 @@ const ModifyExistingBOM = () => {
     setActiveItemDropdownKey(null);
   };
 
+  const validateBeforeNext = () => {
+    if (!selectedBom || !bomVersion || bomVersion === originalBomVersion) return false;
+
+    if (producedCoProduct) {
+      for (const row of coProducts) {
+        const coProductItem = String(row.coProductItem || "").trim();
+        const qtyText = String(row.qtyProduced ?? "").trim();
+
+        if (!coProductItem && !qtyText) continue;
+
+        if (!coProductItem) {
+          setPageError("Please select Co-Product Item.");
+          return false;
+        }
+
+        const qty = Number(qtyText);
+        if (!Number.isFinite(qty) || qty >= 1) {
+          setPageError(`Qty Produced must be less than 1 for co-product ${coProductItem}.`);
+          return false;
+        }
+      }
+    }
+
+    setPageError("");
+    return true;
+  };
+
   const handleNext = () => {
-    if (!selectedBom || !bomVersion || bomVersion === originalBomVersion) return;
+    if (!validateBeforeNext()) return;
+
+    const snapshot = {
+      record: selectedBom,
+      bomVersion,
+      selectedResources,
+      componentItems,
+      coProducts,
+      producedCoProduct,
+      routingRows,
+      resourceSearch,
+      resourcePage,
+    };
+
+    dispatch(setModifyExistingBomState(snapshot));
+    dispatch(setModifyExistingBomValues(snapshot));
+
     navigate(NEXT_ROUTE, {
       state: {
         flow: "modify-existing-bom",
@@ -722,6 +853,7 @@ const ModifyExistingBOM = () => {
         <div style={styles.back} onClick={() => navigate(-1)}>← BACK</div>
         <h1 style={styles.h1}>Step 2: Create BOM From Existing BOM Data</h1>
         <p style={styles.sub}>Modify the BOM record details</p>
+        {pageError ? <div style={styles.pageError}>{pageError}</div> : null}
 
         <div style={styles.card}>
           <div style={styles.topGrid}>
@@ -879,6 +1011,7 @@ const styles = {
   inputDisabled: { height: 40, borderRadius: 3, border: "1px solid #cfd4dc", padding: "0 12px", fontSize: 14, outline: "none", background: "#f9fafb", color: "#6b7280", boxSizing: "border-box" },
   helperText: { fontSize: 11, color: "#6b7280", marginTop: 2 },
   errorHint: { fontSize: 11, color: "#dc2626", marginTop: 2 },
+  pageError: { marginBottom: 14, padding: "10px 12px", borderRadius: 4, background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 13 },
   sectionTitleSmall: { fontSize: 13, fontWeight: 600, color: "#111827", marginBottom: 8 },
   innerTableWrap: { border: "1px solid #dfe3ea", borderRadius: 4, overflow: "hidden" },
   innerTableHeader: { display: "grid", gridTemplateColumns: "1.2fr 1.3fr 2fr", background: "#f3f4f6", padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#111827" },

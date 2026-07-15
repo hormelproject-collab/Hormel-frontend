@@ -14,19 +14,11 @@ const uniqueRoutingRows = (rows) => {
 
   return safeArray(rows).filter((row) => {
     const resourceValue = toText(row.resource).trim().toUpperCase();
-    const routingIdValue = toText(row.routingId || row.routing_id)
-      .trim()
-      .toUpperCase();
 
-    const priorityValue = toText(
-      row.itemBomRoutingPriority ||
-        row.item_bom_routing_priority ||
-        row.priority
-    )
-      .trim()
-      .toUpperCase();
+    if (!resourceValue) return false;
 
-    const key = `${resourceValue}__${routingIdValue}__${priorityValue}`;
+    // Latest requirement: unique by RESOURCE only.
+    const key = resourceValue;
 
     if (seen.has(key)) return false;
     seen.add(key);
@@ -147,12 +139,106 @@ export default function EngineeringChangeDetailAdd() {
   }, [queryString]);
 
   const createdRows = safeArray(detail?.createdRecords);
+  const groupedCreatedRows = useMemo(() => {
+    const map = new Map();
+
+    createdRows.forEach((row, index) => {
+      const bomKey = toText(row.bomId || row.bom_id || `NO_BOM_${index}`)
+        .trim()
+        .toUpperCase();
+
+      const existing = map.get(bomKey);
+
+      if (!existing) {
+        map.set(bomKey, {
+          ...row,
+          items: [toText(row.item).trim()].filter(Boolean),
+          components: safeArray(row.components),
+          coProducts: safeArray(row.coProducts),
+          routingDetails: uniqueRoutingRows(row.routingDetails),
+        });
+        return;
+      }
+
+      const mergedItems = [
+        ...safeArray(existing.items),
+        toText(row.item).trim(),
+      ].filter(Boolean);
+
+      existing.items = Array.from(new Set(mergedItems));
+      existing.item = existing.items.join(", ");
+
+      existing.components = [
+        ...safeArray(existing.components),
+        ...safeArray(row.components),
+      ];
+
+      existing.coProducts = [
+        ...safeArray(existing.coProducts),
+        ...safeArray(row.coProducts),
+      ];
+
+      existing.routingDetails = uniqueRoutingRows([
+        ...safeArray(existing.routingDetails),
+        ...safeArray(row.routingDetails),
+      ]);
+
+      map.set(bomKey, existing);
+    });
+
+    return Array.from(map.values()).map((row) => ({
+      ...row,
+      components: safeArray(row.components).filter((component, index, arr) => {
+        const key = [
+          toText(component.componentItem || component.item).trim().toUpperCase(),
+          toText(component.standardUsage).trim().toUpperCase(),
+        ].join("__");
+
+        return (
+          index ===
+          arr.findIndex((candidate) => {
+            const candidateKey = [
+              toText(candidate.componentItem || candidate.item).trim().toUpperCase(),
+              toText(candidate.standardUsage).trim().toUpperCase(),
+            ].join("__");
+
+            return candidateKey === key;
+          })
+        );
+      }),
+      coProducts: safeArray(row.coProducts).filter((coProduct, index, arr) => {
+        const key = [
+          toText(coProduct.coProductItem || coProduct.item).trim().toUpperCase(),
+          toText(coProduct.qtyProduced || coProduct.qtyProducedPer).trim().toUpperCase(),
+        ].join("__");
+
+        return (
+          index ===
+          arr.findIndex((candidate) => {
+            const candidateKey = [
+              toText(candidate.coProductItem || candidate.item).trim().toUpperCase(),
+              toText(candidate.qtyProduced || candidate.qtyProducedPer).trim().toUpperCase(),
+            ].join("__");
+
+            return candidateKey === key;
+          })
+        );
+      }),
+      routingDetails: uniqueRoutingRows(row.routingDetails),
+    }));
+  }, [createdRows]);
   const changeSummaryText = toText(
     detail?.changeSummary || passedState.changeSummary || ""
-  ).toLowerCase();
+  )
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   const isAddedIBRFlow =
-    changeSummaryText.includes("added in item bom routing") ||
+    detail?.hideComponentTable === true ||
+    createdRows.some((row) => row?.hideComponentTable === true) ||
+    /added\s+\d+\s+bom\s+id\s+in\s+item\s+bom\s+routing/.test(changeSummaryText) ||
     changeSummaryText.includes("item bom routing");
 
   const styles = {
@@ -363,11 +449,11 @@ export default function EngineeringChangeDetailAdd() {
             </div>
           </div>
 
-          {createdRows.length === 0 ? (
+          {groupedCreatedRows.length === 0 ? (
             <div style={styles.emptyBox}>No created BOM detail records found.</div>
           ) : (
             <div style={styles.cardGrid}>
-              {createdRows.map((row, index) => {
+              {groupedCreatedRows.map((row, index) => {
                 const components = safeArray(row.components);
                 const coProducts = safeArray(row.coProducts);
                 const routingDetails = uniqueRoutingRows(row.routingDetails);
@@ -416,8 +502,8 @@ export default function EngineeringChangeDetailAdd() {
                               <td style={styles.nestedTd}>
                                 {toText(
                                   routingRow.itemBomRoutingPriority ||
-                                    routingRow.item_bom_routing_priority ||
-                                    routingRow.priority
+                                  routingRow.item_bom_routing_priority ||
+                                  routingRow.priority
                                 ) || "-"}
                               </td>
                             </tr>
@@ -438,6 +524,7 @@ export default function EngineeringChangeDetailAdd() {
                             <thead>
                               <tr>
                                 <th style={styles.nestedTh}>Component Item</th>
+                                <th style={styles.nestedTh}>Item Description</th>
                                 <th style={styles.nestedTh}>Standard Usage</th>
                               </tr>
                             </thead>
@@ -445,7 +532,10 @@ export default function EngineeringChangeDetailAdd() {
                               {components.map((component, componentIndex) => (
                                 <tr key={component.key || componentIndex}>
                                   <td style={styles.nestedTd}>
-                                    {toText(component.componentItem) || "-"}
+                                    {toText(component.componentItem || component.item) || "-"}
+                                  </td>
+                                  <td style={styles.nestedTd}>
+                                    {toText(component.description || component.itemDescription) || "-"}
                                   </td>
                                   <td style={styles.nestedTd}>
                                     {toText(component.standardUsage) || "-"}
@@ -468,17 +558,21 @@ export default function EngineeringChangeDetailAdd() {
                         <thead>
                           <tr>
                             <th style={styles.nestedTh}>Co-Product Item</th>
-                            <th style={styles.nestedTh}>Qty Produced Per</th>
+                            <th style={styles.nestedTh}>Item Description</th>
+                            <th style={styles.nestedTh}>Qty Produced</th>
                           </tr>
                         </thead>
                         <tbody>
                           {coProducts.map((coProduct, coIndex) => (
                             <tr key={coProduct.key || coIndex}>
                               <td style={styles.nestedTd}>
-                                {toText(coProduct.coProductItem) || "-"}
+                                {toText(coProduct.coProductItem || coProduct.item) || "-"}
                               </td>
                               <td style={styles.nestedTd}>
-                                {toText(coProduct.qtyProducedPer) || "-"}
+                                {toText(coProduct.description || coProduct.itemDescription) || "-"}
+                              </td>
+                              <td style={styles.nestedTd}>
+                                {toText(coProduct.qtyProduced || coProduct.qtyProducedPer) || "-"}
                               </td>
                             </tr>
                           ))}
