@@ -12,8 +12,6 @@ const safeArray = (value) => (Array.isArray(value) ? value : []);
 
 const normalizeSpace = (value) => toText(value).trim().replace(/\s+/g, " ");
 
-const isBlank = (value) => normalizeSpace(value) === "";
-
 const dashIfBlank = (value, fallback = "-") => {
   const text = toText(value).trim();
   return text ? text : fallback;
@@ -21,7 +19,9 @@ const dashIfBlank = (value, fallback = "-") => {
 
 const formatDisplayDate = (value) => {
   if (!value) return "-";
+
   const parsed = new Date(value);
+
   if (Number.isNaN(parsed.getTime())) {
     return toText(value) || "-";
   }
@@ -29,6 +29,7 @@ const formatDisplayDate = (value) => {
   const yyyy = parsed.getFullYear();
   const dd = String(parsed.getDate()).padStart(2, "0");
   const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+
   let hours = parsed.getHours();
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
@@ -39,6 +40,7 @@ const formatDisplayDate = (value) => {
   if (hours === 0) hours = 12;
 
   const hh = String(hours).padStart(2, "0");
+
   return `${yyyy}-${mm}-${dd} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
 };
 
@@ -198,13 +200,7 @@ const DetailsTable = ({ title, rows }) => {
   );
 };
 
-const ExistingValuesTable = ({
-  title,
-  rows,
-  itemLabel,
-  quantityLabel,
-  emptyMessage,
-}) => {
+const ExistingComponentValuesTable = ({ title, rows, emptyMessage }) => {
   return (
     <div style={styles.sectionCard}>
       <h2 style={styles.sectionTitle}>{title}</h2>
@@ -213,10 +209,10 @@ const ExistingValuesTable = ({
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>{itemLabel}</th>
+                <th style={styles.th}>Component Item</th>
                 <th style={styles.th}>Description</th>
-                <th style={styles.th}>{`Original ${quantityLabel}`}</th>
-                <th style={styles.th}>{`Updated ${quantityLabel}`}</th>
+                <th style={styles.th}>Original Standard Usage</th>
+                <th style={styles.th}>Updated Standard Usage</th>
               </tr>
             </thead>
             <tbody>
@@ -247,13 +243,7 @@ const ExistingValuesTable = ({
   );
 };
 
-const AddedValuesTable = ({
-  title,
-  rows,
-  itemLabel,
-  quantityLabel,
-  emptyMessage,
-}) => {
+const AddedComponentValuesTable = ({ title, rows, emptyMessage }) => {
   return (
     <div style={styles.sectionCard}>
       <h2 style={styles.sectionTitle}>{title}</h2>
@@ -262,9 +252,9 @@ const AddedValuesTable = ({
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>{itemLabel}</th>
+                <th style={styles.th}>Component Item</th>
                 <th style={styles.th}>Description</th>
-                <th style={styles.th}>{quantityLabel}</th>
+                <th style={styles.th}>Standard Usage</th>
               </tr>
             </thead>
             <tbody>
@@ -287,11 +277,101 @@ const AddedValuesTable = ({
   );
 };
 
+const ExistingCoProductValuesTable = ({ title, rows, emptyMessage }) => {
+  return (
+    <div style={styles.sectionCard}>
+      <h2 style={styles.sectionTitle}>{title}</h2>
+      {rows?.length ? (
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Co-Product Item</th>
+                <th style={styles.th}>Description</th>
+                <th style={styles.th}>Original Resource</th>
+                <th style={styles.th}>Updated Resource</th>
+                <th style={styles.th}>Original Priority</th>
+                <th style={styles.th}>Updated Priority</th>
+                <th style={styles.th}>Original Qty Produced</th>
+                <th style={styles.th}>Updated Qty Produced</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => {
+                const isRemoved = /item removed/i.test(toText(row.updatedValue));
+                const updatedQtyStyle = isRemoved
+                  ? { ...styles.td, ...styles.removedValue }
+                  : row.changed
+                    ? { ...styles.td, ...styles.updatedValueChanged }
+                    : styles.td;
+
+                return (
+                  <tr key={`${row.item}-${index}`}>
+                    <td style={styles.td}>{dashIfBlank(row.item)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.description)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.originalResource)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.updatedResource)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.originalPriority)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.updatedPriority)}</td>
+                    <td style={styles.td}>{dashIfBlank(row.originalValue)}</td>
+                    <td style={updatedQtyStyle}>{dashIfBlank(row.updatedValue)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptySection message={emptyMessage} />
+      )}
+    </div>
+  );
+};
+
+const AddedCoProductValuesTable = ({ title, rows, emptyMessage }) => {
+  return (
+    <div style={styles.sectionCard}>
+      <h2 style={styles.sectionTitle}>{title}</h2>
+      {rows?.length ? (
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Co-Product Item</th>
+                <th style={styles.th}>Description</th>
+                <th style={styles.th}>Resource</th>
+                <th style={styles.th}>Priority</th>
+                <th style={styles.th}>Qty Produced</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={`${row.item}-${index}`}>
+                  <td style={styles.td}>{dashIfBlank(row.item)}</td>
+                  <td style={styles.td}>{dashIfBlank(row.description)}</td>
+                  <td style={styles.td}>{dashIfBlank(row.resource)}</td>
+                  <td style={styles.td}>{dashIfBlank(row.priority)}</td>
+                  <td style={{ ...styles.td, ...styles.updatedValueChanged }}>
+                    {dashIfBlank(row.value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptySection message={emptyMessage} />
+      )}
+    </div>
+  );
+};
+
 const findNextValueRow = (rows, startIndex, targetFields) => {
   for (let i = startIndex; i < rows.length; i += 1) {
     const field = normalizeSpace(rows[i]?.field).toLowerCase();
     if (targetFields.includes(field)) return rows[i];
   }
+
   return null;
 };
 
@@ -311,10 +391,12 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
     const itemOriginal = toText(currentRow.originalValue).trim();
     const itemUpdated = toText(currentRow.updatedValue).trim();
     const valueRow = findNextValueRow(normalizedRows, index + 1, valueFieldNames) || {};
+
     const description =
       toText(currentRow.description).trim() ||
       toText(valueRow.description).trim() ||
       "";
+
     const originalValue = toText(valueRow.originalValue).trim();
     const updatedValueRaw = toText(valueRow.updatedValue).trim();
 
@@ -325,8 +407,9 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
       existingRows.push({
         item: itemOriginal || itemUpdated,
         description,
+        itemReleaseFlag: currentRow.itemReleaseFlag || valueRow.itemReleaseFlag || "",
         originalValue: originalValue || "",
-        updatedValue: updatedValueRaw || "",
+        updatedValue: updatedValueRaw || "No Changes",
         changed: normalizeSpace(originalValue) !== normalizeSpace(updatedValueRaw),
       });
       continue;
@@ -336,6 +419,7 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
       addedRows.push({
         item: itemUpdated,
         description,
+        itemReleaseFlag: currentRow.itemReleaseFlag || valueRow.itemReleaseFlag || "",
         value: updatedValueRaw || originalValue || "",
       });
       continue;
@@ -345,6 +429,7 @@ const buildExistingAddedFromChangeRows = ({ rows, itemFieldNames, valueFieldName
       existingRows.push({
         item: itemOriginal,
         description,
+        itemReleaseFlag: currentRow.itemReleaseFlag || valueRow.itemReleaseFlag || "",
         originalValue: originalValue || "",
         updatedValue: "Item removed",
         changed: true,
@@ -364,6 +449,7 @@ const EngineeringChangeDetailModify = () => {
     passedState.engineeringChangeNumber ||
     passedState.engineering_change_id ||
     passedState.engineeringChangeId ||
+    passedState.raw?.engineering_change_id ||
     "";
 
   const changeDate =
@@ -410,12 +496,14 @@ const EngineeringChangeDetailModify = () => {
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
+
     if (engineeringChangeId) params.append("engineeringChangeId", engineeringChangeId);
     if (bomId) params.append("bomId", bomId);
     if (locationName) params.append("location", locationName);
     if (resource) params.append("resource", resource);
     if (producedItem) params.append("producedItem", producedItem);
     if (componentItem) params.append("componentItem", componentItem);
+
     return params.toString();
   }, [engineeringChangeId, bomId, locationName, resource, producedItem, componentItem]);
 
@@ -423,6 +511,7 @@ const EngineeringChangeDetailModify = () => {
     const fetchDetail = async () => {
       setLoading(true);
       setApiError("");
+
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/tables/engineering-changes-detail-modify?${queryString}`,
@@ -435,6 +524,7 @@ const EngineeringChangeDetailModify = () => {
         );
 
         const result = await response.json();
+
         if (!response.ok || !result?.success) {
           throw new Error(
             result?.message ||
@@ -461,8 +551,6 @@ const EngineeringChangeDetailModify = () => {
 
   const header = useMemo(() => detail?.header || {}, [detail]);
   const rawBomRecordDetails = useMemo(() => detail?.bomRecordDetails || [], [detail]);
-  const componentItemChanges = useMemo(() => safeArray(detail?.componentItemChanges), [detail]);
-  const coProductChanges = useMemo(() => safeArray(detail?.coProductChanges), [detail]);
 
   const bomRecordDetails = useMemo(() => {
     const valueMap = {};
@@ -496,6 +584,26 @@ const EngineeringChangeDetailModify = () => {
           "-",
       },
       {
+        field: "Item Description",
+        value:
+          valueMap["item description"] ||
+          valueMap["item_description"] ||
+          header.itemDescription ||
+          "-",
+      },
+      {
+        field: "Item Release Flag",
+        value:
+          valueMap["item release flag"] ||
+          valueMap["item_release_flag"] ||
+          header.itemReleaseFlag ||
+          "-",
+      },
+      {
+        field: "Resource",
+        value: valueMap["resource"] || resource || header.resource || "-",
+      },
+      {
         field: "Routing ID",
         value: valueMap["routing id"] || valueMap["routing_id"] || header.routingId || "-",
       },
@@ -509,9 +617,39 @@ const EngineeringChangeDetailModify = () => {
           "-",
       },
     ];
-  }, [rawBomRecordDetails, locationName, bomId, producedItem, header]);
+  }, [rawBomRecordDetails, locationName, bomId, producedItem, resource, header]);
 
-  const { existingRows: existingComponentRows, addedRows: addedComponentRows } = useMemo(
+  const directExistingComponentRows = useMemo(
+    () => safeArray(detail?.existingComponentRows),
+    [detail]
+  );
+
+  const directAddedComponentRows = useMemo(
+    () => safeArray(detail?.addedComponentRows),
+    [detail]
+  );
+
+  const directExistingCoProductRows = useMemo(
+    () => safeArray(detail?.existingCoProductRows),
+    [detail]
+  );
+
+  const directAddedCoProductRows = useMemo(
+    () => safeArray(detail?.addedCoProductRows),
+    [detail]
+  );
+
+  const componentItemChanges = useMemo(
+    () => safeArray(detail?.componentItemChanges),
+    [detail]
+  );
+
+  const coProductChanges = useMemo(
+    () => safeArray(detail?.coProductChanges),
+    [detail]
+  );
+
+  const fallbackComponentRows = useMemo(
     () =>
       buildExistingAddedFromChangeRows({
         rows: componentItemChanges,
@@ -521,7 +659,7 @@ const EngineeringChangeDetailModify = () => {
     [componentItemChanges]
   );
 
-  const { existingRows: existingCoProductRows, addedRows: addedCoProductRows } = useMemo(
+  const fallbackCoProductRows = useMemo(
     () =>
       buildExistingAddedFromChangeRows({
         rows: coProductChanges,
@@ -530,6 +668,22 @@ const EngineeringChangeDetailModify = () => {
       }),
     [coProductChanges]
   );
+
+  const existingComponentRows = directExistingComponentRows.length
+    ? directExistingComponentRows
+    : fallbackComponentRows.existingRows;
+
+  const addedComponentRows = directAddedComponentRows.length
+    ? directAddedComponentRows
+    : fallbackComponentRows.addedRows;
+
+  const existingCoProductRows = directExistingCoProductRows.length
+    ? directExistingCoProductRows
+    : fallbackCoProductRows.existingRows;
+
+  const addedCoProductRows = directAddedCoProductRows.length
+    ? directAddedCoProductRows
+    : fallbackCoProductRows.addedRows;
 
   if (loading) {
     return (
@@ -577,6 +731,10 @@ const EngineeringChangeDetailModify = () => {
           <span>{toText(header.changeType) || "Modified"}</span>
         </div>
         <div style={styles.infoLine}>
+          <span style={styles.infoLabel}>Change Summary:</span>
+          <span>{dashIfBlank(header.changeSummary)}</span>
+        </div>
+        <div style={styles.infoLine}>
           <span style={styles.infoLabel}>Notes:</span>
           <span>{dashIfBlank(header.summaryNotes)}</span>
         </div>
@@ -584,36 +742,28 @@ const EngineeringChangeDetailModify = () => {
 
       <DetailsTable title="Existing BOM Values" rows={bomRecordDetails} />
 
-      <ExistingValuesTable
+      <ExistingComponentValuesTable
         title="Existing Component Item Values"
         rows={existingComponentRows}
-        itemLabel="Component Item"
-        quantityLabel="Standard Usage"
         emptyMessage="No existing component item values were changed."
       />
 
-      <AddedValuesTable
+      <AddedComponentValuesTable
         title="Added Component Values"
         rows={addedComponentRows}
-        itemLabel="Component Item"
-        quantityLabel="Standard Usage"
         emptyMessage="No new component items were added."
       />
 
-      <ExistingValuesTable
+      <ExistingCoProductValuesTable
         title="Existing Co-Product Values"
         rows={existingCoProductRows}
-        itemLabel="Co-Product Item"
-        quantityLabel="Qty Produced"
         emptyMessage="No existing co-product values were changed."
       />
 
-      <AddedValuesTable
+      <AddedCoProductValuesTable
         title="Added Co-Product Values"
         rows={addedCoProductRows}
-        itemLabel="Co-Product Item"
-        quantityLabel="Qty Produced"
-        emptyMessage="No new co-product items were added."
+        emptyMessage="No new co-product values were added."
       />
     </div>
   );

@@ -7,6 +7,8 @@ import {
   selectModifyExistingBomState,
   setModifyExistingBomState,
   setModifyExistingBomValues,
+  clearModifyExistingBomState,
+  clearModifyExistingBomFlowState,
 } from "../../redux/bomSlice";
 
 const NEXT_ROUTE = "/summary";
@@ -24,6 +26,22 @@ const getOriginalBomVersion = (bomId) => {
   const text = String(bomId ?? "").trim();
   if (!text) return "";
   return text.split("_")[0] ?? "";
+};
+
+const getBomVersionFromBomProducedRow = (row = {}) => {
+  const directVersion =
+    row.bom_version ??
+    row.bomVersion ??
+    row.BOM_VERSION ??
+    row.version ??
+    "";
+
+  if (String(directVersion || "").trim()) {
+    return String(directVersion).trim();
+  }
+
+  const bomId = row.bom_id ?? row.bomId ?? row.BOMID ?? row.bomid ?? "";
+  return getOriginalBomVersion(bomId);
 };
 
 const toNumberOrEmpty = (value) => {
@@ -294,6 +312,7 @@ const ModifyExistingBOM = () => {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [bomVersion, setBomVersion] = useState("");
+  const [detailsHydrated, setDetailsHydrated] = useState(false);
 
   const [selectedResources, setSelectedResources] = useState([]);
   const [componentItems, setComponentItems] = useState([]);
@@ -308,6 +327,8 @@ const ModifyExistingBOM = () => {
   const [resourceSearch, setResourceSearch] = useState("");
   const [resourcePage, setResourcePage] = useState(1);
   const [resourceHasNext, setResourceHasNext] = useState(false);
+  const [existingBomVersions, setExistingBomVersions] = useState([]);
+  const [existingBomVersionsLoading, setExistingBomVersionsLoading] = useState(false);
   const resourceSearchTimerRef = useRef(null);
   const resourceOptionsLoadedRef = useRef(false);
 
@@ -502,10 +523,13 @@ const ModifyExistingBOM = () => {
         setCoProducts(savedCoProducts);
         setProducedCoProduct(!!savedState.producedCoProduct);
         setRoutingRows(savedRoutingRows);
+        setResourceSearch(savedState.resourceSearch || "");
+        setResourcePage(savedState.resourcePage || 1);
+        setDetailsHydrated(true);
         return;
       }
 
-      setBomVersion(BOM_VERSION_OPTIONS.find((v) => v !== originalVersion) ?? "");
+      setBomVersion("");
 
       const resourceRows = Array.isArray(details?.resources) ? details.resources : [];
       const componentRows = Array.isArray(details?.components) ? details.components : [];
@@ -545,9 +569,13 @@ const ModifyExistingBOM = () => {
           routingId: buildRoutingId(baseBom.produced_item, baseBom.location, resource),
         }))
       );
+      setResourceSearch("");
+      setResourcePage(1);
+      setDetailsHydrated(true);
     };
 
     const loadPage = async () => {
+      setDetailsHydrated(false);
       setLoading(true);
       setErr("");
       try {
@@ -573,6 +601,7 @@ const ModifyExistingBOM = () => {
         );
         loadDetailsToState(baseBom, details);
       } catch (e) {
+        setDetailsHydrated(false);
         setErr(e?.message ?? "Failed to load existing BOM details");
       } finally {
         setLoading(false);
@@ -581,6 +610,54 @@ const ModifyExistingBOM = () => {
 
     loadPage();
   }, [id, routerLocation?.state?.selectedBom]);
+
+  useEffect(() => {
+    if (!selectedBom?.produced_item || !selectedBom?.location) {
+      setExistingBomVersions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadExistingBomVersions = async () => {
+      setExistingBomVersionsLoading(true);
+      try {
+        const producedItem = String(selectedBom.produced_item || "").trim().toUpperCase();
+        const location = String(selectedBom.location || "").trim().toUpperCase();
+        const rows = await fetchJsonNoLimit("/api/bigquery/table/bom_produced");
+
+        const versions = (Array.isArray(rows) ? rows : [])
+          .filter((row) => {
+            const rowProducedItem = String(
+              row.produced_item ?? row.producedItem ?? row.item ?? row.Item ?? ""
+            )
+              .trim()
+              .toUpperCase();
+            const rowLocation = String(row.location ?? row.Location ?? "")
+              .trim()
+              .toUpperCase();
+            return rowProducedItem === producedItem && rowLocation === location;
+          })
+          .map(getBomVersionFromBomProducedRow)
+          .filter(Boolean);
+
+        if (!cancelled) {
+          setExistingBomVersions(Array.from(new Set(versions)));
+        }
+      } catch (error) {
+        console.error("Failed to fetch existing BOM versions:", error);
+        if (!cancelled) setExistingBomVersions([]);
+      } finally {
+        if (!cancelled) setExistingBomVersionsLoading(false);
+      }
+    };
+
+    loadExistingBomVersions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBom?.produced_item, selectedBom?.location]);
 
   useEffect(() => {
     if (!selectedBom || resourceOptionsLoadedRef.current) return;
@@ -601,7 +678,7 @@ const ModifyExistingBOM = () => {
   }, [selectedResources, selectedBom, resourceMasterMap]);
 
   useEffect(() => {
-    if (!selectedBom) return;
+    if (!selectedBom || !detailsHydrated) return;
 
     const snapshot = {
       record: selectedBom,
@@ -620,6 +697,7 @@ const ModifyExistingBOM = () => {
   }, [
     dispatch,
     selectedBom,
+    detailsHydrated,
     bomVersion,
     selectedResources,
     componentItems,
@@ -631,14 +709,36 @@ const ModifyExistingBOM = () => {
   ]);
 
   const originalBomVersion = useMemo(() => getOriginalBomVersion(selectedBom?.bom_id), [selectedBom]);
+  const existingBomVersionSet = useMemo(
+    () => new Set((existingBomVersions || []).map((version) => String(version).trim().toUpperCase())),
+    [existingBomVersions]
+  );
   const bomVersionOptions = useMemo(
-    () => BOM_VERSION_OPTIONS.filter((v) => v !== originalBomVersion),
-    [originalBomVersion]
+    () =>
+      BOM_VERSION_OPTIONS.filter((version) => {
+        const normalizedVersion = String(version).trim().toUpperCase();
+        return (
+          normalizedVersion !== String(originalBomVersion).trim().toUpperCase() &&
+          !existingBomVersionSet.has(normalizedVersion)
+        );
+      }),
+    [originalBomVersion, existingBomVersionSet]
   );
   const bomVersionError =
     bomVersion && bomVersion === originalBomVersion
       ? "BOM Version must be different from the original selected BOM version."
-      : "";
+      : bomVersion && existingBomVersionSet.has(String(bomVersion).trim().toUpperCase())
+        ? "This BOM Version already exists for the selected Produced Item / Location."
+        : !existingBomVersionsLoading && bomVersionOptions.length === 0
+          ? "No available BOM Version remains for this Produced Item / Location."
+          : "";
+
+  useEffect(() => {
+    if (existingBomVersionsLoading) return;
+    if (bomVersion && !bomVersionOptions.includes(bomVersion)) {
+      setBomVersion("");
+    }
+  }, [bomVersion, bomVersionOptions, existingBomVersionsLoading]);
 
   const addComponent = () => setComponentItems((prev) => [...prev, makeComponentRow()]);
   const removeComponent = (rowId) => setComponentItems((prev) => prev.filter((row) => row.id !== rowId));
@@ -697,6 +797,11 @@ const ModifyExistingBOM = () => {
 
   const validateBeforeNext = () => {
     if (!selectedBom || !bomVersion || bomVersion === originalBomVersion) return false;
+    if (existingBomVersionsLoading) return false;
+    if (existingBomVersionSet.has(String(bomVersion).trim().toUpperCase())) {
+      setPageError("This BOM Version already exists for the selected Produced Item / Location.");
+      return false;
+    }
 
     if (producedCoProduct) {
       for (const row of coProducts) {
@@ -777,6 +882,12 @@ const ModifyExistingBOM = () => {
     });
   };
 
+  const handleBack = () => {
+    dispatch(clearModifyExistingBomState());
+    dispatch(clearModifyExistingBomFlowState());
+    navigate(-1);
+  };
+
   const renderLazyItemInput = ({ row, rowKey, value, placeholder, updateValue, applySelection }) => {
     const options = itemOptionsByKey[rowKey] || [];
     const isLoading = !!itemLoadingByKey[rowKey];
@@ -850,7 +961,7 @@ const ModifyExistingBOM = () => {
   return (
     <div style={styles.pageBg}>
       <div style={styles.page}>
-        <div style={styles.back} onClick={() => navigate(-1)}>← BACK</div>
+        <div style={styles.back} onClick={handleBack}>← BACK</div>
         <h1 style={styles.h1}>Step 2: Create BOM From Existing BOM Data</h1>
         <p style={styles.sub}>Modify the BOM record details</p>
         {pageError ? <div style={styles.pageError}>{pageError}</div> : null}
@@ -867,14 +978,23 @@ const ModifyExistingBOM = () => {
             </div>
             <div style={styles.field}>
               <label style={styles.label}>BOM Version</label>
-              <select value={bomVersion} onChange={(e) => setBomVersion(e.target.value)} style={styles.input}>
-                <option value="">Select BOM Version</option>
+              <select
+                value={bomVersion}
+                onChange={(e) => setBomVersion(e.target.value)}
+                style={styles.input}
+                disabled={existingBomVersionsLoading || bomVersionOptions.length === 0}
+              >
+                <option value="">
+                  {existingBomVersionsLoading ? "Loading BOM Versions..." : "Select BOM Version"}
+                </option>
                 {bomVersionOptions.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
               {bomVersionError ? (
                 <div style={styles.errorHint}>{bomVersionError}</div>
               ) : (
-                <div style={styles.helperText}>Must be different from the original BOM version ({originalBomVersion || "N/A"}).</div>
+                <div style={styles.helperText}>
+                  Existing BOM versions for this Produced Item / Location are hidden from this dropdown.
+                </div>
               )}
             </div>
             <div style={styles.field}>
@@ -985,7 +1105,16 @@ const ModifyExistingBOM = () => {
         ) : null}
 
         <div style={styles.bottom}>
-          <button style={{ ...styles.primaryBtn, ...(bomVersionError || !bomVersion ? styles.primaryBtnDisabled : {}) }} disabled={!!bomVersionError || !bomVersion} onClick={handleNext}>
+          <button
+            style={{
+              ...styles.primaryBtn,
+              ...(bomVersionError || !bomVersion || existingBomVersionsLoading
+                ? styles.primaryBtnDisabled
+                : {}),
+            }}
+            disabled={!!bomVersionError || !bomVersion || existingBomVersionsLoading}
+            onClick={handleNext}
+          >
             NEXT: REVIEW SUMMARY →
           </button>
         </div>

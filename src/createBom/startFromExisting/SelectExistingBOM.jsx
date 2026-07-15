@@ -10,6 +10,8 @@ import {
   selectExistingBomSearchError,
   selectExistingBomSearchPagination,
   selectExistingBomSearchState,
+  clearModifyExistingBomState,
+  clearModifyExistingBomFlowState,
 } from "../../redux/bomSlice";
 
 import ProgressIndicator from "../../components/CommonProgressIndicator";
@@ -143,6 +145,8 @@ const SelectExistingBOM = () => {
       mountedRef.current = true;
       reloadTokenRef.current += 1;
     }
+      dispatch(clearModifyExistingBomState());
+  dispatch(clearModifyExistingBomFlowState());
   }, []);
 
   useEffect(() => {

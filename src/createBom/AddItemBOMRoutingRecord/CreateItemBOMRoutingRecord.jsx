@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import {
+  fetchResourcesLazyOptions,
   selectItemBomRoutingCreateState,
   setItemBomRoutingCreateState,
 } from "../../redux/bomSlice";
-import { IoIosArrowBack, IoIosArrowDown, IoMdClose, IoMdTrash } from "react-icons/io";
+import { IoIosArrowBack, IoIosArrowDown, IoMdTrash } from "react-icons/io";
 
 const PAGE_SIZE = 50;
 
@@ -16,12 +17,49 @@ const createCoProductRow = () => ({
   qtyProduced: "",
 });
 
+const parseBomIdParts = (bomId = "") => {
+  const parts = String(bomId || "").trim().split("_").filter(Boolean);
+  if (parts.length < 3) {
+    return { bomVersion: "", producedItem: "", location: "" };
+  }
+
+  return {
+    bomVersion: parts[0] || "",
+    producedItem: parts[1] || "",
+    location: parts.slice(2).join("_") || "",
+  };
+};
+
+const getResourceRelevancyFromRow = (row = {}) =>
+  row.resourcePlanningRelevance ??
+  row.resourceRelevancy ??
+  row.resource_relevancy ??
+  row.resource_planning_relevance ??
+  "";
+
+const dedupeRowsByKey = (rows = [], getKey) => {
+  const seen = new Set();
+  const result = [];
+
+  rows.forEach((row) => {
+    const key = String(getKey(row) ?? "").trim();
+    if (!key) return;
+    const normalizedKey = key.toUpperCase();
+    if (seen.has(normalizedKey)) return;
+    seen.add(normalizedKey);
+    result.push(row);
+  });
+
+  return result;
+};
+
 const LazyDropdown = ({
   label = "",
   placeholder = "Select",
   value = "",
   displayValue = "",
   fetchUrl,
+  loadOptions,
   getOptionKey,
   getOptionLabel,
   onSelect,
@@ -39,28 +77,45 @@ const LazyDropdown = ({
   const [error, setError] = useState("");
 
   const loadRows = async ({ nextPage = 1, append = false, searchText = search } = {}) => {
-    if (!fetchUrl) return;
+    if (!fetchUrl && !loadOptions) return;
 
     try {
       setLoading(true);
       setError("");
 
-      const params = new URLSearchParams();
-      params.set("page", String(nextPage));
-      params.set("pageSize", String(PAGE_SIZE));
-      params.set("search", String(searchText || "").trim());
+      let data = [];
+      let pagination = {};
 
-      const res = await fetch(`${fetchUrl}?${params.toString()}`);
-      const json = await res.json().catch(() => ({}));
+      if (loadOptions) {
+        const result = await loadOptions({
+          page: nextPage,
+          pageSize: PAGE_SIZE,
+          search: String(searchText || "").trim(),
+          append,
+        });
+        data = Array.isArray(result?.data) ? result.data : [];
+        pagination = result?.pagination || {};
+      } else {
+        const params = new URLSearchParams();
+        params.set("page", String(nextPage));
+        params.set("pageSize", String(PAGE_SIZE));
+        params.set("search", String(searchText || "").trim());
 
-      if (!res.ok) {
-        throw new Error(json?.details || json?.error || "Failed to fetch dropdown data");
+        const res = await fetch(`${fetchUrl}?${params.toString()}`);
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(json?.details || json?.error || "Failed to fetch dropdown data");
+        }
+
+        data = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+        pagination = json?.pagination || {};
       }
 
-      const data = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
-      const pagination = json?.pagination || {};
-
-      setRows((prev) => (append ? [...prev, ...data] : data));
+      setRows((prev) => {
+        const nextRows = append ? [...prev, ...data] : data;
+        return dedupeRowsByKey(nextRows, getOptionKey);
+      });
       setPage(Number(pagination.page || nextPage));
       setHasNext(Boolean(pagination.hasNext));
     } catch (err) {
@@ -78,7 +133,7 @@ const LazyDropdown = ({
     const nextOpen = !open;
     setOpen(nextOpen);
 
-    if (nextOpen && rows.length === 0) {
+    if (nextOpen) {
       await loadRows({ nextPage: 1, append: false, searchText: search });
     }
   };
@@ -106,6 +161,14 @@ const LazyDropdown = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    setRows([]);
+    setSearch("");
+    setPage(1);
+    setHasNext(false);
+    setError("");
+  }, [fetchUrl, loadOptions]);
 
   return (
     <div ref={wrapperRef} style={{ ...styles.lazyDropdownBlock, minWidth }}>
@@ -180,6 +243,7 @@ const CreateItemBOMRoutingRecord = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const savedCreateState = useSelector(selectItemBomRoutingCreateState);
+
   const [selectedBomId, setSelectedBomId] = useState(savedCreateState?.bomId || "");
   const [producedItem, setProducedItem] = useState(savedCreateState?.producedItem || "");
   const [itemReleaseFlag, setItemReleaseFlag] = useState(savedCreateState?.itemReleaseFlag || "");
@@ -210,13 +274,16 @@ const CreateItemBOMRoutingRecord = () => {
   });
   const [error, setError] = useState("");
 
+  const parsedBom = useMemo(() => parseBomIdParts(selectedBomId), [selectedBomId]);
+  const resourceFetchKey = useMemo(
+    () => `${producedItem || parsedBom.producedItem}__${location || parsedBom.location}`,
+    [producedItem, location, parsedBom.producedItem, parsedBom.location]
+  );
+
   const routingId = useMemo(() => {
     if (!producedItem || !selectedResource) return "";
-    return `ROUTING_${String(producedItem ?? "").trim()}_${String(
-      selectedResource ?? ""
-    ).trim()}`;
+    return `ROUTING_${String(producedItem ?? "").trim()}_${String(selectedResource ?? "").trim()}`;
   }, [producedItem, selectedResource]);
-
 
   const validCoProductRows = useMemo(() => {
     return coProductRows.filter(
@@ -318,6 +385,39 @@ const CreateItemBOMRoutingRecord = () => {
     }
   };
 
+  const loadResourcesByBomIdParts = async ({ page = 1, pageSize = PAGE_SIZE, search = "", append = false } = {}) => {
+    const producedItemForFetch = producedItem || parsedBom.producedItem;
+    const locationForFetch = location || parsedBom.location;
+
+    if (!producedItemForFetch || !locationForFetch) {
+      return {
+        data: [],
+        pagination: { page, pageSize, total: 0, totalPages: 1, hasNext: false },
+      };
+    }
+
+    const resultAction = await dispatch(
+      fetchResourcesLazyOptions({
+        key: `${producedItemForFetch}__${locationForFetch}`,
+        producedItem: producedItemForFetch,
+        location: locationForFetch,
+        search,
+        page,
+        pageSize,
+        append,
+      })
+    );
+
+    if (!fetchResourcesLazyOptions.fulfilled.match(resultAction)) {
+      throw new Error(resultAction.payload || "Failed to fetch resources");
+    }
+
+    return {
+      data: resultAction.payload?.rows || resultAction.payload?.data || [],
+      pagination: resultAction.payload?.pagination || {},
+    };
+  };
+
   useEffect(() => {
     const loadBomDetails = async () => {
       const shouldPreserveSavedCoProducts =
@@ -329,9 +429,23 @@ const CreateItemBOMRoutingRecord = () => {
         setProducedItem("");
         setItemReleaseFlag("");
         setLocation("");
+        setSelectedResource("");
+        setResourceRelevancy("");
         setCoProductRows([createCoProductRow()]);
         return;
       }
+
+      const parsed = parseBomIdParts(selectedBomId);
+
+      if (parsed.producedItem) {
+        setProducedItem(parsed.producedItem);
+      }
+      if (parsed.location) {
+        setLocation(parsed.location);
+      }
+
+      setSelectedResource("");
+      setResourceRelevancy("");
 
       try {
         setLoading((prev) => ({ ...prev, bomDetails: true }));
@@ -347,8 +461,8 @@ const CreateItemBOMRoutingRecord = () => {
         }
 
         const data = json?.data || {};
-        const finalProducedItem = data.producedItem || data.item || "";
-        const finalLocation = data.location || "";
+        const finalProducedItem = data.producedItem || data.item || parsed.producedItem || "";
+        const finalLocation = data.location || parsed.location || "";
         const finalReleaseFlag = data.itemReleaseFlag || data.item_release_flag || "";
 
         setProducedItem(finalProducedItem);
@@ -366,9 +480,9 @@ const CreateItemBOMRoutingRecord = () => {
           setCoProductRows([createCoProductRow()]);
         }
       } catch (err) {
-        setProducedItem("");
+        setProducedItem(parsed.producedItem || "");
         setItemReleaseFlag("");
-        setLocation("");
+        setLocation(parsed.location || "");
         if (!shouldPreserveSavedCoProducts) {
           setCoProductRows([createCoProductRow()]);
         }
@@ -393,20 +507,12 @@ const CreateItemBOMRoutingRecord = () => {
         setLoading((prev) => ({ ...prev, resourceRelevancy: true }));
         setError("");
 
-        const res = await fetch(
-          `/api/bigquery/table/bom-routing-step1/resource-relevancy/${encodeURIComponent(
-            selectedResource
-          )}`
+        const result = await loadResourcesByBomIdParts({ page: 1, pageSize: PAGE_SIZE, search: selectedResource });
+        const matched = (result.data || []).find(
+          (row) => String(row?.resource ?? "").trim().toUpperCase() === String(selectedResource).trim().toUpperCase()
         );
-        const json = await res.json().catch(() => ({}));
 
-        if (!res.ok) {
-          throw new Error(json?.details || json?.error || "Failed to fetch resource relevancy");
-        }
-
-        setResourceRelevancy(
-          json?.data?.resourcePlanningRelevance || json?.data?.resource_relevancy || ""
-        );
+        setResourceRelevancy(getResourceRelevancyFromRow(matched || {}));
       } catch (err) {
         setResourceRelevancy("");
         setError(err?.message || "Failed to fetch resource relevancy");
@@ -416,7 +522,8 @@ const CreateItemBOMRoutingRecord = () => {
     };
 
     loadResourceRelevancy();
-  }, [selectedResource]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedResource, resourceFetchKey]);
 
   const handleCoProductToggle = (checked) => {
     setAddConnectedCoProduct(checked);
@@ -480,6 +587,7 @@ const CreateItemBOMRoutingRecord = () => {
       state: summaryState,
     });
   };
+
   return (
     <div style={styles.page}>
       <div style={styles.contentWrapper}>
@@ -504,7 +612,13 @@ const CreateItemBOMRoutingRecord = () => {
               getOptionKey={(opt) => opt.bomId}
               getOptionLabel={(opt) => opt.bomId}
               onSelect={(opt) => {
-                setSelectedBomId(opt.bomId);
+                const nextBomId = opt.bomId || "";
+                const parsed = parseBomIdParts(nextBomId);
+                setSelectedBomId(nextBomId);
+                setProducedItem(parsed.producedItem || "");
+                setLocation(parsed.location || "");
+                setSelectedResource("");
+                setResourceRelevancy("");
               }}
               searchPlaceholder="Search BOM ID..."
             />
@@ -531,19 +645,19 @@ const CreateItemBOMRoutingRecord = () => {
           <div style={styles.fieldBlock}>
             <LazyDropdown
               label="Resource *"
-              placeholder="Select Resource"
+              placeholder={producedItem && location ? "Select Resource" : "Select BOM ID first"}
               value={selectedResource}
               displayValue={selectedResource}
-              fetchUrl="/api/bigquery/table/bom-routing-step1/resources-lazy"
+              loadOptions={loadResourcesByBomIdParts}
+              disabled={!producedItem || !location}
               getOptionKey={(opt) => opt.resource}
               getOptionLabel={(opt) => opt.resource}
               onSelect={(opt) => {
                 setSelectedResource(opt.resource);
-                setResourceRelevancy(opt.resourcePlanningRelevance || opt.resource_relevancy || "");
+                setResourceRelevancy(getResourceRelevancyFromRow(opt));
               }}
               searchPlaceholder="Search Resource..."
             />
-
           </div>
 
           <div style={styles.fieldBlock}>
@@ -559,7 +673,6 @@ const CreateItemBOMRoutingRecord = () => {
               style={styles.input}
             />
             <div style={styles.helperText}>Enter routing priority for this Resource / Routing ID</div>
-
           </div>
 
           <div style={styles.fieldBlock}>
@@ -681,8 +794,7 @@ const CreateItemBOMRoutingRecord = () => {
             disabled={!canProceed}
             onClick={handleNext}
           >
-            NEXT: REVIEW SUMMARY{" "}
-            <span style={styles.arrow}>→</span>
+            NEXT: REVIEW SUMMARY <span style={styles.arrow}>→</span>
           </button>
         </div>
       </div>
@@ -884,7 +996,7 @@ const styles = {
     display: "flex",
     justifyContent: "flex-end",
     marginTop: "24px",
-  }, 
+  },
   nextButton: {
     display: "inline-flex",
     alignItems: "center",
