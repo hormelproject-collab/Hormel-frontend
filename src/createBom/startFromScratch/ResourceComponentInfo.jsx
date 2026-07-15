@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { MdDelete } from "react-icons/md";
 import {
   fetchLocationMaster,
-  fetchResourceComponentMetadata,
+  fetchResourcesLazyOptions,
   selectAllLocations,
   selectSelectedProducedItemIds,
   selectSelectedLocationIds,
@@ -31,16 +31,19 @@ const buildRoutingId = (item, location, resource) =>
   `ROUTING_${item}_${resource}`;
 const RESOURCE_PAGE_SIZE = 50;
 
-const fetchJsonNoLimit = async (baseUrl) => {
-  const res = await fetch(baseUrl);
-  if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
-  return Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : data;
-};
-
-const getResourceRelevancy = (resourceMasterMap, resource) => {
+const getResourceRelevancy = (resourceOptions = [], resource) => {
   const key = String(resource ?? "").trim().toUpperCase();
-  return resourceMasterMap.get(key)?.resourceRelevancy ?? "";
+  const matched = (resourceOptions || []).find(
+    (row) => String(row?.resource ?? "").trim().toUpperCase() === key
+  );
+
+  return (
+    matched?.resourceRelevancy ??
+    matched?.resourcePlanningRelevance ??
+    matched?.resource_relevancy ??
+    matched?.resource_planning_relevance ??
+    ""
+  );
 };
 
 const makeUniqueId = (prefix) =>
@@ -98,7 +101,6 @@ const searchItemMasterOptions = async ({ search = "", page = 1, pageSize = 50 })
     },
   };
 };
-
 
 const MultiSelectDropdown = ({
   options,
@@ -261,7 +263,6 @@ const ResourceComponentInfo = () => {
 
   const producedItems = useSelector(selectSelectedProducedItems);
   const locations = useSelector(selectSelectedLocations);
-  const producedItemIds = useSelector(selectSelectedProducedItemIds);
   const locationIds = useSelector(selectSelectedLocationIds);
   const allLocations = useSelector(selectAllLocations);
   const locationsLoading = useSelector(selectLocationsLoading);
@@ -274,18 +275,13 @@ const ResourceComponentInfo = () => {
   const resourceOptionsByKey = useSelector(selectResourceOptionsByKey);
   const resourceComponentConfigs = useSelector(selectResourceComponentConfigs);
 
-  const [allGcpResourceOptions, setAllGcpResourceOptions] = useState([]);
-  const [gcpResourceOptionsByKey, setGcpResourceOptionsByKey] = useState({});
-  const [resourceMasterMap, setResourceMasterMap] = useState(new Map());
   const [loadingResourceOptionsByKey, setLoadingResourceOptionsByKey] = useState({});
   const [resourcePageByKey, setResourcePageByKey] = useState({});
   const [resourceHasNextByKey, setResourceHasNextByKey] = useState({});
   const resourceSearchTimerRef = useRef({});
-  const resourceOptionsLoadedRef = useRef(false);
 
   const [openItem, setOpenItem] = useState(null);
   const [openLocationKey, setOpenLocationKey] = useState(null);
-  const [resourceDropdownKey, setResourceDropdownKey] = useState(null);
   const [resourceSearchByKey, setResourceSearchByKey] = useState({});
   const [pageError, setPageError] = useState("");
   const metadataFetchKeyRef = useRef("");
@@ -301,12 +297,7 @@ const ResourceComponentInfo = () => {
     if (locationIds.length > 0 && allLocations.length === 0 && !locationsLoading) {
       dispatch(fetchLocationMaster());
     }
-  }, [
-    dispatch,
-    locationIds.length,
-    allLocations.length,
-    locationsLoading,
-  ]);
+  }, [dispatch, locationIds.length, allLocations.length, locationsLoading]);
 
   useEffect(() => {
     if (!openItem && producedItems.length > 0) {
@@ -316,30 +307,9 @@ const ResourceComponentInfo = () => {
 
   useEffect(() => {
     if (!openLocationKey && producedItems.length > 0 && locations.length > 0) {
-      setOpenLocationKey(
-        buildConfigKey(producedItems[0].item, locations[0].location)
-      );
+      setOpenLocationKey(buildConfigKey(producedItems[0].item, locations[0].location));
     }
   }, [producedItems, locations, openLocationKey]);
-
-  useEffect(() => {
-    if (producedItems.length === 0 || locations.length === 0) return;
-
-    const metadataKey = JSON.stringify({
-      items: producedItems.map((x) => x.item).sort(),
-      locations: locations.map((x) => x.location).sort(),
-    });
-
-    if (metadataFetchKeyRef.current === metadataKey) return;
-    metadataFetchKeyRef.current = metadataKey;
-
-    dispatch(
-      fetchResourceComponentMetadata({
-        items: producedItems.map((x) => x.item),
-        locations: locations.map((x) => x.location),
-      })
-    );
-  }, [dispatch, producedItems, locations]);
 
   useEffect(() => {
     producedItems.forEach((item) => {
@@ -356,112 +326,58 @@ const ResourceComponentInfo = () => {
     });
   }, [dispatch, producedItems, locations]);
 
-  const loadLazyItemOptions = async ({
-    rowKey,
-    searchText = "",
-    page = 1,
-    append = false,
-  }) => {
+  const loadLazyItemOptions = async ({ rowKey, searchText = "", page = 1, append = false }) => {
     const cleanSearch = String(searchText || "").trim();
     const cacheKey = `${cleanSearch.toLowerCase()}__${page}`;
 
-    setItemSearchByKey((prev) => ({
-      ...prev,
-      [rowKey]: searchText,
-    }));
+    setItemSearchByKey((prev) => ({ ...prev, [rowKey]: searchText }));
 
     if (itemSearchCacheRef.current[cacheKey]) {
       const cached = itemSearchCacheRef.current[cacheKey];
       setItemOptionsByKey((prev) => ({
         ...prev,
-        [rowKey]: append
-          ? [...(prev[rowKey] || []), ...(cached.rows || [])]
-          : cached.rows || [],
+        [rowKey]: append ? [...(prev[rowKey] || []), ...(cached.rows || [])] : cached.rows || [],
       }));
-      setItemPaginationByKey((prev) => ({
-        ...prev,
-        [rowKey]: cached.pagination,
-      }));
+      setItemPaginationByKey((prev) => ({ ...prev, [rowKey]: cached.pagination }));
       return;
     }
 
-    setItemLoadingByKey((prev) => ({
-      ...prev,
-      [rowKey]: true,
-    }));
+    setItemLoadingByKey((prev) => ({ ...prev, [rowKey]: true }));
 
     try {
-      const result = await searchItemMasterOptions({
-        search: cleanSearch,
-        page,
-        pageSize: 50,
-      });
-
+      const result = await searchItemMasterOptions({ search: cleanSearch, page, pageSize: 50 });
       itemSearchCacheRef.current[cacheKey] = result;
-
       setItemOptionsByKey((prev) => ({
         ...prev,
-        [rowKey]: append
-          ? [...(prev[rowKey] || []), ...(result.rows || [])]
-          : result.rows || [],
+        [rowKey]: append ? [...(prev[rowKey] || []), ...(result.rows || [])] : result.rows || [],
       }));
-
-      setItemPaginationByKey((prev) => ({
-        ...prev,
-        [rowKey]: result.pagination,
-      }));
+      setItemPaginationByKey((prev) => ({ ...prev, [rowKey]: result.pagination }));
     } catch (error) {
       console.error("Item master lazy search failed:", error);
-      setItemOptionsByKey((prev) => ({
-        ...prev,
-        [rowKey]: [],
-      }));
+      setItemOptionsByKey((prev) => ({ ...prev, [rowKey]: [] }));
       setItemPaginationByKey((prev) => ({
         ...prev,
         [rowKey]: { page: 1, pageSize: 50, total: 0, totalPages: 1, hasNext: false },
       }));
     } finally {
-      setItemLoadingByKey((prev) => ({
-        ...prev,
-        [rowKey]: false,
-      }));
+      setItemLoadingByKey((prev) => ({ ...prev, [rowKey]: false }));
     }
   };
 
   const handleLazyItemDropdownOpen = (rowKey, currentValue = "") => {
     setActiveItemDropdownKey(rowKey);
-
     const existingOptions = itemOptionsByKey[rowKey] || [];
     const existingSearchText = itemSearchByKey[rowKey] ?? currentValue ?? "";
-
     if (existingOptions.length > 0) return;
-
-    loadLazyItemOptions({
-      rowKey,
-      searchText: existingSearchText,
-      page: 1,
-      append: false,
-    });
+    loadLazyItemOptions({ rowKey, searchText: existingSearchText, page: 1, append: false });
   };
 
   const handleLazyItemSearchChange = (rowKey, value) => {
     setActiveItemDropdownKey(rowKey);
-    setItemSearchByKey((prev) => ({
-      ...prev,
-      [rowKey]: value,
-    }));
-
-    if (itemSearchTimerRef.current[rowKey]) {
-      clearTimeout(itemSearchTimerRef.current[rowKey]);
-    }
-
+    setItemSearchByKey((prev) => ({ ...prev, [rowKey]: value }));
+    if (itemSearchTimerRef.current[rowKey]) clearTimeout(itemSearchTimerRef.current[rowKey]);
     itemSearchTimerRef.current[rowKey] = setTimeout(() => {
-      loadLazyItemOptions({
-        rowKey,
-        searchText: value,
-        page: 1,
-        append: false,
-      });
+      loadLazyItemOptions({ rowKey, searchText: value, page: 1, append: false });
     }, 350);
   };
 
@@ -469,13 +385,7 @@ const ResourceComponentInfo = () => {
     const searchText = itemSearchByKey[rowKey] || "";
     const pagination = itemPaginationByKey[rowKey] || {};
     const nextPage = Number(pagination.page || 1) + 1;
-
-    loadLazyItemOptions({
-      rowKey,
-      searchText,
-      page: nextPage,
-      append: true,
-    });
+    loadLazyItemOptions({ rowKey, searchText, page: nextPage, append: true });
   };
 
   const isBlocked =
@@ -505,82 +415,49 @@ const ResourceComponentInfo = () => {
 
   const updateConfig = (item, location, patch) => {
     const key = buildConfigKey(item, location);
-    dispatch(
-      setResourceComponentConfig({
-        key,
-        config: patch,
-      })
-    );
+    dispatch(setResourceComponentConfig({ key, config: patch }));
   };
 
   const handleBOMVersionChange = (item, location, value) => {
     updateConfig(item, location, { bomVersion: value });
   };
 
-  const loadGcpResourceOptions = async ({ key, searchText = "", page = 1 } = {}) => {
-    if (!key || loadingResourceOptionsByKey[key]) return;
+  const loadResourceOptionsFromBomSlice = async ({
+    key,
+    producedItem,
+    location,
+    searchText = "",
+    page = 1,
+    append = false,
+  } = {}) => {
+    if (!key || !producedItem || loadingResourceOptionsByKey[key]) return;
 
     setLoadingResourceOptionsByKey((prev) => ({ ...prev, [key]: true }));
 
     try {
-      let fullResourceOptions = allGcpResourceOptions;
+      const resultAction = await dispatch(
+        fetchResourcesLazyOptions({
+          key,
+          producedItem,
+          location,
+          search: searchText,
+          page,
+          pageSize: RESOURCE_PAGE_SIZE,
+          append,
+        })
+      );
 
-      if (!resourceOptionsLoadedRef.current || fullResourceOptions.length === 0) {
-        const [routingResconsRows, resourceMasterRows] = await Promise.all([
-          fetchJsonNoLimit("/api/bigquery/table/routing_rescons"),
-          fetchJsonNoLimit("/api/bigquery/table/resource_master"),
-        ]);
-
-        const tempResourceMap = new Map();
-        (Array.isArray(resourceMasterRows) ? resourceMasterRows : []).forEach((row) => {
-          const resourceKey = String(row.resource ?? "").trim().toUpperCase();
-          if (!resourceKey) return;
-          tempResourceMap.set(resourceKey, {
-            resourceRelevancy:
-              row.resource_planning_relevance ?? row.resource_relevancy ?? row.relevancy ?? "",
-          });
-        });
-
-        const seenResources = new Set();
-        const tempResourceOptions = [];
-        (Array.isArray(routingResconsRows) ? routingResconsRows : []).forEach((row) => {
-          const resource = String(row.resource ?? "").trim();
-          if (!resource) return;
-          const resourceKey = resource.toUpperCase();
-          if (seenResources.has(resourceKey)) return;
-          seenResources.add(resourceKey);
-          tempResourceOptions.push({
-            resource,
-            resourceRelevancy: tempResourceMap.get(resourceKey)?.resourceRelevancy ?? "",
-          });
-        });
-
-        fullResourceOptions = tempResourceOptions;
-        setAllGcpResourceOptions(tempResourceOptions);
-        setResourceMasterMap(tempResourceMap);
-        resourceOptionsLoadedRef.current = true;
+      if (fetchResourcesLazyOptions.fulfilled.match(resultAction)) {
+        setResourcePageByKey((prev) => ({ ...prev, [key]: page }));
+        setResourceHasNextByKey((prev) => ({
+          ...prev,
+          [key]: !!resultAction.payload?.pagination?.hasNext,
+        }));
+      } else {
+        setResourceHasNextByKey((prev) => ({ ...prev, [key]: false }));
       }
-
-      const cleanSearch = String(searchText || "").trim().toLowerCase();
-      const filteredOptions = cleanSearch
-        ? fullResourceOptions.filter((opt) =>
-            String(opt.resource ?? "").toLowerCase().includes(cleanSearch)
-          )
-        : fullResourceOptions;
-
-      const endIndex = page * RESOURCE_PAGE_SIZE;
-      setGcpResourceOptionsByKey((prev) => ({
-        ...prev,
-        [key]: filteredOptions.slice(0, endIndex),
-      }));
-      setResourcePageByKey((prev) => ({ ...prev, [key]: page }));
-      setResourceHasNextByKey((prev) => ({
-        ...prev,
-        [key]: endIndex < filteredOptions.length,
-      }));
     } catch (error) {
-      console.error("Error fetching GCP resource options:", error);
-      setGcpResourceOptionsByKey((prev) => ({ ...prev, [key]: [] }));
+      console.error("Error fetching resource options from bomSlice:", error);
       setResourceHasNextByKey((prev) => ({ ...prev, [key]: false }));
     } finally {
       setLoadingResourceOptionsByKey((prev) => ({ ...prev, [key]: false }));
@@ -589,18 +466,34 @@ const ResourceComponentInfo = () => {
 
   const handleResourceSearchChange = (key, value) => {
     setResourceSearchByKey((prev) => ({ ...prev, [key]: value }));
-    if (resourceSearchTimerRef.current[key]) clearTimeout(resourceSearchTimerRef.current[key]);
+
+    if (resourceSearchTimerRef.current[key]) {
+      clearTimeout(resourceSearchTimerRef.current[key]);
+    }
+
     resourceSearchTimerRef.current[key] = setTimeout(() => {
-      loadGcpResourceOptions({ key, searchText: value, page: 1 });
+      const [producedItem, selectedLocation] = key.split("__");
+      loadResourceOptionsFromBomSlice({
+        key,
+        producedItem,
+        location: selectedLocation,
+        searchText: value,
+        page: 1,
+        append: false,
+      });
     }, 300);
   };
 
   const handleResourceLoadMore = (key) => {
     if (!resourceHasNextByKey[key] || loadingResourceOptionsByKey[key]) return;
-    loadGcpResourceOptions({
+    const [producedItem, selectedLocation] = key.split("__");
+    loadResourceOptionsFromBomSlice({
       key,
+      producedItem,
+      location: selectedLocation,
       searchText: resourceSearchByKey[key] || "",
       page: Number(resourcePageByKey[key] || 1) + 1,
+      append: true,
     });
   };
 
@@ -616,88 +509,72 @@ const ResourceComponentInfo = () => {
   };
 
   const handleProducedCoProduct = (item, location, checked) => {
-    updateConfig(item, location, {
-      producedCoProduct: checked,
-    });
+    updateConfig(item, location, { producedCoProduct: checked });
   };
 
   const addComponentRow = (item, location) => {
     const config = getConfig(item, location);
-    const nextRows = [...(config.components || [])];
-    nextRows.push({
-      id: makeUniqueId("component"),
-      componentItem: "",
-      description: "",
-      standardUsage: "",
+    updateConfig(item, location, {
+      components: [
+        ...(config.components || []),
+        { id: makeUniqueId("component"), componentItem: "", description: "", standardUsage: "" },
+      ],
     });
-    updateConfig(item, location, { components: nextRows });
   };
 
   const removeComponentRow = (item, location, rowId) => {
     const config = getConfig(item, location);
-    const nextRows = (config.components || []).filter((row) => row.id !== rowId);
-    updateConfig(item, location, { components: nextRows });
+    updateConfig(item, location, {
+      components: (config.components || []).filter((row) => row.id !== rowId),
+    });
   };
 
   const changeComponentRow = (item, location, rowId, patch) => {
     const config = getConfig(item, location);
     const nextRows = (config.components || []).map((row) => {
       if (row.id !== rowId) return row;
-
-      let nextRow = { ...row, ...patch };
-
+      const nextRow = { ...row, ...patch };
       if (patch.componentItem !== undefined && patch.description === undefined) {
         nextRow.description = row.description ?? "";
       }
-
       return nextRow;
     });
-
     updateConfig(item, location, { components: nextRows });
   };
 
   const addCoProductRow = (item, location) => {
     const config = getConfig(item, location);
-    const nextRows = [...(config.coproducts || [])];
-    nextRows.push({
-      id: makeUniqueId("coproduct"),
-      coProductItem: "",
-      description: "",
-      qtyProduced: "",
+    updateConfig(item, location, {
+      coproducts: [
+        ...(config.coproducts || []),
+        { id: makeUniqueId("coproduct"), coProductItem: "", description: "", qtyProduced: "" },
+      ],
     });
-    updateConfig(item, location, { coproducts: nextRows });
   };
 
   const removeCoProductRow = (item, location, rowId) => {
     const config = getConfig(item, location);
-    const nextRows = (config.coproducts || []).filter((row) => row.id !== rowId);
-    updateConfig(item, location, { coproducts: nextRows });
+    updateConfig(item, location, {
+      coproducts: (config.coproducts || []).filter((row) => row.id !== rowId),
+    });
   };
 
   const changeCoProductRow = (item, location, rowId, patch) => {
     const config = getConfig(item, location);
     const nextRows = (config.coproducts || []).map((row) => {
       if (row.id !== rowId) return row;
-
-      let nextRow = { ...row, ...patch };
-
+      const nextRow = { ...row, ...patch };
       if (patch.coProductItem !== undefined && patch.description === undefined) {
         nextRow.description = row.description ?? "";
       }
-
       return nextRow;
     });
-
     updateConfig(item, location, { coproducts: nextRows });
   };
 
   const handleReplicate = (item, location, checked) => {
     const sourceConfig = getConfig(item, location);
-
-    updateConfig(item, location, {
-      replicateToAll: checked,
-    });
-
+    updateConfig(item, location, { replicateToAll: checked });
     if (!checked) return;
 
     const componentPayload = {
@@ -712,9 +589,7 @@ const ResourceComponentInfo = () => {
         const isSameSource =
           String(targetItem.item) === String(item) &&
           String(targetLoc.location) === String(location);
-
         if (isSameSource) return;
-
         updateConfig(targetItem.item, targetLoc.location, componentPayload);
       });
     });
@@ -725,20 +600,13 @@ const ResourceComponentInfo = () => {
       for (const loc of locations) {
         const config = getConfig(item.item, loc.location);
 
-        if (!config.bomVersion) {
-          return "BOM Version is required for every item and location.";
-        }
-
+        if (!config.bomVersion) return "BOM Version is required for every item and location.";
         if (!Array.isArray(config.resources) || config.resources.length === 0) {
-          return `Please select at least one resource for every Item`;
+          return "Please select at least one resource for every Item";
         }
 
-        // ✅ Either Component Item must be entered OR No Component Items must be checked
         if (!config.noComponentItems) {
-          const componentRows = Array.isArray(config.components)
-            ? config.components
-            : [];
-
+          const componentRows = Array.isArray(config.components) ? config.components : [];
           const hasAtLeastOneComponent = componentRows.some(
             (row) => String(row.componentItem ?? "").trim() !== ""
           );
@@ -750,16 +618,9 @@ const ResourceComponentInfo = () => {
           for (const row of componentRows) {
             const componentItem = String(row.componentItem ?? "").trim();
             const usageText = String(row.standardUsage ?? "").trim();
-
-            // Ignore fully empty placeholder rows
             if (!componentItem && !usageText) continue;
-
-            if (!componentItem) {
-              return `Please select a component item for ${item.item} / ${loc.location}.`;
-            }
-
-            const usageValue = Number(usageText);
-            if (!(usageValue > 0)) {
+            if (!componentItem) return `Please select a component item for ${item.item} / ${loc.location}.`;
+            if (!(Number(usageText) > 0)) {
               return `Standard Usage must be greater than 0 for component ${componentItem} in ${item.item} / ${loc.location}.`;
             }
           }
@@ -769,22 +630,14 @@ const ResourceComponentInfo = () => {
         for (const row of coRows) {
           const coProductItem = String(row.coProductItem ?? "").trim();
           const qtyText = String(row.qtyProduced ?? "").trim();
-
-          // Ignore fully empty placeholder rows
           if (!coProductItem && !qtyText) continue;
-
-          if (!coProductItem) {
-            return `Please select a co-product item for ${item.item} / ${loc.location}.`;
-          }
-
-          const qtyValue = Number(qtyText);
-          if (!(qtyValue < 1)) {
+          if (!coProductItem) return `Please select a co-product item for ${item.item} / ${loc.location}.`;
+          if (!(Number(qtyText) < 1)) {
             return `Qty Produced must be less than 1 for co-product ${coProductItem} in ${item.item} / ${loc.location}.`;
           }
         }
       }
     }
-
     return "";
   };
 
@@ -801,13 +654,12 @@ const ResourceComponentInfo = () => {
       locations.map((loc) => {
         const key = buildConfigKey(item.item, loc.location);
         const config = getConfig(item.item, loc.location);
-        const selectedResources = Array.isArray(config.resources)
-          ? config.resources
-          : [];
+        const selectedResources = Array.isArray(config.resources) ? config.resources : [];
+        const resourceOptions = resourceOptionsByKey[key] || [];
 
         const selectedResourceRows = selectedResources.map((resource) => ({
           resource,
-          resourceRelevancy: getResourceRelevancy(resourceMasterMap, resource),
+          resourceRelevancy: getResourceRelevancy(resourceOptions, resource),
         }));
 
         const bomVersion = config.bomVersion || "PRIMARY";
@@ -816,18 +668,15 @@ const ResourceComponentInfo = () => {
         return {
           key,
           producedItem: item.item,
-          producedItemDescription:
-            item.description ?? item.desc ?? item.item_description ?? "",
+          producedItemDescription: item.description ?? item.desc ?? item.item_description ?? "",
           location: loc.location,
-          locationName:
-            loc.name ?? loc.location_description ?? loc.location ?? "",
+          locationName: loc.name ?? loc.location_description ?? loc.location ?? "",
           bomVersion,
           bomId,
           selectedResources: [...selectedResources],
           generatedRoutingRows: selectedResourceRows.map((row) => ({
             resource: row.resource ?? "",
-            resourceRelevancy:
-              row.resourceRelevancy ?? row.resource_relevancy ?? "",
+            resourceRelevancy: row.resourceRelevancy ?? row.resource_relevancy ?? "",
             routingId: buildRoutingId(item.item, loc.location, row.resource),
           })),
           noComponentItems: !!config.noComponentItems,
@@ -855,7 +704,7 @@ const ResourceComponentInfo = () => {
         producedItems,
         locations,
         resourceComponentConfigs,
-        resourceOptionsByKey: gcpResourceOptionsByKey,
+        resourceOptionsByKey,
         summaryConfigSnapshot,
         previousState: routerLocation?.state ?? null,
       },
@@ -870,13 +719,9 @@ const ResourceComponentInfo = () => {
         </div>
 
         <h1 style={styles.title}>Step 3: Resource & Component Info</h1>
-        <p style={styles.subTitle}>
-          Configure resources and components for each item and location
-        </p>
+        <p style={styles.subTitle}>Configure resources and components for each item and location</p>
 
-        {(locationsLoading || resourceMetaLoading) && (
-          <div style={styles.infoBox}>Loading data...</div>
-        )}
+        {(locationsLoading || resourceMetaLoading) && <div style={styles.infoBox}>Loading data...</div>}
 
         {(locationsError || resourceMetaError || pageError) && (
           <div style={styles.errorBox}>
@@ -890,15 +735,13 @@ const ResourceComponentInfo = () => {
 
         {producedItems.length === 0 || locations.length === 0 ? (
           <div style={styles.warningBox}>
-            No selected Produced Items / Locations found. Please complete Step 1
-            and Step 2 first.
+            No selected Produced Items / Locations found. Please complete Step 1 and Step 2 first.
           </div>
         ) : null}
 
         {(hasInactiveItems || hasInactiveLocs) && (
           <div style={styles.warningBox}>
-            Inactive item/location selected. Please deselect inactive entries in
-            previous steps before continuing.
+            Inactive item/location selected. Please deselect inactive entries in previous steps before continuing.
           </div>
         )}
 
@@ -907,10 +750,7 @@ const ResourceComponentInfo = () => {
 
           return (
             <div key={item.id} style={styles.itemCard}>
-              <div
-                style={styles.itemHeader}
-                onClick={() => setOpenItem(itemOpen ? null : item.id)}
-              >
+              <div style={styles.itemHeader} onClick={() => setOpenItem(itemOpen ? null : item.id)}>
                 <div>
                   <div style={styles.itemTitle}>{item.item}</div>
                   <div style={styles.itemDesc}>{item.desc}</div>
@@ -924,33 +764,23 @@ const ResourceComponentInfo = () => {
                     const key = buildConfigKey(item.item, loc.location);
                     const config = getConfig(item.item, loc.location);
                     const isOpenLoc = openLocationKey === key;
-                    const resourceOptions = gcpResourceOptionsByKey[key] || [];
-                    const selectedResources = Array.isArray(config.resources)
-                      ? config.resources
-                      : [];
+                    const resourceOptions = resourceOptionsByKey[key] || [];
+                    const selectedResources = Array.isArray(config.resources) ? config.resources : [];
                     const searchValue = resourceSearchByKey[key] || "";
                     const loadingResourceOptions = !!loadingResourceOptionsByKey[key];
                     const resourceHasNext = !!resourceHasNextByKey[key];
-
                     const selectedResourceRows = selectedResources.map((resource) => ({
                       resource,
-                      resourceRelevancy: getResourceRelevancy(resourceMasterMap, resource),
+                      resourceRelevancy: getResourceRelevancy(resourceOptions, resource),
                     }));
                     const bomVersion = config.bomVersion || "PRIMARY";
                     const bomId = buildBomId(bomVersion, item.item, loc.location);
 
                     return (
                       <div key={key} style={styles.locationCard}>
-                        <div
-                          style={styles.locationHeader}
-                          onClick={() => setOpenLocationKey(isOpenLoc ? null : key)}
-                        >
-                          <div style={styles.locationHeaderText}>
-                            {loc.name || `Location ${loc.location}`}
-                          </div>
-                          <span>
-                            {isOpenLoc ? <IoIosArrowUp /> : <IoIosArrowDown />}
-                          </span>
+                        <div style={styles.locationHeader} onClick={() => setOpenLocationKey(isOpenLoc ? null : key)}>
+                          <div style={styles.locationHeaderText}>{loc.name || `Location ${loc.location}`}</div>
+                          <span>{isOpenLoc ? <IoIosArrowUp /> : <IoIosArrowDown />}</span>
                         </div>
 
                         {isOpenLoc && (
@@ -962,31 +792,24 @@ const ResourceComponentInfo = () => {
                                   options={resourceOptions}
                                   selectedValues={selectedResources}
                                   onChange={(nextResources) =>
-                                    handleResourceSelectionChange(
-                                      item.item,
-                                      loc.location,
-                                      nextResources
-                                    )
+                                    handleResourceSelectionChange(item.item, loc.location, nextResources)
                                   }
                                   onOpen={() =>
-                                    loadGcpResourceOptions({
+                                    loadResourceOptionsFromBomSlice({
                                       key,
+                                      producedItem: item.item,
+                                      location: loc.location,
                                       searchText: searchValue,
                                       page: 1,
+                                      append: false,
                                     })
                                   }
                                   searchValue={searchValue}
-                                  onSearchChange={(value) =>
-                                    handleResourceSearchChange(key, value)
-                                  }
+                                  onSearchChange={(value) => handleResourceSearchChange(key, value)}
                                   onLoadMore={() => handleResourceLoadMore(key)}
                                   loading={loadingResourceOptions}
                                   hasNext={resourceHasNext}
-                                  placeholder={
-                                    loadingResourceOptions
-                                      ? "Loading resources..."
-                                      : "Select resource(s)"
-                                  }
+                                  placeholder={loadingResourceOptions ? "Loading resources..." : "Select resource(s)"}
                                 />
                                 <div style={styles.helperText}>
                                   If desired resource is not found, please check Oracle work definitions.
@@ -998,23 +821,11 @@ const ResourceComponentInfo = () => {
                                 <select
                                   style={styles.input}
                                   value={bomVersion}
-                                  onChange={(e) =>
-                                    handleBOMVersionChange(
-                                      item.item,
-                                      loc.location,
-                                      e.target.value
-                                    )
-                                  }
+                                  onChange={(e) => handleBOMVersionChange(item.item, loc.location, e.target.value)}
                                 >
                                   {(bomVersions.length > 0
                                     ? bomVersions
-                                    : [
-                                      "PRIMARY",
-                                      ...Array.from(
-                                        { length: 20 },
-                                        (_, index) => `BOM${index + 1}`
-                                      ),
-                                    ]
+                                    : ["PRIMARY", ...Array.from({ length: 40 }, (_, index) => `BOM${index + 1}`)]
                                   ).map((version) => (
                                     <option key={version} value={version}>
                                       {version}
@@ -1026,18 +837,12 @@ const ResourceComponentInfo = () => {
 
                             <div style={styles.singleFieldWrap}>
                               <div style={styles.label}>BOM ID</div>
-                              <input
-                                value={bomId}
-                                readOnly
-                                style={styles.inputDisabled}
-                              />
+                              <input value={bomId} readOnly style={styles.inputDisabled} />
                             </div>
 
                             {selectedResourceRows.length > 0 && (
                               <div style={styles.generatedBox}>
-                                <div style={styles.generatedTitle}>
-                                  Generated Routing IDs
-                                </div>
+                                <div style={styles.generatedTitle}>Generated Routing IDs</div>
                                 <div style={styles.generatedTable}>
                                   <div style={styles.generatedHeader}>
                                     <div>Resource</div>
@@ -1046,19 +851,10 @@ const ResourceComponentInfo = () => {
                                   </div>
 
                                   {selectedResourceRows.map((row) => (
-                                    <div
-                                      key={row.resource}
-                                      style={styles.generatedRow}
-                                    >
+                                    <div key={row.resource} style={styles.generatedRow}>
                                       <div>{row.resource}</div>
                                       <div>{row.resourceRelevancy || "-"}</div>
-                                      <div>
-                                        {buildRoutingId(
-                                          item.item,
-                                          loc.location,
-                                          row.resource
-                                        )}
-                                      </div>
+                                      <div>{buildRoutingId(item.item, loc.location, row.resource)}</div>
                                     </div>
                                   ))}
                                 </div>
@@ -1067,15 +863,11 @@ const ResourceComponentInfo = () => {
 
                             <div style={styles.sectionGreen}>
                               <div style={styles.sectionHeader}>
-                                <span style={styles.sectionTitle}>
-                                  Component Items
-                                </span>
+                                <span style={styles.sectionTitle}>Component Items</span>
                                 <button
                                   type="button"
                                   style={styles.linkBtn}
-                                  onClick={() =>
-                                    addComponentRow(item.item, loc.location)
-                                  }
+                                  onClick={() => addComponentRow(item.item, loc.location)}
                                   disabled={config.noComponentItems}
                                 >
                                   + ADD COMPONENT
@@ -1104,15 +896,10 @@ const ResourceComponentInfo = () => {
                                               onClick={() => handleLazyItemDropdownOpen(rowKey, row.componentItem)}
                                               onChange={(e) => {
                                                 const value = e.target.value;
-                                                changeComponentRow(
-                                                  item.item,
-                                                  loc.location,
-                                                  row.id,
-                                                  {
-                                                    componentItem: value,
-                                                    description: "",
-                                                  }
-                                                );
+                                                changeComponentRow(item.item, loc.location, row.id, {
+                                                  componentItem: value,
+                                                  description: "",
+                                                });
                                                 handleLazyItemSearchChange(rowKey, value);
                                               }}
                                             />
@@ -1131,15 +918,10 @@ const ResourceComponentInfo = () => {
                                                         style={styles.lazyDropdownRow}
                                                         onMouseDown={(e) => {
                                                           e.preventDefault();
-                                                          changeComponentRow(
-                                                            item.item,
-                                                            loc.location,
-                                                            row.id,
-                                                            {
-                                                              componentItem: option.item,
-                                                              description: option.item_desc || "",
-                                                            }
-                                                          );
+                                                          changeComponentRow(item.item, loc.location, row.id, {
+                                                            componentItem: option.item,
+                                                            description: option.item_desc || "",
+                                                          });
                                                           setActiveItemDropdownKey(null);
                                                         }}
                                                       >
@@ -1169,12 +951,7 @@ const ResourceComponentInfo = () => {
 
                                     <div style={styles.fieldWithLabel}>
                                       <div style={styles.inlineFieldLabel}>Item Description</div>
-                                      <input
-                                        value={row.description}
-                                        readOnly
-                                        placeholder="Description"
-                                        style={styles.inputDisabled}
-                                      />
+                                      <input value={row.description} readOnly placeholder="Description" style={styles.inputDisabled} />
                                     </div>
 
                                     <div style={styles.fieldWithLabel}>
@@ -1186,12 +963,7 @@ const ResourceComponentInfo = () => {
                                         placeholder="Standard Usage"
                                         value={row.standardUsage}
                                         onChange={(e) =>
-                                          changeComponentRow(
-                                            item.item,
-                                            loc.location,
-                                            row.id,
-                                            { standardUsage: e.target.value }
-                                          )
+                                          changeComponentRow(item.item, loc.location, row.id, { standardUsage: e.target.value })
                                         }
                                         style={styles.input}
                                       />
@@ -1201,17 +973,9 @@ const ResourceComponentInfo = () => {
                                       <button
                                         type="button"
                                         style={styles.deleteBtn}
-                                        onClick={() =>
-                                          removeComponentRow(
-                                            item.item,
-                                            loc.location,
-                                            row.id
-                                          )
-                                        }
+                                        onClick={() => removeComponentRow(item.item, loc.location, row.id)}
                                       >
-                                        <span style={styles.iconWrapper}>
-                                                <MdDelete />
-                                            </span>
+                                        <span style={styles.iconWrapper}><MdDelete /></span>
                                       </button>
                                     </div>
                                   </div>
@@ -1221,13 +985,7 @@ const ResourceComponentInfo = () => {
                                 <input
                                   type="checkbox"
                                   checked={!!config.noComponentItems}
-                                  onChange={(e) =>
-                                    handleNoComponentItems(
-                                      item.item,
-                                      loc.location,
-                                      e.target.checked
-                                    )
-                                  }
+                                  onChange={(e) => handleNoComponentItems(item.item, loc.location, e.target.checked)}
                                 />
                                 <span>No Component Items</span>
                               </label>
@@ -1235,16 +993,8 @@ const ResourceComponentInfo = () => {
 
                             <div style={styles.sectionBlue}>
                               <div style={styles.sectionHeader}>
-                                <span style={styles.sectionTitle}>
-                                  Co-Products
-                                </span>
-                                <button
-                                  type="button"
-                                  style={styles.linkBtn}
-                                  onClick={() =>
-                                    addCoProductRow(item.item, loc.location)
-                                  }
-                                >
+                                <span style={styles.sectionTitle}>Co-Products</span>
+                                <button type="button" style={styles.linkBtn} onClick={() => addCoProductRow(item.item, loc.location)}>
                                   + ADD CO-PRODUCT
                                 </button>
                               </div>
@@ -1270,15 +1020,10 @@ const ResourceComponentInfo = () => {
                                             onClick={() => handleLazyItemDropdownOpen(rowKey, row.coProductItem)}
                                             onChange={(e) => {
                                               const value = e.target.value;
-                                              changeCoProductRow(
-                                                item.item,
-                                                loc.location,
-                                                row.id,
-                                                {
-                                                  coProductItem: value,
-                                                  description: "",
-                                                }
-                                              );
+                                              changeCoProductRow(item.item, loc.location, row.id, {
+                                                coProductItem: value,
+                                                description: "",
+                                              });
                                               handleLazyItemSearchChange(rowKey, value);
                                             }}
                                           />
@@ -1297,15 +1042,10 @@ const ResourceComponentInfo = () => {
                                                       style={styles.lazyDropdownRow}
                                                       onMouseDown={(e) => {
                                                         e.preventDefault();
-                                                        changeCoProductRow(
-                                                          item.item,
-                                                          loc.location,
-                                                          row.id,
-                                                          {
-                                                            coProductItem: option.item,
-                                                            description: option.item_desc || "",
-                                                          }
-                                                        );
+                                                        changeCoProductRow(item.item, loc.location, row.id, {
+                                                          coProductItem: option.item,
+                                                          description: option.item_desc || "",
+                                                        });
                                                         setActiveItemDropdownKey(null);
                                                       }}
                                                     >
@@ -1335,12 +1075,7 @@ const ResourceComponentInfo = () => {
 
                                   <div style={styles.fieldWithLabel}>
                                     <div style={styles.inlineFieldLabel}>Item Description</div>
-                                    <input
-                                      value={row.description}
-                                      readOnly
-                                      placeholder="Description"
-                                      style={styles.inputDisabled}
-                                    />
+                                    <input value={row.description} readOnly placeholder="Description" style={styles.inputDisabled} />
                                   </div>
 
                                   <div style={styles.fieldWithLabel}>
@@ -1352,14 +1087,7 @@ const ResourceComponentInfo = () => {
                                       step="0.0001"
                                       placeholder="Qty Produced"
                                       value={row.qtyProduced}
-                                      onChange={(e) =>
-                                        changeCoProductRow(
-                                          item.item,
-                                          loc.location,
-                                          row.id,
-                                          { qtyProduced: e.target.value }
-                                        )
-                                      }
+                                      onChange={(e) => changeCoProductRow(item.item, loc.location, row.id, { qtyProduced: e.target.value })}
                                       style={styles.input}
                                     />
                                   </div>
@@ -1368,17 +1096,9 @@ const ResourceComponentInfo = () => {
                                     <button
                                       type="button"
                                       style={styles.deleteBtn}
-                                      onClick={() =>
-                                        removeCoProductRow(
-                                          item.item,
-                                          loc.location,
-                                          row.id
-                                        )
-                                      }
+                                      onClick={() => removeCoProductRow(item.item, loc.location, row.id)}
                                     >
-                                      <span style={styles.iconWrapper}>
-                                                <MdDelete />
-                                            </span>
+                                      <span style={styles.iconWrapper}><MdDelete /></span>
                                     </button>
                                   </div>
                                 </div>
@@ -1389,13 +1109,7 @@ const ResourceComponentInfo = () => {
                               <input
                                 type="checkbox"
                                 checked={!!config.producedCoProduct}
-                                onChange={(e) =>
-                                  handleProducedCoProduct(
-                                    item.item,
-                                    loc.location,
-                                    e.target.checked
-                                  )
-                                }
+                                onChange={(e) => handleProducedCoProduct(item.item, loc.location, e.target.checked)}
                               />
                               <span>Produced Co-Product?</span>
                             </label>
@@ -1404,18 +1118,9 @@ const ResourceComponentInfo = () => {
                               <input
                                 type="checkbox"
                                 checked={!!config.replicateToAll}
-                                onChange={(e) =>
-                                  handleReplicate(
-                                    item.item,
-                                    loc.location,
-                                    e.target.checked
-                                  )
-                                }
+                                onChange={(e) => handleReplicate(item.item, loc.location, e.target.checked)}
                               />
-                              <span>
-                                Replicate Co-Product / Component Information for
-                                Selected Locations
-                              </span>
+                              <span>Replicate Co-Product / Component Information for Selected Locations</span>
                             </label>
                           </div>
                         )}
@@ -1450,392 +1155,64 @@ const ResourceComponentInfo = () => {
 export default ResourceComponentInfo;
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    backgroundColor: "#f5f6f8",
-    padding: "24px",
-    boxSizing: "border-box",
-  },
-  inner: {
-    maxWidth: "980px",
-    margin: "0 auto",
-  },
-  back: {
-    color: "#2563eb",
-    cursor: "pointer",
-    marginBottom: "10px",
-    width: "fit-content",
-    fontSize: "14px",
-  },
-  title: {
-    margin: "0 0 6px 0",
-    fontSize: "40px",
-    fontWeight: 600,
-    color: "#111827",
-  },
-  subTitle: {
-    margin: "0 0 20px 0",
-    color: "#4b5563",
-    fontSize: "15px",
-  },
-  infoBox: {
-    marginBottom: "12px",
-    padding: "10px",
-    borderRadius: "6px",
-    background: "#eff6ff",
-    border: "1px solid #bfdbfe",
-    color: "#1e40af",
-  },
-  warningBox: {
-    marginBottom: "12px",
-    padding: "10px",
-    borderRadius: "6px",
-    background: "#fff7ed",
-    border: "1px solid #fed7aa",
-    color: "#9a3412",
-  },
-  errorBox: {
-    marginBottom: "12px",
-    padding: "10px",
-    borderRadius: "6px",
-    background: "#fee2e2",
-    border: "1px solid #fca5a5",
-    color: "#b91c1c",
-    whiteSpace: "pre-wrap",
-  },
-  itemCard: {
-    border: "1px solid #d1d5db",
-    borderRadius: "6px",
-    marginBottom: "18px",
-    background: "#ffffff",
-    overflow: "hidden",
-  },
-  itemHeader: {
-    padding: "14px 16px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    cursor: "pointer",
-  },
-  itemTitle: {
-    fontWeight: 600,
-    fontSize: "14px",
-    color: "#111827",
-  },
-  itemDesc: {
-    color: "#6b7280",
-    fontSize: "13px",
-    marginTop: "2px",
-  },
-  itemBody: {
-    padding: "0 14px 14px",
-  },
-  locationCard: {
-    border: "1px solid #e5e7eb",
-    borderRadius: "6px",
-    marginTop: "10px",
-    overflow: "hidden",
-  },
-  locationHeader: {
-    padding: "12px 14px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    cursor: "pointer",
-    backgroundColor: "#ffffff",
-  },
-  locationHeaderText: {
-    fontWeight: 600,
-    fontSize: "14px",
-    color: "#111827",
-  },
-  locationBody: {
-    padding: "14px",
-    borderTop: "1px solid #e5e7eb",
-  },
-  topGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 380px",
-    gap: "14px",
-    alignItems: "start",
-  },
-  label: {
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#374151",
-    marginBottom: "6px",
-  },
-  fieldWithLabel: {
-    display: "flex",
-    flexDirection: "column",
-  },
-
-  inlineFieldLabel: {
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#374151",
-    marginBottom: "6px",
-  },
-  removeBtn: {
-    cursor: "pointer",
-    border: "none",
-    background: "transparent",
-    padding: "10px",
-  },
-  iconWrapper: {
-    all: "unset",
-    color: "#dc2626",
-    fontSize: "28px",
-  },
-
-  deleteBtnContainer: {
-    display: "flex",
-    alignItems: "flex-end",
-    height: "100%",
-  },
-  input: {
-    width: "100%",
-    height: "36px",
-    padding: "0 10px",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    backgroundColor: "#ffffff",
-    boxSizing: "border-box",
-    fontSize: "14px",
-  },
-  inputDisabled: {
-    width: "100%",
-    height: "36px",
-    padding: "0 10px",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    backgroundColor: "#f3f4f6",
-    color: "#6b7280",
-    boxSizing: "border-box",
-    fontSize: "14px",
-  },
-  singleFieldWrap: {
-    marginTop: "10px",
-    maxWidth: "380px",
-  },
-  helperText: {
-    marginTop: "4px",
-    fontSize: "11px",
-    color: "#6b7280",
-  },
-  multiSelectWrap: {
-    position: "relative",
-  },
-  multiSelectBox: {
-    minHeight: "36px",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    backgroundColor: "#ffffff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "4px 8px",
-    gap: "8px",
-    cursor: "pointer",
-  },
-  chipsWrap: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    flexWrap: "wrap",
-    flex: 1,
-  },
-  chip: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    backgroundColor: "#e5e7eb",
-    color: "#374151",
-    borderRadius: "12px",
-    padding: "2px 8px",
-    fontSize: "12px",
-  },
-  chipX: {
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  resourceSearchInput: {
-    width: "100%",
-    height: "34px",
-    borderRadius: "3px",
-    border: "1px solid #cfd4dc",
-    padding: "0 10px",
-    fontSize: "13px",
-    outline: "none",
-    boxSizing: "border-box",
-  },
-  dropdownArrow: {
-    color: "#6b7280",
-    fontSize: "12px",
-    cursor: "pointer",
-    userSelect: "none",
-  },
-  dropdownMenu: {
-    position: "absolute",
-    top: "40px",
-    left: 0,
-    right: 0,
-    backgroundColor: "#ffffff",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    zIndex: 30,
-    maxHeight: "180px",
-    overflowY: "auto",
-    boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
-  },
-  dropdownRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 10px",
-    fontSize: "14px",
-    cursor: "pointer",
-  },
-  dropdownEmpty: {
-    padding: "10px",
-    fontSize: "13px",
-    color: "#6b7280",
-  },
-  generatedBox: {
-    marginTop: "14px",
-  },
-  generatedTitle: {
-    fontSize: "13px",
-    fontWeight: 600,
-    color: "#111827",
-    marginBottom: "8px",
-  },
-  generatedTable: {
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    overflow: "hidden",
-  },
-  generatedHeader: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 2fr",
-    backgroundColor: "#f3f4f6",
-    padding: "8px 10px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#374151",
-    borderBottom: "1px solid #d1d5db",
-  },
-  generatedRow: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 2fr",
-    padding: "8px 10px",
-    fontSize: "12px",
-    color: "#111827",
-    borderBottom: "1px solid #e5e7eb",
-  },
-  sectionGreen: {
-    marginTop: "16px",
-    padding: "12px",
-    borderRadius: "4px",
-    backgroundColor: "#edf7f0",
-    border: "1px solid #d5eadb",
-  },
-  sectionBlue: {
-    marginTop: "14px",
-    padding: "12px",
-    borderRadius: "4px",
-    backgroundColor: "#eef4fb",
-    border: "1px solid #d8e4f2",
-  },
-  sectionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "10px",
-  },
-  sectionTitle: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#111827",
-  },
-  linkBtn: {
-    border: "none",
-    background: "none",
-    color: "#2563eb",
-    fontSize: "12px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  rowForm: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 180px 36px",
-    gap: "8px",
-    alignItems: "center",
-    marginBottom: "8px",
-  },
-  deleteBtn: {
-    width: "36px",
-    height: "36px",
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    fontSize: "16px",
-  },
-  checkboxRow: {
-    marginTop: "10px",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    fontSize: "14px",
-    color: "#111827",
-  },
-  lazyDropdownWrap: {
-    position: "relative",
-    width: "100%",
-  },
-  lazyDropdownMenu: {
-    position: "absolute",
-    top: "40px",
-    left: 0,
-    right: 0,
-    backgroundColor: "#ffffff",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    zIndex: 80,
-    maxHeight: "240px",
-    overflowY: "auto",
-    boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
-  },
-  lazyDropdownRow: {
-    padding: "8px 10px",
-    cursor: "pointer",
-    borderBottom: "1px solid #f3f4f6",
-  },
-  lazyDropdownItem: {
-    fontSize: "13px",
-    fontWeight: 600,
-    color: "#111827",
-  },
-  lazyDropdownDesc: {
-    fontSize: "12px",
-    color: "#6b7280",
-    marginTop: "2px",
-  },
-  lazyDropdownEmpty: {
-    padding: "10px",
-    fontSize: "13px",
-    color: "#6b7280",
-  },
-  lazyLoadMoreBtn: {
-    width: "100%",
-    border: "none",
-    backgroundColor: "#f3f4f6",
-    color: "#2563eb",
-    padding: "9px 10px",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 600,
-  },
+  page: { minHeight: "100vh", backgroundColor: "#f5f6f8", padding: "24px", boxSizing: "border-box" },
+  inner: { maxWidth: "980px", margin: "0 auto" },
+  back: { color: "#2563eb", cursor: "pointer", marginBottom: "10px", width: "fit-content", fontSize: "14px" },
+  title: { margin: "0 0 6px 0", fontSize: "40px", fontWeight: 600, color: "#111827" },
+  subTitle: { margin: "0 0 20px 0", color: "#4b5563", fontSize: "15px" },
+  infoBox: { marginBottom: "12px", padding: "10px", borderRadius: "6px", background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" },
+  warningBox: { marginBottom: "12px", padding: "10px", borderRadius: "6px", background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" },
+  errorBox: { marginBottom: "12px", padding: "10px", borderRadius: "6px", background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c", whiteSpace: "pre-wrap" },
+  itemCard: { border: "1px solid #d1d5db", borderRadius: "6px", marginBottom: "18px", background: "#ffffff", overflow: "hidden" },
+  itemHeader: { padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" },
+  itemTitle: { fontWeight: 600, fontSize: "14px", color: "#111827" },
+  itemDesc: { color: "#6b7280", fontSize: "13px", marginTop: "2px" },
+  itemBody: { padding: "0 14px 14px" },
+  locationCard: { border: "1px solid #e5e7eb", borderRadius: "6px", marginTop: "10px", overflow: "hidden" },
+  locationHeader: { padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", backgroundColor: "#ffffff" },
+  locationHeaderText: { fontWeight: 600, fontSize: "14px", color: "#111827" },
+  locationBody: { padding: "14px", borderTop: "1px solid #e5e7eb" },
+  topGrid: { display: "grid", gridTemplateColumns: "1fr 380px", gap: "14px", alignItems: "start" },
+  label: { fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "6px" },
+  fieldWithLabel: { display: "flex", flexDirection: "column" },
+  inlineFieldLabel: { fontSize: "12px", fontWeight: 600, color: "#374151", marginBottom: "6px" },
+  removeBtn: { cursor: "pointer", border: "none", background: "transparent", padding: "10px" },
+  iconWrapper: { all: "unset", color: "#dc2626", fontSize: "28px" },
+  deleteBtnContainer: { display: "flex", alignItems: "flex-end", height: "100%" },
+  input: { width: "100%", height: "36px", padding: "0 10px", border: "1px solid #d1d5db", borderRadius: "4px", backgroundColor: "#ffffff", boxSizing: "border-box", fontSize: "14px" },
+  inputDisabled: { width: "100%", height: "36px", padding: "0 10px", border: "1px solid #d1d5db", borderRadius: "4px", backgroundColor: "#f3f4f6", color: "#6b7280", boxSizing: "border-box", fontSize: "14px" },
+  singleFieldWrap: { marginTop: "10px", maxWidth: "380px" },
+  helperText: { marginTop: "4px", fontSize: "11px", color: "#6b7280" },
+  multiSelectWrap: { position: "relative" },
+  multiSelectBox: { minHeight: "36px", border: "1px solid #d1d5db", borderRadius: "4px", backgroundColor: "#ffffff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px", gap: "8px", cursor: "pointer" },
+  chipsWrap: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: 1 },
+  chip: { display: "inline-flex", alignItems: "center", gap: "6px", backgroundColor: "#e5e7eb", color: "#374151", borderRadius: "12px", padding: "2px 8px", fontSize: "12px" },
+  chipX: { cursor: "pointer", fontWeight: 600 },
+  resourceSearchInput: { width: "100%", height: "34px", borderRadius: "3px", border: "1px solid #cfd4dc", padding: "0 10px", fontSize: "13px", outline: "none", boxSizing: "border-box" },
+  dropdownArrow: { color: "#6b7280", fontSize: "12px", cursor: "pointer", userSelect: "none" },
+  dropdownMenu: { position: "absolute", top: "40px", left: 0, right: 0, backgroundColor: "#ffffff", border: "1px solid #d1d5db", borderRadius: "4px", zIndex: 30, maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 20px rgba(0,0,0,0.08)" },
+  dropdownRow: { display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", fontSize: "14px", cursor: "pointer" },
+  dropdownEmpty: { padding: "10px", fontSize: "13px", color: "#6b7280" },
+  generatedBox: { marginTop: "14px" },
+  generatedTitle: { fontSize: "13px", fontWeight: 600, color: "#111827", marginBottom: "8px" },
+  generatedTable: { border: "1px solid #d1d5db", borderRadius: "4px", overflow: "hidden" },
+  generatedHeader: { display: "grid", gridTemplateColumns: "1fr 1fr 2fr", backgroundColor: "#f3f4f6", padding: "8px 10px", fontSize: "12px", fontWeight: 600, color: "#374151", borderBottom: "1px solid #d1d5db" },
+  generatedRow: { display: "grid", gridTemplateColumns: "1fr 1fr 2fr", padding: "8px 10px", fontSize: "12px", color: "#111827", borderBottom: "1px solid #e5e7eb" },
+  sectionGreen: { marginTop: "16px", padding: "12px", borderRadius: "4px", backgroundColor: "#edf7f0", border: "1px solid #d5eadb" },
+  sectionBlue: { marginTop: "14px", padding: "12px", borderRadius: "4px", backgroundColor: "#eef4fb", border: "1px solid #d8e4f2" },
+  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" },
+  sectionTitle: { fontSize: "14px", fontWeight: 600, color: "#111827" },
+  linkBtn: { border: "none", background: "none", color: "#2563eb", fontSize: "12px", fontWeight: 600, cursor: "pointer" },
+  rowForm: { display: "grid", gridTemplateColumns: "1fr 1fr 180px 36px", gap: "8px", alignItems: "center", marginBottom: "8px" },
+  deleteBtn: { width: "36px", height: "36px", border: "none", background: "transparent", cursor: "pointer", fontSize: "16px" },
+  checkboxRow: { marginTop: "10px", display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", color: "#111827" },
+  lazyDropdownWrap: { position: "relative", width: "100%" },
+  lazyDropdownMenu: { position: "absolute", top: "40px", left: 0, right: 0, backgroundColor: "#ffffff", border: "1px solid #d1d5db", borderRadius: "4px", zIndex: 80, maxHeight: "240px", overflowY: "auto", boxShadow: "0 8px 20px rgba(0,0,0,0.12)" },
+  lazyDropdownRow: { padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f3f4f6" },
+  lazyDropdownItem: { fontSize: "13px", fontWeight: 600, color: "#111827" },
+  lazyDropdownDesc: { fontSize: "12px", color: "#6b7280", marginTop: "2px" },
+  lazyDropdownEmpty: { padding: "10px", fontSize: "13px", color: "#6b7280" },
+  lazyLoadMoreBtn: { width: "100%", border: "none", backgroundColor: "#f3f4f6", color: "#2563eb", padding: "9px 10px", cursor: "pointer", fontSize: "13px", fontWeight: 600 },
   multiWrap: { position: "relative", width: "100%" },
   multiControl: { minHeight: "36px", border: "1px solid #d1d5db", borderRadius: "4px", background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 10px", cursor: "pointer", boxSizing: "border-box" },
   chipWrap: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: 1 },
@@ -1846,17 +1223,6 @@ const styles = {
   multiMenuRow: { display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px", fontSize: "14px", color: "#111827", cursor: "pointer", borderTop: "1px solid #f3f4f6" },
   multiMenuEmpty: { padding: "12px", fontSize: "13px", color: "#6b7280" },
   resourceLoadMoreBtn: { width: "100%", border: "none", borderTop: "1px solid #f3f4f6", backgroundColor: "#f3f4f6", color: "#2563eb", padding: "9px 10px", cursor: "pointer", fontSize: "13px", fontWeight: 600 },
-  bottomBar: {
-    marginTop: "20px",
-    display: "flex",
-    justifyContent: "flex-end",
-  },
-  nextBtn: {
-    padding: "10px 18px",
-    borderRadius: "4px",
-    border: "none",
-    fontSize: "13px",
-    fontWeight: 500,
-    letterSpacing: "0.2px",
-  },
+  bottomBar: { marginTop: "20px", display: "flex", justifyContent: "flex-end" },
+  nextBtn: { padding: "10px 18px", borderRadius: "4px", border: "none", fontSize: "13px", fontWeight: 500, letterSpacing: "0.2px" },
 };

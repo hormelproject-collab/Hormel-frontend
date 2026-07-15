@@ -185,7 +185,9 @@ const ProducedItems = () => {
               const normalizedReleaseFlag = getNormalizedReleaseFlag(
                 row.itemReleaseFlag
               );
-              const isRelease3 = normalizedReleaseFlag === "RELEASE3";
+              const isRelease3 =
+  normalizedReleaseFlag === "RELEASE3" ||
+  normalizedReleaseFlag === "OOS";
 
               return (
                 <div

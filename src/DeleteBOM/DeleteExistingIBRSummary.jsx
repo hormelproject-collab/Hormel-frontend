@@ -56,7 +56,7 @@ const normalizeSelectedRow = (row, index) => {
   const item = toText(row?.item);
   const rawRoutingId = toText(row?.routingId ?? row?.routing_id);
   const resource = toText(row?.resource) || deriveResourceFromRoutingId(rawRoutingId);
-  const routingId = buildRoutingId(item, resource, rawRoutingId);
+  const routingId = rawRoutingId;
   const coProductAssociation = Number(
     toText(
       row?.coProductAssociation ??

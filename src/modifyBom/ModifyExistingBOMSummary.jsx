@@ -197,6 +197,7 @@ const ModifyExistingBOMSummary = () => {
   const [notes, setNotes] = useState("");
   const [validationResult, setValidationResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
 
   const record = routerLocation?.state?.record ?? {};
   const componentItems = routerLocation?.state?.componentItems ?? [];
@@ -747,10 +748,10 @@ const ModifyExistingBOMSummary = () => {
             type="button"
             style={{
               ...styles.confirmBtn,
-              ...(isSubmitting ? styles.disabledBtn : {}),
+              ...(isSubmitting || isSuccess ? styles.disabledBtn : {}),
             }}
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isSuccess}
           >
             {isSubmitting ? "SUBMITTING..." : "✓ CONFIRM AND SUBMIT BOM CHANGES"}
           </button>

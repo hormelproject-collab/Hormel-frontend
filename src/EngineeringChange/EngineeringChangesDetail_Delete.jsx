@@ -5,49 +5,45 @@ const API_BASE_URL = "";
 
 const toText = (value) => {
   if (value == null) return "";
-  return String(value);
+  return String(value).trim();
 };
+
+const safeArray = (value) => (Array.isArray(value) ? value : []);
 
 const formatDisplayDate = (value) => {
   if (!value) return "-";
 
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return toText(value) || "-";
-  }
+  if (Number.isNaN(parsed.getTime())) return toText(value) || "-";
 
   const yyyy = parsed.getFullYear();
-  const dd = String(parsed.getDate()).padStart(2, "0");
   const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
 
   let hours = parsed.getHours();
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
-  const CST = "CST";
 
-  hours = hours % 12;
+  hours %= 12;
   if (hours === 0) hours = 12;
 
-  const hh = String(hours).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd} ${hh}:${minutes}:${seconds} ${ampm} ${CST}`;
+  return `${yyyy}-${mm}-${dd} ${String(hours).padStart(
+    2,
+    "0"
+  )}:${minutes}:${seconds} ${ampm} CST`;
 };
 
-const safeArray = (value) => (Array.isArray(value) ? value : []);
+const uniqueBy = (rows, keyFn) => {
+  const map = new Map();
 
-const isCoProductRow = (row) => {
-  if (row?.isCoProduct === true) return true;
+  for (const row of rows || []) {
+    const key = keyFn(row);
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, row);
+  }
 
-  const value = String(
-    row?.coProductAssociation ??
-    row?.co_product_association ??
-    row?.co_prod_association ??
-    row?.erp_co_product_association ??
-    ""
-  ).trim();
-
-  return value === "1";
+  return Array.from(map.values());
 };
 
 export default function EngineeringChangeDetailDeleteBOM() {
@@ -60,37 +56,13 @@ export default function EngineeringChangeDetailDeleteBOM() {
     passedState.engineeringChangeNumber ||
     passedState.engineering_change_id ||
     passedState.engineeringChangeId ||
-    "";
-
-  const item =
-    passedState.producedItem ||
-    passedState.produced_item ||
-    passedState.item ||
-    "";
-
-  const resource =
-    passedState.resource ||
-    (Array.isArray(passedState.resources) ? passedState.resources[0] : "") ||
-    "";
-
-  const bomId =
-    passedState.bomId ||
-    (Array.isArray(passedState.bomIds) ? passedState.bomIds[0] : "") ||
-    "";
-
-  const locationName =
-    passedState.location ||
-    (Array.isArray(passedState.locations) ? passedState.locations[0] : "") ||
+    passedState.raw?.engineering_change_id ||
     "";
 
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
   const [detail, setDetail] = useState(null);
-  const isConsolidatedDeleteFlow = String(
-    passedState.changeSummary || passedState.change_summary || ""
-  )
-    .toLowerCase()
-    .includes("all 4 consolidated tables");
+
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
 
@@ -98,25 +70,8 @@ export default function EngineeringChangeDetailDeleteBOM() {
       params.append("engineeringChangeId", engineeringChangeId);
     }
 
-    // IMPORTANT:
-    // For consolidated delete flow, fetch all records for the engineering change ID.
-    // Do not narrow using clicked row filters.
-    if (!isConsolidatedDeleteFlow) {
-      if (item) params.append("item", item);
-      if (resource) params.append("resource", resource);
-      if (bomId) params.append("bomId", bomId);
-      if (locationName) params.append("location", locationName);
-    }
-
     return params.toString();
-  }, [
-    engineeringChangeId,
-    item,
-    resource,
-    bomId,
-    locationName,
-    isConsolidatedDeleteFlow,
-  ]);
+  }, [engineeringChangeId]);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -128,22 +83,27 @@ export default function EngineeringChangeDetailDeleteBOM() {
           `${API_BASE_URL}/api/tables/engineering-changes-detail-delete-bom?${queryString}`,
           {
             method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
           }
         );
 
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || `Failed to fetch delete BOM detail (${response.status})`);
+        const payload = await response.json();
+
+        if (!response.ok || payload?.success === false) {
+          throw new Error(
+            payload?.error ||
+              payload?.message ||
+              payload?.details ||
+              `Failed to fetch delete BOM detail (${response.status})`
+          );
         }
 
-        const payload = await response.json();
         setDetail(payload?.data || null);
       } catch (error) {
         console.error("Engineering delete BOM detail fetch error:", error);
-        setApiError(error.message || "Failed to fetch engineering delete BOM detail");
+        setApiError(
+          error.message || "Failed to fetch engineering delete BOM detail"
+        );
       } finally {
         setLoading(false);
       }
@@ -152,15 +112,93 @@ export default function EngineeringChangeDetailDeleteBOM() {
     if (queryString) {
       fetchDetail();
     } else {
-      setApiError("Missing detail identifiers for Deleted BOM change type.");
+      setApiError("Missing Engineering Change ID for Deleted BOM change type.");
     }
   }, [queryString]);
 
-  const rows = safeArray(detail?.deletedBomRecords);
-  const connectedRoutingRows = safeArray(detail?.connectedRoutingRecords);
+  const deletedBomRecords = safeArray(detail?.deletedBomRecords);
 
-  const showRoutingInDeletedTable = Boolean(detail?.showRoutingInDeletedTable);
-  const showConnectedRoutingTable = Boolean(detail?.showConnectedRoutingTable);
+  const isBomRoutingDelete = Boolean(
+    detail?.isBomRoutingDelete ||
+      String(detail?.summaryDisplayType || "").toUpperCase() ===
+        "DELETED_ITEM_BOM_ROUTING_RECORD_SUMMARY" ||
+      (String(detail?.changeSummary || "")
+        .toLowerCase()
+        .includes("bom_produced") &&
+        String(detail?.changeSummary || "")
+          .toLowerCase()
+          .includes("item_bom_routing"))
+  );
+
+  const summaryBomRows = useMemo(() => {
+    return uniqueBy(
+      deletedBomRecords.map((row) => ({
+        producedItem: toText(row.producedItem || row.item),
+        itemDescription: toText(row.itemDescription || row.description),
+        location: toText(row.location),
+        bomId: toText(row.bomId || row.bom_id),
+      })),
+      (row) =>
+        [
+          row.bomId.toUpperCase(),
+          row.location.toUpperCase(),
+          row.producedItem.toUpperCase(),
+        ].join("__")
+    );
+  }, [deletedBomRecords]);
+
+  const deletedRoutingRows = useMemo(() => {
+    return uniqueBy(
+      deletedBomRecords
+        .map((row) => ({
+          location: toText(row.location),
+          item: toText(row.producedItem || row.item),
+          bomId: toText(row.bomId || row.bom_id),
+          resource: toText(row.resource),
+          priority: toText(row.itemBomRoutingPriority || row.priority),
+          routingId: toText(row.routingId || row.routing_id),
+        }))
+        .filter(
+          (row) =>
+            row.location ||
+            row.item ||
+            row.bomId ||
+            row.resource ||
+            row.priority ||
+            row.routingId
+        ),
+      (row) =>
+        [
+          row.location.toUpperCase(),
+          row.item.toUpperCase(),
+          row.bomId.toUpperCase(),
+          row.resource.toUpperCase(),
+          row.priority.toUpperCase(),
+          row.routingId.toUpperCase(),
+        ].join("__")
+    );
+  }, [deletedBomRecords]);
+
+  const connectedRoutingRows = useMemo(() => {
+    const apiRows = safeArray(detail?.connectedRoutingRecords);
+    const sourceRows = apiRows.length ? apiRows : deletedBomRecords;
+
+    return uniqueBy(
+      sourceRows
+        .map((row) => ({
+          bomId: toText(row.bomId || row.bom_id),
+          resource: toText(row.resource),
+          routingId: toText(row.routingId || row.routing_id),
+        }))
+        .filter((row) => row.bomId || row.resource || row.routingId),
+      (row) =>
+        [
+          row.bomId.toUpperCase(),
+          row.resource.toUpperCase(),
+          row.routingId.toUpperCase(),
+        ].join("__")
+    );
+  }, [detail, deletedBomRecords]);
 
   const styles = {
     page: {
@@ -170,11 +208,6 @@ export default function EngineeringChangeDetailDeleteBOM() {
       fontFamily: "Segoe UI, Arial, sans-serif",
       color: "#111827",
     },
-
-    coProductRow: {
-      background: "#fef9c3",
-    },
-
     backButton: {
       display: "inline-flex",
       alignItems: "center",
@@ -188,101 +221,84 @@ export default function EngineeringChangeDetailDeleteBOM() {
       marginBottom: "8px",
     },
     title: {
-      fontSize: "22px",
+      fontSize: "28px",
       fontWeight: 700,
-      color: "#111827",
-      marginBottom: "18px",
-    },
-    subtitle: {
-      fontSize: "14px",
-      color: "#4b5563",
-      marginBottom: "18px",
+      color: "#081a33",
+      marginBottom: "26px",
     },
     warningCard: {
-      background: "#efe4cf",
-      border: "1px solid #e0cfaa",
+      background: "#fff7ed",
+      border: "1px solid #fdba74",
       borderRadius: "4px",
-      padding: "14px 18px",
-      marginBottom: "16px",
-      maxWidth: "960px",
-      color: "#8a5a00",
-      fontSize: "14px",
-      fontWeight: 600,
+      padding: "16px 18px",
+      marginBottom: "20px",
+      maxWidth: "100%",
+      color: "#b93800",
+      fontSize: "16px",
+      fontWeight: 500,
       display: "flex",
       alignItems: "center",
       gap: "10px",
-    },
-    blueCard: {
-      background: "#dff0fb",
-      borderRadius: "4px",
-      padding: "16px 18px",
-      marginBottom: "14px",
-      border: "1px solid #d2e9f8",
-      display: "flex",
-      alignItems: "flex-start",
-      gap: "12px",
-      maxWidth: "960px",
-    },
-    infoIcon: {
-      color: "#0b79d0",
-      fontSize: "18px",
-      lineHeight: 1,
-      marginTop: "1px",
-    },
-    blueCardContent: {
-      display: "flex",
-      flexDirection: "column",
-      gap: "8px",
-      fontSize: "14px",
-      color: "#0f172a",
-    },
-    label: {
-      fontWeight: 700,
-      color: "#111827",
-    },
-    value: {
-      fontWeight: 400,
-      color: "#111827",
     },
     tableCard: {
       background: "#ffffff",
       border: "1px solid #d5d7db",
       borderRadius: "4px",
       overflow: "hidden",
-      maxWidth: "960px",
+      maxWidth: "100%",
       boxShadow: "0 2px 3px rgba(0,0,0,0.08)",
-      marginBottom: "24px",
+      marginBottom: "26px",
     },
     table: {
       width: "100%",
       borderCollapse: "collapse",
       tableLayout: "fixed",
     },
-    th: {
+    thDeleted: {
       textAlign: "left",
-      fontSize: "13px",
-      fontWeight: 500,
-      padding: "14px 12px",
+      fontSize: "16px",
+      fontWeight: 700,
+      padding: "22px 18px",
       borderBottom: "1px solid #d5d7db",
-      color: "#111827",
-      background: "#f3dede",
+      color: "#000000",
+      background: "#efd4d4",
     },
-    td: {
-      fontSize: "13px",
-      padding: "12px",
-      borderBottom: "1px solid #d5d7db",
-      color: "#111827",
-      verticalAlign: "middle",
-      wordBreak: "break-word",
-    },
-    neutralTh: {
+    thNeutral: {
       textAlign: "left",
-      fontSize: "13px",
-      fontWeight: 500,
-      padding: "14px 12px",
+      fontSize: "14px",
+      fontWeight: 700,
+      padding: "16px 18px",
       borderBottom: "1px solid #d5d7db",
       color: "#111827",
       background: "#f7f7f7",
+    },
+    td: {
+      fontSize: "16px",
+      padding: "18px 22px",
+      borderBottom: "1px solid #d5d7db",
+      color: "#02142c",
+      verticalAlign: "middle",
+      wordBreak: "break-word",
+      background: "#ffffff",
+    },
+    sectionTitle: {
+      fontSize: "16px",
+      fontWeight: 700,
+      color: "#111827",
+      marginBottom: "8px",
+      maxWidth: "1270px",
+    },
+    sectionSubText: {
+      fontSize: "14px",
+      color: "#1f5597",
+      marginBottom: "12px",
+      maxWidth: "1270px",
+    },
+    emptyRow: {
+      textAlign: "center",
+      color: "#6b7280",
+      padding: "18px 12px",
+      fontSize: "14px",
     },
     error: {
       color: "#d93025",
@@ -293,41 +309,61 @@ export default function EngineeringChangeDetailDeleteBOM() {
       fontSize: "14px",
       color: "#374151",
     },
-    emptyRow: {
-      textAlign: "center",
-      color: "#6b7280",
-      padding: "18px 12px",
-      fontSize: "13px",
+    infoCard: {
+      background: "#dbeaf4",
+      border: "1px solid #bfd3df",
+      borderRadius: "4px",
+      padding: "18px 22px",
+      marginBottom: "24px",
+      maxWidth: "1270px",
     },
-    sectionTitle: {
-      fontSize: "28px",
-      fontWeight: 600,
-      color: "#111827",
-      marginBottom: "6px",
-    },
-    sectionSubText: {
+    infoRow: {
       fontSize: "14px",
-      color: "#2563eb",
-      marginBottom: "12px",
-      maxWidth: "960px",
+      color: "#0f3f66",
+      marginBottom: "10px",
     },
-          legendRow: {
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        marginTop: "12px",
-        marginBottom: "12px",
-        fontSize: "12px",
-        color: "#374151",
-        maxWidth: "1150px",
+    notesBox: {
+      background: "#ffffff",
+      border: "1px solid #cbd5e1",
+      borderRadius: "4px",
+      minHeight: "92px",
+      maxWidth: "100%",
+      marginTop: "0px",
+      marginBottom: "24px",
+      padding: "20px 16px",
+      color: "#6b7280",
+      fontSize: "20px",
+      boxSizing: "border-box",
     },
-        legendColor: {
-        width: "18px",
-        height: "14px",
-        background: "#fef08a",
-        border: "1px solid #d1d5db",
-        borderRadius: "2px",
-        flexShrink: 0,
+    actionBar: {
+      display: "flex",
+      alignItems: "center",
+      gap: "18px",
+      marginTop: "6px",
+    },
+    deleteButton: {
+      background: "#dc2b24",
+      color: "#ffffff",
+      border: "none",
+      borderRadius: "4px",
+      padding: "20px 46px",
+      fontSize: "16px",
+      fontWeight: 700,
+      cursor: "pointer",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.18)",
+    },
+    mainMenuButton: {
+      background: "#ffffff",
+      color: "#1f5fbf",
+      border: "1px solid #60a5fa",
+      borderRadius: "4px",
+      padding: "19px 28px",
+      fontSize: "18px",
+      fontWeight: 700,
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "10px",
     },
   };
 
@@ -339,11 +375,14 @@ export default function EngineeringChangeDetailDeleteBOM() {
         onClick={() => navigate("/change-log")}
       >
         <span style={{ fontSize: "16px" }}>←</span>
-        <span>BACK TO ENGINEERING CHANGE SUMMARY</span>
+        <span>BACK</span>
       </button>
 
-      <div style={styles.title}>Engineering Change Detail: Deleted BOM Records</div>
-      <div style={styles.subtitle}>Read-only view of deleted records</div>
+      <div style={styles.title}>
+        {isBomRoutingDelete
+          ? "Step 2: Deleted Item BOM Routing Record Summary"
+          : "Step 2: Deleted BOM Summary"}
+      </div>
 
       {loading ? (
         <div style={styles.loading}>Loading engineering delete BOM detail...</div>
@@ -351,153 +390,182 @@ export default function EngineeringChangeDetailDeleteBOM() {
         <div style={styles.error}>{apiError}</div>
       ) : (
         <>
-          <div style={styles.warningCard}>
-            <span style={{ fontSize: "18px" }}>⚠</span>
-            <span>Warning: The following records were permanently deleted</span>
-          </div>
-
-          <div style={styles.blueCard}>
-            <div style={styles.infoIcon}>ⓘ</div>
-
-            <div style={styles.blueCardContent}>
-              <div>
-                <span style={styles.label}>Engineering Change #: </span>
-                <span style={styles.value}>
-                  {toText(detail?.engineeringChangeId || engineeringChangeId) || "-"}
-                </span>
+          {!isBomRoutingDelete && (
+            <div style={styles.infoCard}>
+              <div style={styles.infoRow}>
+                <strong>Engineering Change #:</strong>{" "}
+                {toText(detail?.engineeringChangeId || engineeringChangeId) ||
+                  "-"}
               </div>
 
-              <div>
-                <span style={styles.label}>Change Date: </span>
-                <span style={styles.value}>
-                  {formatDisplayDate(detail?.changeDate)}
-                </span>
+              <div style={styles.infoRow}>
+                <strong>Change Date:</strong>{" "}
+                {formatDisplayDate(detail?.changeDate)}
               </div>
 
-              <div>
-                <span style={styles.label}>User: </span>
-                <span style={styles.value}>{toText(detail?.user) || "-"}</span>
+              <div style={styles.infoRow}>
+                <strong>User:</strong> {toText(detail?.user) || "-"}
               </div>
 
-              <div>
-                <span style={styles.label}>Change Type: </span>
-                <span style={styles.value}>
-                  {toText(detail?.changeType || "Deleted")}
-                </span>
+              <div style={styles.infoRow}>
+                <strong>Change Type:</strong>{" "}
+                {toText(detail?.changeType) || "Deleted"}
               </div>
 
-              <div>
-                <span style={styles.label}>Notes: </span>
-                <span style={styles.value}>
-                  {toText(detail?.summaryNotes || detail?.notes) || "-"}
-                </span>
+              <div style={styles.infoRow}>
+                <strong>Change Summary:</strong>{" "}
+                {toText(detail?.changeSummary) || "-"}
               </div>
 
-              <div>
-                <span style={styles.label}>Change Summary: </span>
-                <span style={styles.value}>
-                  {toText(detail?.changeSummary) || "-"}
-                </span>
+              <div style={styles.infoRow}>
+                <strong>Notes:</strong> {toText(detail?.notes) || "-"}
               </div>
             </div>
+          )}
+
+          <div style={styles.warningCard}>
+            <span>
+              {isBomRoutingDelete
+                ? "Warning: When a parent item is selected, the associated co-products are also deleted."
+                : "Warning: The following records will be permanently deleted"}
+            </span>
           </div>
 
-          <div style={styles.tableCard}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Item</th>
-                  <th style={styles.th}>Item Description</th>
-                  <th style={styles.th}>Location</th>
-                  <th style={styles.th}>BOM ID</th>
-                  <th style={styles.th}>Resource</th>
-                  {showRoutingInDeletedTable && (
-                    <th style={styles.th}>Routing ID</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={showRoutingInDeletedTable ? 6 : 5}
-                      style={styles.emptyRow}
-                    >
-                      No deleted BOM records found.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((row, index) => {
-                    const highlighted = isCoProductRow(row);
-
-                    return (
-                      <tr
-                        key={`${toText(row.recId || row.postgresqlRecId || row.bomId)}__${index}`}
-                        style={highlighted ? styles.coProductRow : undefined}
-                      >
-                        <td style={styles.td}>{toText(row.item || row.producedItem) || "-"}</td>
-                        <td style={styles.td}>{toText(row.itemDescription) || "-"}</td>
-                        <td style={styles.td}>{toText(row.location) || "-"}</td>
-                        <td style={styles.td}>{toText(row.bomId) || "-"}</td>
-                        <td style={styles.td}>{toText(row.resource) || "-"}</td>
-                        {showRoutingInDeletedTable && (
-                          <td style={styles.td}>{toText(row.routingId) || "-"}</td>
-                        )}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-                <div style={styles.legendRow}>
-                    <span style={styles.legendColor} />
-                    <span>Yellow color code represents co-products.</span>
-                </div>  
-
-          {showConnectedRoutingTable && (
+          {isBomRoutingDelete ? (
             <>
+              <div style={styles.tableCard}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.thDeleted}>Location</th>
+                      <th style={styles.thDeleted}>Item</th>
+                      <th style={styles.thDeleted}>BOM ID</th>
+                      <th style={styles.thDeleted}>Resource</th>
+                      <th style={styles.thDeleted}>Priority</th>
+                      <th style={styles.thDeleted}>Routing ID</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {deletedRoutingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={styles.emptyRow}>
+                          No deleted routing records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      deletedRoutingRows.map((row, index) => (
+                        <tr
+                          key={`${row.location}_${row.item}_${row.bomId}_${row.resource}_${row.routingId}_${index}`}
+                        >
+                          <td style={styles.td}>{row.location || "-"}</td>
+                          <td style={styles.td}>{row.item || "-"}</td>
+                          <td style={styles.td}>{row.bomId || "-"}</td>
+                          <td style={styles.td}>{row.resource || "-"}</td>
+                          <td style={styles.td}>{row.priority || "-"}</td>
+                          <td style={styles.td}>{row.routingId || "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={styles.notesBox}>
+                {toText(detail?.notes || detail?.summaryNotes) ||
+                  "Notes (Optional)"}
+              </div>
+
+              <div style={styles.actionBar}>
+                <button type="button" style={styles.deleteButton}>
+                  CONFIRM DELETION
+                </button>
+
+                <button
+                  type="button"
+                  style={styles.mainMenuButton}
+                  onClick={() => navigate("/change-log")}
+                >
+                  <span style={{ fontSize: "14px" }}>⌂</span>
+                  <span>RETURN TO MAIN MENU</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={styles.tableCard}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.thDeleted}>Produced Item</th>
+                      <th style={styles.thDeleted}>Item Description</th>
+                      <th style={styles.thDeleted}>Location</th>
+                      <th style={styles.thDeleted}>BOM ID</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {summaryBomRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} style={styles.emptyRow}>
+                          No deleted BOM records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      summaryBomRows.map((row, index) => (
+                        <tr
+                          key={`${row.bomId}_${row.location}_${row.producedItem}_${index}`}
+                        >
+                          <td style={styles.td}>{row.producedItem || "-"}</td>
+                          <td style={styles.td}>
+                            {row.itemDescription || "-"}
+                          </td>
+                          <td style={styles.td}>{row.location || "-"}</td>
+                          <td style={styles.td}>{row.bomId || "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
               <div style={styles.sectionTitle}>Connected Routing IDs</div>
+
               <div style={styles.sectionSubText}>
-                The following Routing IDs are connected to the BOM records and were also deleted
+                The following Routing IDs are connected to the BOM records and
+                will also be deleted
               </div>
 
               <div style={styles.tableCard}>
                 <table style={styles.table}>
                   <thead>
                     <tr>
-                      <th style={styles.neutralTh}>Item</th>
-                      <th style={styles.neutralTh}>BOM ID</th>
-                      <th style={styles.neutralTh}>Resource</th>
-                      <th style={styles.neutralTh}>Routing ID</th>
+                      <th style={styles.thNeutral}>BOM ID</th>
+                      <th style={styles.thNeutral}>Resource</th>
+                      <th style={styles.thNeutral}>Routing ID</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {connectedRoutingRows.length === 0 ? (
                       <tr>
-                        <td colSpan={4} style={styles.emptyRow}>
+                        <td colSpan={3} style={styles.emptyRow}>
                           No connected routing records found.
                         </td>
                       </tr>
                     ) : (
-                      connectedRoutingRows.map((row, index) => {
-                        const highlighted = isCoProductRow(row);
-                        return (
-                          <tr
-                            key={`${toText(row.item || row.bomId)}__${toText(row.routingId)}__${index}`}
-                            style={highlighted ? styles.coProductRow : undefined}
-                          >
-                            <td style={styles.td}>{toText(row.item || row.producedItem) || "-"}</td>
-                            <td style={styles.td}>{toText(row.bomId) || "-"}</td>
-                            <td style={styles.td}>{toText(row.resource) || "-"}</td>
-                            <td style={styles.td}>{toText(row.routingId) || "-"}</td>
-                          </tr>
-                        );
-                      })
+                      connectedRoutingRows.map((row, index) => (
+                        <tr
+                          key={`${row.bomId}_${row.resource}_${row.routingId}_${index}`}
+                        >
+                          <td style={styles.td}>{row.bomId || "-"}</td>
+                          <td style={styles.td}>{row.resource || "-"}</td>
+                          <td style={styles.td}>{row.routingId || "-"}</td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
-                
               </div>
             </>
           )}

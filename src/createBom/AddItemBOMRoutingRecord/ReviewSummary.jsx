@@ -533,7 +533,7 @@ const ReviewSummary = () => {
               opacity: canSubmit ? 1 : 0.6,
               cursor: canSubmit ? "pointer" : "not-allowed",
             }}
-            disabled={!canSubmit}
+            disabled={!canSubmit || isSuccess}
             onClick={handleSubmit}
           >
             <MdCheck size={18} />

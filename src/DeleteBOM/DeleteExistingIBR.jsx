@@ -42,11 +42,11 @@ const getRecId = (row) => toText(row?.rec_id ?? row?.recId);
 const getItemBomRoutingPriority = (row) =>
   toText(
     row?.erp_item_bom_routing_priority ??
-      row?.erpItemBomRoutingPriority ??
-      row?.itemBomRoutingPriority ??
-      row?.item_bom_routing_priority ??
-      row?.itemBomPriority ??
-      row?.item_bom_priority
+    row?.erpItemBomRoutingPriority ??
+    row?.itemBomRoutingPriority ??
+    row?.item_bom_routing_priority ??
+    row?.itemBomPriority ??
+    row?.item_bom_priority
   );
 const getCoProductAssociation = (row) =>
   Number(
@@ -60,12 +60,6 @@ const getCoProductAssociation = (row) =>
     : 0;
 const isCoProductRow = (row) => getCoProductAssociation(row) === 1;
 
-const buildRoutingId = (item, resource, fallback = "") => {
-  const cleanItem = toText(item);
-  const cleanResource = toText(resource);
-  if (cleanItem && cleanResource) return `ROUTING_${cleanItem}_${cleanResource}`;
-  return toText(fallback);
-};
 
 const deriveResourceFromRoutingId = (routingId) => {
   const value = toText(routingId);
@@ -83,7 +77,9 @@ const normalizeDisplayRow = (row, index = 0) => {
   const item = getItem(row);
   const rawRoutingId = getRoutingId(row);
   const resource = getResource(row) || deriveResourceFromRoutingId(rawRoutingId);
-  const routingId = rawRoutingId || buildRoutingId(item, resource, rawRoutingId);
+  // Do not generate routing ID in frontend.
+  // Backend must fetch routing_id from item_bom_routing and send it as-is.
+  const routingId = rawRoutingId;
   const coProductAssociation = getCoProductAssociation(row);
   const recId = getRecId(row);
   const itemBomRoutingPriority = getItemBomRoutingPriority(row);
@@ -355,6 +351,9 @@ export default function DeleteExistingItemBomRoutingStep1() {
         <td style={{ ...styles.td, ...(highlighted || {}) }}>{row.bomId || "-"}</td>
         <td style={{ ...styles.td, ...(highlighted || {}) }}>{row.resource || "-"}</td>
         <td style={{ ...styles.td, ...(highlighted || {}) }}>{row.routingId || "-"}</td>
+        <td style={{ ...styles.td, ...(highlighted || {}) }}>
+          {row.itemBomRoutingPriority || "-"}
+        </td>
         {selectedTable ? (
           <td style={{ ...styles.td, ...(highlighted || {}) }}>
             <button type="button" onClick={() => handleToggleRow(row)} style={styles.removeSelectedBtn}>
@@ -463,24 +462,25 @@ export default function DeleteExistingItemBomRoutingStep1() {
                       aria-label="Select all rows on current page"
                     />
                   </th>
-                  <th style={{ ...styles.th, width: "120px" }}>Location</th>
-                  <th style={{ ...styles.th, width: "105px" }}>Item</th>
-                  <th style={{ ...styles.th, width: "220px" }}>BOM ID</th>
-                  <th style={{ ...styles.th, width: "120px" }}>Resource</th>
-                  <th style={{ ...styles.th, width: "360px" }}>Routing ID</th>
+                  <th style={{ ...styles.th, width: "8%" }}>Location</th>
+                  <th style={{ ...styles.th, width: "10%" }}>Item</th>
+                  <th style={{ ...styles.th, width: "18%" }}>BOM ID</th>
+                  <th style={{ ...styles.th, width: "16%" }}>Resource</th>
+                  <th style={{ ...styles.th, width: "31%" }}>Routing ID</th>
+                  <th style={{ ...styles.th, width: "10%" }}>Priority</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} style={styles.loadingBodyCell}>
+                    <td colSpan={7} style={styles.loadingBodyCell}>
                       <ProgressIndicator label="Loading item BOM routing records..." />
                     </td>
                   </tr>
                 ) : null}
                 {!loading && pageRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={styles.emptyRow}>
+                    <td colSpan={7} style={styles.emptyRow}>
                       No existing item BOM routing records found.
                     </td>
                   </tr>
@@ -539,6 +539,11 @@ export default function DeleteExistingItemBomRoutingStep1() {
                       <th style={{ ...styles.th, width: "220px" }}>BOM ID</th>
                       <th style={{ ...styles.th, width: "120px" }}>Resource</th>
                       <th style={{ ...styles.th, width: "360px" }}>Routing ID</th>
+
+                      <th style={{ ...styles.th, width: "140px" }}>
+                        Item BOM Routing Priority
+                      </th>
+
                       <th style={{ ...styles.th, width: "90px" }}>Action</th>
                     </tr>
                   </thead>
@@ -568,10 +573,10 @@ export default function DeleteExistingItemBomRoutingStep1() {
 
 const styles = {
   page: { minHeight: "100vh", background: "#ececec", fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', color: "#111827" },
-  shell: { maxWidth: "1220px", margin: "0 auto", padding: "18px 24px 40px" },
+  shell: { maxWidth: "1400px", margin: "0 auto", padding: "18px 24px 40px" },
   backBtn: { display: "inline-flex", alignItems: "center", gap: "8px", border: "none", background: "transparent", color: "#2563eb", fontSize: "13px", fontWeight: 500, padding: 0, cursor: "pointer", marginBottom: "10px" },
   title: { margin: "0 0 22px", fontSize: "24px", lineHeight: 1.2, fontWeight: 700, color: "#111827" },
-  filterStack: { display: "flex", flexDirection: "column", gap: "14px", marginBottom: "20px", maxWidth: "1150px" },
+  filterStack: { display: "flex", flexDirection: "column", gap: "14px", marginBottom: "20px", maxWidth: "100%" },
   criteriaRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", alignItems: "center" },
   fieldGroup: { position: "relative" },
   fieldLabel: { position: "absolute", top: "-7px", left: "14px", fontSize: "11px", color: "#2563eb", background: "#ececec", padding: "0 4px", zIndex: 2, lineHeight: 1 },
@@ -581,31 +586,31 @@ const styles = {
   selectArrow: { position: "absolute", top: "50%", right: "14px", transform: "translateY(-50%)", pointerEvents: "none", color: "#6b7280", fontSize: "12px" },
   stateBox: { marginBottom: "14px", padding: "10px 12px", borderRadius: "3px", fontSize: "12px" },
   error: { background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" },
-  warningBox: { marginBottom: "14px", padding: "10px 12px", borderRadius: "3px", fontSize: "12px", background: "#fff7ed", color: "#9a3412", border: "1px solid #fdba74", maxWidth: "1150px" },
-  tableMetaRow: { display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: "1150px", marginBottom: "8px", gap: "12px" },
+  warningBox: { marginBottom: "14px", padding: "10px 12px", borderRadius: "3px", fontSize: "12px", background: "#fff7ed", color: "#9a3412", border: "1px solid #fdba74", maxWidth: "100%" },
+  tableMetaRow: { display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: "100%", marginBottom: "8px", gap: "12px" },
   showingText: { fontSize: "12px", color: "#374151" },
-  tableCard: { background: "#ffffff", border: "1px solid #d1d5db", borderRadius: "3px", boxShadow: "0 2px 3px rgba(0,0,0,0.08)", overflow: "hidden", maxWidth: "1150px" },
-  selectedTableCard: { background: "#ffffff", border: "1px solid #d1d5db", borderRadius: "3px", boxShadow: "0 2px 3px rgba(0,0,0,0.08)", overflow: "hidden", maxWidth: "1150px", marginTop: "8px" },
-  tableScroller: { overflowX: "auto" },
+  tableCard: { background: "#ffffff", border: "1px solid #d1d5db", borderRadius: "3px", boxShadow: "0 2px 3px rgba(0,0,0,0.08)", overflow: "hidden", maxWidth: "100%" },
+  selectedTableCard: { background: "#ffffff", border: "1px solid #d1d5db", borderRadius: "3px", boxShadow: "0 2px 3px rgba(0,0,0,0.08)", overflow: "hidden", maxWidth: "100%", marginTop: "8px" },
+  tableScroller: { overflowX: "hidden" },
   table: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" },
   tableHeadRow: { background: "#f3f4f6" },
   selectedTableHeadRow: { background: "#e8f0fe" },
-  th: { textAlign: "left", fontSize: "12px", fontWeight: 600, color: "#111827", padding: "13px 12px", borderBottom: "1px solid #d1d5db", whiteSpace: "nowrap" },
-  td: { fontSize: "12px", color: "#111827", padding: "12px 12px", borderBottom: "1px solid #d1d5db", verticalAlign: "middle", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "#ffffff" },
+  th: { textAlign: "left", fontSize: "12px", fontWeight: 600, color: "#111827", padding: "13px 10px", borderBottom: "1px solid #d1d5db", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  td: { fontSize: "12px", color: "#111827", padding: "12px 10px", borderBottom: "1px solid #d1d5db", verticalAlign: "middle", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "#ffffff" },
   checkboxCell: { width: "34px", textAlign: "center", padding: "0 0 0 12px" },
   checkbox: { width: "15px", height: "15px", cursor: "pointer" },
   emptyRow: { textAlign: "center", color: "#6b7280", padding: "22px 12px", fontSize: "12px" },
   loadingBodyCell: { textAlign: "center", padding: "28px 12px", borderBottom: "1px solid #d1d5db", background: "#ffffff" },
   highlightedCoProductRow: { background: CO_PRODUCT_YELLOW },
-  legendRow: { display: "flex", alignItems: "center", gap: "8px", marginTop: "12px", fontSize: "12px", color: "#374151", maxWidth: "1150px" },
+  legendRow: { display: "flex", alignItems: "center", gap: "8px", marginTop: "12px", fontSize: "12px", color: "#374151", maxWidth: "100%" },
   legendColor: { width: "18px", height: "14px", background: CO_PRODUCT_YELLOW, border: "1px solid #d1d5db", borderRadius: "2px", flexShrink: 0 },
-  paginationRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", maxWidth: "1150px", marginTop: "14px" },
+  paginationRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", maxWidth: "100%", marginTop: "14px" },
   pageButton: { minWidth: "74px", height: "30px", border: "1px solid #c7cbd1", borderRadius: "3px", background: "#ffffff", color: "#2563eb", fontSize: "12px", fontWeight: 600, cursor: "pointer" },
   pageButtonDisabled: { color: "#9ca3af", background: "#f3f4f6", cursor: "not-allowed" },
   pageNoText: { minWidth: "72px", textAlign: "center", fontSize: "12px", color: "#111827", fontWeight: 600 },
-  footerRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "18px", gap: "16px", maxWidth: "1150px" },
+  footerRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "18px", gap: "16px", maxWidth: "100%" },
   selectionText: { fontSize: "12px", color: "#374151" },
-  selectedSectionHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: "1150px", marginTop: "18px", gap: "12px" },
+  selectedSectionHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: "100%", marginTop: "18px", gap: "12px" },
   selectedTitle: { fontSize: "14px", fontWeight: 700, color: "#111827" },
   selectedSubText: { fontSize: "12px", color: "#6b7280", marginTop: "2px" },
   deselectAllBtn: { height: "28px", padding: "0 12px", border: "1px solid #dc2626", borderRadius: "3px", background: "#ffffff", color: "#dc2626", fontSize: "12px", fontWeight: 700, cursor: "pointer" },

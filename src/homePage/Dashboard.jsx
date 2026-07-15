@@ -49,12 +49,12 @@ const Dashboard = () => {
 
             <p style={styles.subText}>Select an option to continue</p>
 
-            <div style={styles.fetchTime}>
+           {/*<div style={styles.fetchTime}>
                 Last Data Refresh:{" "}
                 {lastFetchTime
                     ? new Date(lastFetchTime).toLocaleString()
                     : "Not Available"}
-            </div>
+            </div>*/}
 
             <div style={styles.grid}>
                 <Card

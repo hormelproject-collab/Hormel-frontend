@@ -7,6 +7,7 @@ import {
 
 /** ------------------ HELPERS ------------------ **/
 const normalizeStatus = (status) => String(status ?? "").trim().toUpperCase();
+const RESOURCE_PAGE_SIZE = 50;
 
 const isInactiveStatus = (status) => {
   const s = normalizeStatus(status);
@@ -100,6 +101,7 @@ const defaultExistingItemBomRoutingSearchState = {
   selectedRowsById: {},
   associatedCoProductsByGroup: {},
 };
+
 const defaultItemBomRoutingCreateState = {
   bomId: "",
   producedItem: "",
@@ -114,6 +116,15 @@ const defaultItemBomRoutingCreateState = {
   coProducts: [],
 };
 
+const defaultResourceLazyState = {
+  loadingByKey: {},
+  errorByKey: {},
+  optionsByKey: {},
+  paginationByKey: {},
+  searchByKey: {},
+  latestRequestIdByKey: {},
+};
+
 const getRoutingResource = (routingId, explicitResource = "") => {
   const resourceFromColumn = String(explicitResource ?? "").trim();
   if (resourceFromColumn) return resourceFromColumn;
@@ -126,8 +137,6 @@ const getRoutingResource = (routingId, explicitResource = "") => {
     .map((part) => part.trim())
     .filter(Boolean);
 
-  // Required format: ROUTING_item_resource.
-  // Resource is everything after the second underscore.
   return parts.length >= 3 ? parts.slice(2).join("_") : "";
 };
 
@@ -176,16 +185,16 @@ const normalizeExistingBomSearchRow = (row, index) => {
   const routingId = rawRoutingId || buildRoutingId(producedItem, resource);
   const itemReleaseFlag = String(
     row.item_release_flag ??
-    row.item_releaseflag ??
-    row.release_flag ??
-    row.release ??
-    ""
+      row.item_releaseflag ??
+      row.release_flag ??
+      row.release ??
+      ""
   ).trim();
   const erpCoProductAssociation = String(
     row.erp_co_product_association ??
-    row.erpCoProductAssociation ??
-    row.co_product_association ??
-    ""
+      row.erpCoProductAssociation ??
+      row.co_product_association ??
+      ""
   ).trim();
 
   const rowType = erpCoProductAssociation === "1" ? "COPRODUCT" : "MAIN";
@@ -228,8 +237,6 @@ const getIbrResourceFromRoutingId = (routingId, explicitResource = "") => {
     .map((part) => part.trim())
     .filter(Boolean);
 
-  // Required format: ROUTING_item_resource.
-  // Resource is everything after the second underscore.
   return parts.length >= 3 ? parts.slice(2).join("_") : "";
 };
 
@@ -274,14 +281,16 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
   const bomId = String(row.bom_id ?? row.bomId ?? "").trim();
   const rawRoutingId = String(row.routing_id ?? row.routingId ?? "").trim();
   const resource = getIbrResourceFromRoutingId(rawRoutingId, row.resource);
-  const routingId = buildIbrRoutingId(item, resource, rawRoutingId);
+  const routingId = rawRoutingId;
   const location = String(row.location ?? "").trim();
+
   const erpCoProductAssociation = String(
     row.erp_co_product_association ??
-    row.erpCoProductAssociation ??
-    row.co_product_association ??
-    ""
+      row.erpCoProductAssociation ??
+      row.co_product_association ??
+      ""
   ).trim();
+
   const erpItemBomRoutingPriority = String(
     row.erp_item_bom_routing_priority ??
       row.erpItemBomRoutingPriority ??
@@ -291,6 +300,7 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
       row.itemBomPriority ??
       ""
   ).trim();
+
   const coProductAssociation = Number(erpCoProductAssociation || "0") >= 1 ? 1 : 0;
   const componentItem = coProductAssociation === 1 ? "" : item;
   const coProductItem = coProductAssociation === 1 ? item : "";
@@ -302,6 +312,7 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
     item,
     bom_id: bomId,
     routing_id: routingId,
+    routingId,
     location,
     resource,
     erp_item_bom_routing_priority: erpItemBomRoutingPriority,
@@ -320,6 +331,85 @@ const normalizeExistingItemBomRoutingSearchRow = (row, index) => {
 };
 
 /** ------------------ THUNKS ------------------ **/
+export const fetchResourcesLazyOptions = createAsyncThunk(
+  "bom/fetchResourcesLazyOptions",
+  async (
+    {
+      key = "",
+      producedItem = "",
+      location = "",
+      search = "",
+      page = 1,
+      pageSize = RESOURCE_PAGE_SIZE,
+      append = false,
+    } = {},
+    { rejectWithValue }
+  ) => {
+    try {
+      const cleanProducedItem = String(producedItem || "").trim();
+      const cleanLocation = String(location || "").trim();
+      const cleanSearch = String(search || "").trim();
+      const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
+      const safePageSize = Math.max(1, Number.parseInt(pageSize, 10) || RESOURCE_PAGE_SIZE);
+      const finalKey = key || `${cleanProducedItem}__${cleanLocation}`;
+
+      const params = new URLSearchParams();
+      params.set("producedItem", cleanProducedItem);
+      if (cleanLocation) params.set("location", cleanLocation);
+      params.set("search", cleanSearch);
+      params.set("page", String(safePage));
+      params.set("pageSize", String(safePageSize));
+      console.log(JSON.stringify(params));
+      const response = await fetch(
+        `/api/bigquery/table/bom-routing-step1/resources-lazy?${params.toString()}`
+      );
+
+      if (!response.ok) return rejectWithValue(await response.text());
+
+      const payload = await response.json();
+      const rows = Array.isArray(payload?.data) ? payload.data : [];
+
+      return {
+        key: finalKey,
+        producedItem: cleanProducedItem,
+        location: cleanLocation,
+        search: cleanSearch,
+        page: safePage,
+        pageSize: safePageSize,
+        append: !!append,
+        rows: rows.map((row) => ({
+          producedItem: row.producedItem ?? row.produced_item ?? cleanProducedItem,
+          location: row.location ?? cleanLocation,
+          resource: row.resource ?? "",
+          resourceRelevancy:
+            row.resourceRelevancy ??
+            row.resourcePlanningRelevance ??
+            row.resource_relevancy ??
+            row.resource_planning_relevance ??
+            "",
+          resourcePlanningRelevance:
+            row.resourcePlanningRelevance ??
+            row.resource_planning_relevance ??
+            row.resourceRelevancy ??
+            row.resource_relevancy ??
+            "",
+        })),
+        pagination: payload?.pagination || {
+          ...defaultPagination,
+          page: safePage,
+          pageSize: safePageSize,
+          total: rows.length,
+          totalPages: 1,
+          hasPrev: safePage > 1,
+          hasNext: false,
+          search: cleanSearch,
+        },
+      };
+    } catch (e) {
+      return rejectWithValue(e?.message || "Failed to fetch resources");
+    }
+  }
+);
 
 export const fetchItemMaster = createAsyncThunk(
   "bom/fetchItemMaster",
@@ -378,6 +468,7 @@ export const fetchItemMaster = createAsyncThunk(
     }
   }
 );
+
 export const fetchDeleteBomSearchRows = createAsyncThunk(
   "bom/fetchDeleteBomSearchRows",
   async (
@@ -394,19 +485,13 @@ export const fetchDeleteBomSearchRows = createAsyncThunk(
   ) => {
     try {
       const params = new URLSearchParams();
-
       params.set("page", String(page));
       params.set("pageSize", String(pageSize));
-
       params.set("searchBy1", String(searchBy1 || ""));
       params.set("query1", searchBy1 ? String(query1 || "").trim() : "");
-
       params.set("searchBy2", String(searchBy2 || ""));
       params.set("query2", searchBy2 ? String(query2 || "").trim() : "");
-
-      if (reloadToken !== "") {
-        params.set("_reload", String(reloadToken));
-      }
+      if (reloadToken !== "") params.set("_reload", String(reloadToken));
 
       const res = await fetch(
         `/api/tables/delete-existing-bom-records?${params.toString()}`
@@ -415,7 +500,6 @@ export const fetchDeleteBomSearchRows = createAsyncThunk(
       if (!res.ok) return rejectWithValue(await res.text());
 
       const payload = await res.json();
-
       const rows = Array.isArray(payload?.data)
         ? payload.data
         : Array.isArray(payload)
@@ -435,12 +519,11 @@ export const fetchDeleteBomSearchRows = createAsyncThunk(
         },
       };
     } catch (e) {
-      return rejectWithValue(
-        e?.message || "Failed to fetch delete existing BOM records"
-      );
+      return rejectWithValue(e?.message || "Failed to fetch delete existing BOM records");
     }
   }
 );
+
 export const fetchExistingBomSearchRows = createAsyncThunk(
   "bom/fetchExistingBomSearchRows",
   async (
@@ -463,14 +546,9 @@ export const fetchExistingBomSearchRows = createAsyncThunk(
       params.set("query1", searchBy1 ? String(query1 || "").trim() : "");
       params.set("searchBy2", String(searchBy2 || ""));
       params.set("query2", searchBy2 ? String(query2 || "").trim() : "");
-
-      // only for cache-busting/debugging; backend can ignore this
-      if (reloadToken !== "") {
-        params.set("_reload", String(reloadToken));
-      }
+      if (reloadToken !== "") params.set("_reload", String(reloadToken));
 
       const res = await fetch(`/api/tables/existing-bom-search?${params.toString()}`);
-
       if (!res.ok) return rejectWithValue(await res.text());
 
       const payload = await res.json();
@@ -494,7 +572,6 @@ export const fetchExistingBomSearchRows = createAsyncThunk(
     }
   }
 );
-
 
 export const fetchExistingItemBomRoutingSearchRows = createAsyncThunk(
   "bom/fetchExistingItemBomRoutingSearchRows",
@@ -531,9 +608,7 @@ export const fetchExistingItemBomRoutingSearchRows = createAsyncThunk(
           : [];
 
       return {
-        rows: rows.map((row, index) =>
-          normalizeExistingItemBomRoutingSearchRow(row, index)
-        ),
+        rows: rows.map((row, index) => normalizeExistingItemBomRoutingSearchRow(row, index)),
         pagination: payload?.pagination || {
           ...defaultPagination,
           page,
@@ -542,9 +617,7 @@ export const fetchExistingItemBomRoutingSearchRows = createAsyncThunk(
         },
       };
     } catch (e) {
-      return rejectWithValue(
-        e?.message || "Failed to fetch existing item BOM routing records"
-      );
+      return rejectWithValue(e?.message || "Failed to fetch existing item BOM routing records");
     }
   }
 );
@@ -555,20 +628,20 @@ export const fetchResourceComponentMetadata = createAsyncThunk(
     try {
       const normalizedItems = Array.isArray(items)
         ? items
-          .map((x) => (typeof x === "string" ? x : x?.item ?? ""))
-          .map((x) => String(x ?? "").trim())
-          .filter(Boolean)
+            .map((x) => (typeof x === "string" ? x : x?.item ?? ""))
+            .map((x) => String(x ?? "").trim())
+            .filter(Boolean)
         : [];
 
       const normalizedLocations = Array.isArray(locations)
         ? locations
-          .map((x) => {
-            if (typeof x === "string") return x;
-            if (x && typeof x === "object") return x.location ?? x.id ?? "";
-            return "";
-          })
-          .map((x) => String(x ?? "").trim())
-          .filter(Boolean)
+            .map((x) => {
+              if (typeof x === "string") return x;
+              if (x && typeof x === "object") return x.location ?? x.id ?? "";
+              return "";
+            })
+            .map((x) => String(x ?? "").trim())
+            .filter(Boolean)
         : [];
 
       const res = await fetch("/api/bigquery/table/resource-component-metadata", {
@@ -595,6 +668,12 @@ export const fetchResourceComponentMetadata = createAsyncThunk(
         resourceOptions.push({
           resource,
           resourceRelevancy: row.resource_relevancy ?? row.resourceRelevancy ?? "",
+          resourcePlanningRelevance:
+            row.resourcePlanningRelevance ??
+            row.resource_planning_relevance ??
+            row.resource_relevancy ??
+            row.resourceRelevancy ??
+            "",
         });
       });
 
@@ -623,12 +702,12 @@ export const fetchLocationsByItems = createAsyncThunk(
     try {
       const normalizedItemIds = Array.isArray(itemIds)
         ? itemIds
-          .map((x) => {
-            if (typeof x === "string") return x;
-            if (x && typeof x === "object") return x.item ?? x.id ?? "";
-            return "";
-          })
-          .filter(Boolean)
+            .map((x) => {
+              if (typeof x === "string") return x;
+              if (x && typeof x === "object") return x.item ?? x.id ?? "";
+              return "";
+            })
+            .filter(Boolean)
         : [];
 
       const res = await fetch("/api/bigquery/table/locations-by-items", {
@@ -785,6 +864,7 @@ const initialState = {
     resourceOptions: [],
     resourceOptionsByKey: {},
   },
+  resourceLazy: defaultResourceLazyState,
   resourceComponentConfigs: {},
   itemBomRoutingCreate: defaultItemBomRoutingCreateState,
 };
@@ -852,7 +932,6 @@ const bomSlice = createSlice({
       state.existingBomSearch.selectedRowIds = [];
       state.existingBomSearch.selectedRowsById = {};
     },
-
     setExistingItemBomRoutingSearchState: (state, action) => {
       const payload = action.payload || {};
       state.existingItemBomRoutingSearch = {
@@ -931,6 +1010,23 @@ const bomSlice = createSlice({
       if (!key) return;
       const existing = state.resourceComponentConfigs[key] || {};
       state.resourceComponentConfigs[key] = { ...existing, ...config };
+    },
+    clearResourceLazyOptions: (state, action) => {
+      const key = action.payload;
+
+      if (!key) {
+        state.resourceLazy = defaultResourceLazyState;
+        state.resourceMeta.resourceOptionsByKey = {};
+        return;
+      }
+
+      delete state.resourceLazy.loadingByKey[key];
+      delete state.resourceLazy.errorByKey[key];
+      delete state.resourceLazy.optionsByKey[key];
+      delete state.resourceLazy.paginationByKey[key];
+      delete state.resourceLazy.searchByKey[key];
+      delete state.resourceLazy.latestRequestIdByKey[key];
+      delete state.resourceMeta.resourceOptionsByKey[key];
     },
     setModifySelectState: (state, action) => {
       state.modifySelectState = { ...state.modifySelectState, ...(action.payload || {}) };
@@ -1063,6 +1159,7 @@ const bomSlice = createSlice({
         resourceOptions: [],
         resourceOptionsByKey: {},
       };
+      state.resourceLazy = defaultResourceLazyState;
       locationsAdapter.removeAll(state.locations);
       state.locations.loading = false;
       state.locations.error = null;
@@ -1094,6 +1191,8 @@ const bomSlice = createSlice({
       state.selectedProducedItemById = {};
       state.resourceComponentConfigs = {};
       state.selectedLocationIds = [];
+      state.resourceLazy = defaultResourceLazyState;
+      state.resourceMeta.resourceOptionsByKey = {};
       locationsAdapter.removeAll(state.locations);
       state.locations.search = "";
       state.locations.pagination = defaultPagination;
@@ -1103,6 +1202,8 @@ const bomSlice = createSlice({
       state.selectedProducedItemById = {};
       state.resourceComponentConfigs = {};
       state.selectedLocationIds = [];
+      state.resourceLazy = defaultResourceLazyState;
+      state.resourceMeta.resourceOptionsByKey = {};
     },
     toggleLocation: (state, action) => {
       const id = action.payload;
@@ -1113,10 +1214,14 @@ const bomSlice = createSlice({
     clearSelectedLocations: (state) => {
       state.selectedLocationIds = [];
       state.resourceComponentConfigs = {};
+      state.resourceLazy = defaultResourceLazyState;
+      state.resourceMeta.resourceOptionsByKey = {};
     },
     clearLocations: (state) => {
       state.selectedLocationIds = [];
       state.resourceComponentConfigs = {};
+      state.resourceLazy = defaultResourceLazyState;
+      state.resourceMeta.resourceOptionsByKey = {};
       locationsAdapter.removeAll(state.locations);
       state.locations.error = null;
       state.locations.search = "";
@@ -1125,6 +1230,68 @@ const bomSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(fetchResourcesLazyOptions.pending, (state, action) => {
+        const { key = "", producedItem = "", location = "", search = "" } = action.meta.arg || {};
+        const finalKey = key || `${String(producedItem || "").trim()}__${String(location || "").trim()}`;
+        if (!finalKey) return;
+
+        state.resourceLazy.loadingByKey[finalKey] = true;
+        state.resourceLazy.errorByKey[finalKey] = null;
+        state.resourceLazy.searchByKey[finalKey] = String(search || "");
+        state.resourceLazy.latestRequestIdByKey[finalKey] = action.meta.requestId;
+      })
+      .addCase(fetchResourcesLazyOptions.fulfilled, (state, action) => {
+        const key = action.payload?.key || "";
+        if (!key) return;
+
+        if (state.resourceLazy.latestRequestIdByKey[key] !== action.meta.requestId) return;
+
+        const incomingRows = Array.isArray(action.payload?.rows) ? action.payload.rows : [];
+        const existingRows = action.payload?.append ? state.resourceLazy.optionsByKey[key] || [] : [];
+        const seen = new Set();
+        const mergedRows = [];
+
+        [...existingRows, ...incomingRows].forEach((row) => {
+          const resource = String(row?.resource ?? "").trim();
+          if (!resource) return;
+          const resourceKey = resource.toUpperCase();
+          if (seen.has(resourceKey)) return;
+          seen.add(resourceKey);
+          mergedRows.push({
+            ...row,
+            resource,
+            resourceRelevancy:
+              row.resourceRelevancy ??
+              row.resourcePlanningRelevance ??
+              row.resource_relevancy ??
+              row.resource_planning_relevance ??
+              "",
+            resourcePlanningRelevance:
+              row.resourcePlanningRelevance ??
+              row.resource_planning_relevance ??
+              row.resourceRelevancy ??
+              row.resource_relevancy ??
+              "",
+          });
+        });
+
+        state.resourceLazy.loadingByKey[key] = false;
+        state.resourceLazy.errorByKey[key] = null;
+        state.resourceLazy.optionsByKey[key] = mergedRows;
+        state.resourceLazy.paginationByKey[key] = action.payload?.pagination || defaultPagination;
+        state.resourceLazy.searchByKey[key] = action.payload?.search || "";
+        state.resourceMeta.resourceOptionsByKey[key] = mergedRows;
+      })
+      .addCase(fetchResourcesLazyOptions.rejected, (state, action) => {
+        const { key = "", producedItem = "", location = "" } = action.meta.arg || {};
+        const finalKey = key || `${String(producedItem || "").trim()}__${String(location || "").trim()}`;
+        if (!finalKey) return;
+
+        if (state.resourceLazy.latestRequestIdByKey[finalKey] !== action.meta.requestId) return;
+
+        state.resourceLazy.loadingByKey[finalKey] = false;
+        state.resourceLazy.errorByKey[finalKey] = action.payload || "Failed to fetch resources";
+      })
       .addCase(fetchItemMaster.pending, (state) => {
         state.items.loading = true;
         state.items.error = null;
@@ -1152,8 +1319,7 @@ const bomSlice = createSlice({
         state.existingBomSearch.loading = false;
         const rows = action.payload?.rows || [];
         state.existingBomSearch.rows = rows;
-        state.existingBomSearch.associatedCoProductsByGroup =
-          buildAssociatedCoProductsByGroup(rows);
+        state.existingBomSearch.associatedCoProductsByGroup = buildAssociatedCoProductsByGroup(rows);
         state.existingBomSearch.pagination = action.payload?.pagination || {
           ...defaultPagination,
           total: rows.length || 0,
@@ -1163,10 +1329,8 @@ const bomSlice = createSlice({
         if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
 
         state.existingBomSearch.loading = false;
-        state.existingBomSearch.error =
-          action.payload || "Failed to load existing BOM records";
+        state.existingBomSearch.error = action.payload || "Failed to load existing BOM records";
       })
-
       .addCase(fetchDeleteBomSearchRows.pending, (state, action) => {
         state.existingBomSearch.loading = true;
         state.existingBomSearch.error = null;
@@ -1176,13 +1340,9 @@ const bomSlice = createSlice({
         if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
 
         state.existingBomSearch.loading = false;
-
         const rows = action.payload?.rows || [];
-
         state.existingBomSearch.rows = rows;
-        state.existingBomSearch.associatedCoProductsByGroup =
-          buildAssociatedCoProductsByGroup(rows);
-
+        state.existingBomSearch.associatedCoProductsByGroup = buildAssociatedCoProductsByGroup(rows);
         state.existingBomSearch.pagination = action.payload?.pagination || {
           ...defaultPagination,
           total: rows.length || 0,
@@ -1192,8 +1352,7 @@ const bomSlice = createSlice({
         if (state.existingBomSearch.latestRequestId !== action.meta.requestId) return;
 
         state.existingBomSearch.loading = false;
-        state.existingBomSearch.error =
-          action.payload || "Failed to load delete existing BOM records";
+        state.existingBomSearch.error = action.payload || "Failed to load delete existing BOM records";
       })
       .addCase(fetchExistingItemBomRoutingSearchRows.pending, (state) => {
         state.existingItemBomRoutingSearch.loading = true;
@@ -1201,12 +1360,9 @@ const bomSlice = createSlice({
       })
       .addCase(fetchExistingItemBomRoutingSearchRows.fulfilled, (state, action) => {
         state.existingItemBomRoutingSearch.loading = false;
-
         const rows = action.payload?.rows || [];
-
         state.existingItemBomRoutingSearch.rows = rows;
-        state.existingItemBomRoutingSearch.associatedCoProductsByGroup =
-          buildAssociatedIbrCoProductsByGroup(rows);
+        state.existingItemBomRoutingSearch.associatedCoProductsByGroup = buildAssociatedIbrCoProductsByGroup(rows);
         state.existingItemBomRoutingSearch.pagination = action.payload?.pagination || {
           ...defaultPagination,
           total: rows.length || 0,
@@ -1214,8 +1370,7 @@ const bomSlice = createSlice({
       })
       .addCase(fetchExistingItemBomRoutingSearchRows.rejected, (state, action) => {
         state.existingItemBomRoutingSearch.loading = false;
-        state.existingItemBomRoutingSearch.error =
-          action.payload || "Failed to load existing item BOM routing records";
+        state.existingItemBomRoutingSearch.error = action.payload || "Failed to load existing item BOM routing records";
       })
       .addCase(fetchResourceComponentMetadata.pending, (state) => {
         state.resourceMeta.loading = true;
@@ -1320,6 +1475,7 @@ export const {
   toggleExistingIbrSelectedPageRows,
   clearExistingIbrSelectedRows,
   setResourceComponentConfig,
+  clearResourceLazyOptions,
   setModifySelectState,
   clearModifySelectState,
   setModifyExistingBomState,
@@ -1410,8 +1566,7 @@ export const selectExistingBomSelectedRows = createSelector(
   (ids, byId) => ids.map((id) => byId[id]).filter(Boolean)
 );
 export const selectExistingBomAssociatedCoProductsByGroup = (state) =>
-  (state.bom.existingBomSearch || defaultExistingBomSearchState)
-    .associatedCoProductsByGroup || {};
+  (state.bom.existingBomSearch || defaultExistingBomSearchState).associatedCoProductsByGroup || {};
 
 export const selectExistingItemBomRoutingSearchState = (state) =>
   state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState;
@@ -1422,21 +1577,17 @@ export const selectExistingItemBomRoutingSearchLoading = (state) =>
 export const selectExistingItemBomRoutingSearchError = (state) =>
   (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).error;
 export const selectExistingItemBomRoutingSearchPagination = (state) =>
-  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
-    .pagination || defaultPagination;
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).pagination || defaultPagination;
 export const selectExistingIbrSelectedRowIds = (state) =>
-  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
-    .selectedRowIds || [];
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).selectedRowIds || [];
 export const selectExistingIbrSelectedRowsById = (state) =>
-  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
-    .selectedRowsById || {};
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).selectedRowsById || {};
 export const selectExistingIbrSelectedRows = createSelector(
   [selectExistingIbrSelectedRowIds, selectExistingIbrSelectedRowsById],
   (ids, byId) => ids.map((id) => byId[id]).filter(Boolean)
 );
 export const selectExistingIbrAssociatedCoProductsByGroup = (state) =>
-  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState)
-    .associatedCoProductsByGroup || {};
+  (state.bom.existingItemBomRoutingSearch || defaultExistingItemBomRoutingSearchState).associatedCoProductsByGroup || {};
 
 export const selectEngineeringChangeLogState = (state) =>
   state.bom.engineeringChangeLog || defaultEngineeringChangeLogState;
@@ -1456,6 +1607,30 @@ export const selectResourceItemOptions = (state) => state.bom.resourceMeta.itemO
 export const selectAllResourceOptions = (state) => state.bom.resourceMeta.resourceOptions;
 export const selectResourceOptionsByKey = (state) => state.bom.resourceMeta.resourceOptionsByKey;
 export const selectResourceComponentConfigs = (state) => state.bom.resourceComponentConfigs;
+
+export const selectResourceLazyState = (state) => state.bom.resourceLazy || defaultResourceLazyState;
+export const selectResourceLazyOptionsByKey = (state) =>
+  (state.bom.resourceLazy || defaultResourceLazyState).optionsByKey || {};
+export const selectResourceLazyLoadingByKey = (state) =>
+  (state.bom.resourceLazy || defaultResourceLazyState).loadingByKey || {};
+export const selectResourceLazyErrorByKey = (state) =>
+  (state.bom.resourceLazy || defaultResourceLazyState).errorByKey || {};
+export const selectResourceLazyPaginationByKey = (state) =>
+  (state.bom.resourceLazy || defaultResourceLazyState).paginationByKey || {};
+export const selectResourceLazySearchByKey = (state) =>
+  (state.bom.resourceLazy || defaultResourceLazyState).searchByKey || {};
+
+export const makeSelectResourceLazyOptionsForKey = (key) =>
+  createSelector([selectResourceLazyOptionsByKey], (optionsByKey) => optionsByKey[key] || []);
+
+export const makeSelectResourceLazyLoadingForKey = (key) =>
+  createSelector([selectResourceLazyLoadingByKey], (loadingByKey) => !!loadingByKey[key]);
+
+export const makeSelectResourceLazyPaginationForKey = (key) =>
+  createSelector(
+    [selectResourceLazyPaginationByKey],
+    (paginationByKey) => paginationByKey[key] || defaultPagination
+  );
 
 export const selectCheckoutSummary = createSelector(
   [

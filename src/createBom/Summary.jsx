@@ -6,7 +6,10 @@ import {
   clearExistingBomSearchState,
   clearModifyExistingBomState,
   clearModifyExistingBomFlowState,
-} from "../redux/bomSlice";
+  setModifyExistingBomState,
+  setModifyExistingBomValues
+} from "../redux/bomSlice.js";
+
 import axios from "axios";
 import { layout } from "../styles/layout";
 
@@ -46,16 +49,16 @@ const normalizeValidationEntries = (validationResult) => {
 
     const code = String(
       entry.validationSequence ??
-        entry.validation_sequence ??
-        entry.seq ??
-        entry.sequence ??
-        entry.code ??
-        parent.validationSequence ??
-        parent.validation_sequence ??
-        parent.seq ??
-        parent.sequence ??
-        parent.code ??
-        index + 1
+      entry.validation_sequence ??
+      entry.seq ??
+      entry.sequence ??
+      entry.code ??
+      parent.validationSequence ??
+      parent.validation_sequence ??
+      parent.seq ??
+      parent.sequence ??
+      parent.code ??
+      index + 1
     );
 
     const desc =
@@ -232,6 +235,8 @@ export default function SummaryPage() {
   const [priorityMap, setPriorityMap] = useState({});
   const [priorityErrors, setPriorityErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [successful, setsuccessful] = useState(false);
+
   const [validationResult, setValidationResult] = useState(null);
   const [expandedMap, setExpandedMap] = useState({});
 
@@ -368,14 +373,14 @@ export default function SummaryPage() {
         },
         routingRows: Array.isArray(entry.generatedRoutingRows)
           ? entry.generatedRoutingRows.map((row, index) => ({
-              key: `${entry.key}__${row.routingId ?? index}`,
-              resource: row.resource ?? "",
-              resourceRelevancy: row.resourceRelevancy ?? "",
-              routingId:
-                row.routingId ??
-                buildRoutingId(entry.producedItem ?? "", entry.location ?? "", row.resource ?? ""),
-              defaultPriority: index + 1,
-            }))
+            key: `${entry.key}__${row.routingId ?? index}`,
+            resource: row.resource ?? "",
+            resourceRelevancy: row.resourceRelevancy ?? "",
+            routingId:
+              row.routingId ??
+              buildRoutingId(entry.producedItem ?? "", entry.location ?? "", row.resource ?? ""),
+            defaultPriority: index + 1,
+          }))
           : [],
         isModifyFlow: false,
       }));
@@ -536,10 +541,10 @@ export default function SummaryPage() {
             componentItems: config.noComponentItems
               ? []
               : normalizeNonEmptyComponentItems(components).map((row) => ({
-                  componentItem: row.componentItem,
-                  description: row.description ?? "",
-                  standardUsage: toNumberOrNull(row.standardUsage),
-                })),
+                componentItem: row.componentItem,
+                description: row.description ?? "",
+                standardUsage: toNumberOrNull(row.standardUsage),
+              })),
             coProducts: normalizeNonEmptyCoProducts(coproducts).map((row) => ({
               coProductItem: row.coProductItem,
               description: row.description ?? "",
@@ -581,9 +586,9 @@ export default function SummaryPage() {
 
   const topLevelError = recordsNotPushed
     ? validationResult?.messageForUser ||
-      validationResult?.message ||
-      validationResult?.error ||
-      "Validation was successful but the records are not yet pushed to PostgreSQL table."
+    validationResult?.message ||
+    validationResult?.error ||
+    "Validation was successful but the records are not yet pushed to PostgreSQL table."
     : !validationFailed
       ? validationResult?.error ?? validationResult?.data?.error ?? ""
       : "";
@@ -678,7 +683,38 @@ export default function SummaryPage() {
   const handleReturnToMainMenu = () => {
     navigate("/");
   };
+  const handleBack = () => {
+    if (flow === "modify-existing-bom" && modifiedBomData && selectedBom) {
+      const snapshot = {
+        record: selectedBom,
+        bomVersion: modifiedBomData.bomVersion || "",
+        selectedResources: Array.isArray(modifiedBomData.selectedResources)
+          ? modifiedBomData.selectedResources
+          : [],
+        componentItems: Array.isArray(modifiedBomData.componentItems)
+          ? modifiedBomData.componentItems
+          : [],
+        coProducts: Array.isArray(modifiedBomData.coProducts)
+          ? modifiedBomData.coProducts
+          : [],
+        producedCoProduct: !!modifiedBomData.producedCoProduct,
+        routingRows: Array.isArray(modifiedBomData.generatedRoutingRows)
+          ? modifiedBomData.generatedRoutingRows.map((row) => ({
+            resource: row.resource || "",
+            resourceRelevancy: row.resourceRelevancy || "",
+            routingId: row.routingId || "",
+          }))
+          : [],
+        resourceSearch: "",
+        resourcePage: 1,
+      };
 
+      dispatch(setModifyExistingBomState(snapshot));
+      dispatch(setModifyExistingBomValues(snapshot));
+    }
+
+    navigate(-1);
+  };
   const submitBOMs = async () => {
     if (actualPayload.length === 0) {
       setValidationResult({
@@ -717,16 +753,17 @@ export default function SummaryPage() {
       const result = response.data;
       setValidationResult(result);
 
-      if (isSubmitResponseSuccessful(result)) {
-        if (flow === "modify-existing-bom") {
-          dispatch(clearModifyExistingBomState());
-          dispatch(clearExistingBomSearchState());
-        } else {
-          dispatch(clearCreateBomFlowState());
-        }
+     if (isSubmitResponseSuccessful(result)) {
+  setsuccessful(true);
 
-        dispatch(clearModifyExistingBomFlowState());
-      }
+  if (flow === "modify-existing-bom") {
+    dispatch(clearModifyExistingBomState());
+    dispatch(clearModifyExistingBomFlowState());
+    dispatch(clearExistingBomSearchState());
+  } else {
+    dispatch(clearCreateBomFlowState());
+  }
+}
     } catch (err) {
       const serverData = err?.response?.data;
       setValidationResult(
@@ -742,7 +779,7 @@ export default function SummaryPage() {
   return (
     <div style={styles.pageBg}>
       <div style={styles.page}>
-        <div style={styles.back} onClick={() => navigate(-1)}>
+        <div style={styles.back} onClick={handleBack}>
           ← BACK
         </div>
 
@@ -777,14 +814,14 @@ export default function SummaryPage() {
                   group.routingRows.length > 0
                     ? group.routingRows
                     : [
-                        {
-                          key: `${group.key}__NOROUTING`,
-                          routingId: "-",
-                          defaultPriority: 1,
-                          resource: "",
-                          resourceRelevancy: "",
-                        },
-                      ];
+                      {
+                        key: `${group.key}__NOROUTING`,
+                        routingId: "-",
+                        defaultPriority: 1,
+                        resource: "",
+                        resourceRelevancy: "",
+                      },
+                    ];
 
                 return (
                   <div key={group.key} style={styles.summaryCard}>
@@ -900,8 +937,8 @@ export default function SummaryPage() {
                                       <td style={styles.innerTd}>{componentRow.description || "-"}</td>
                                       <td style={styles.innerTd}>
                                         {componentRow.standardUsage === "" ||
-                                        componentRow.standardUsage === null ||
-                                        componentRow.standardUsage === undefined
+                                          componentRow.standardUsage === null ||
+                                          componentRow.standardUsage === undefined
                                           ? "-"
                                           : componentRow.standardUsage}
                                       </td>
@@ -955,8 +992,8 @@ export default function SummaryPage() {
                                       <td style={styles.innerTd}>{coProductRow.description || "-"}</td>
                                       <td style={styles.innerTd}>
                                         {coProductRow.qtyProduced === "" ||
-                                        coProductRow.qtyProduced === null ||
-                                        coProductRow.qtyProduced === undefined
+                                          coProductRow.qtyProduced === null ||
+                                          coProductRow.qtyProduced === undefined
                                           ? coProductRow.qtyProducedPer === "" ||
                                             coProductRow.qtyProducedPer === null ||
                                             coProductRow.qtyProducedPer === undefined
@@ -1043,10 +1080,10 @@ export default function SummaryPage() {
 
           <button
             onClick={submitBOMs}
-            disabled={submitting || summaryGroups.length === 0}
+            disabled={submitting || summaryGroups.length === 0 || successful}
             style={{
               ...styles.submitBtn,
-              ...(submitting || summaryGroups.length === 0 ? styles.submitBtnDisabled : {}),
+              ...(submitting || summaryGroups.length === 0 || successful ? styles.submitBtnDisabled : {}),
             }}
           >
             {submitting ? "Submitting..." : "✓ SUBMIT & CREATE BOM(S)"}
