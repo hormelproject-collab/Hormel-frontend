@@ -825,7 +825,7 @@ const ResourceComponentInfo = () => {
                                 >
                                   {(bomVersions.length > 0
                                     ? bomVersions
-                                    : ["PRIMARY", ...Array.from({ length: 20 }, (_, index) => `BOM${index + 1}`)]
+                                    : ["PRIMARY", ...Array.from({ length: 40 }, (_, index) => `BOM${index + 1}`)]
                                   ).map((version) => (
                                     <option key={version} value={version}>
                                       {version}

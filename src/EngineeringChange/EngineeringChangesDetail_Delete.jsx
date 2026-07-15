@@ -24,25 +24,32 @@ const formatDisplayDate = (value) => {
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   const seconds = String(parsed.getSeconds()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
+
   hours %= 12;
   if (hours === 0) hours = 12;
 
-  return `${yyyy}-${mm}-${dd} ${String(hours).padStart(2, "0")}:${minutes}:${seconds} ${ampm} CST`;
+  return `${yyyy}-${mm}-${dd} ${String(hours).padStart(
+    2,
+    "0"
+  )}:${minutes}:${seconds} ${ampm} CST`;
 };
 
 const uniqueBy = (rows, keyFn) => {
   const map = new Map();
+
   for (const row of rows || []) {
     const key = keyFn(row);
     if (!key) continue;
     if (!map.has(key)) map.set(key, row);
   }
+
   return Array.from(map.values());
 };
 
 export default function EngineeringChangeDetailDeleteBOM() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
+
   const passedState = routerLocation.state || {};
 
   const engineeringChangeId =
@@ -58,7 +65,11 @@ export default function EngineeringChangeDetailDeleteBOM() {
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
-    if (engineeringChangeId) params.append("engineeringChangeId", engineeringChangeId);
+
+    if (engineeringChangeId) {
+      params.append("engineeringChangeId", engineeringChangeId);
+    }
+
     return params.toString();
   }, [engineeringChangeId]);
 
@@ -81,26 +92,43 @@ export default function EngineeringChangeDetailDeleteBOM() {
         if (!response.ok || payload?.success === false) {
           throw new Error(
             payload?.error ||
-            payload?.message ||
-            payload?.details ||
-            `Failed to fetch delete BOM detail (${response.status})`
+              payload?.message ||
+              payload?.details ||
+              `Failed to fetch delete BOM detail (${response.status})`
           );
         }
 
         setDetail(payload?.data || null);
       } catch (error) {
         console.error("Engineering delete BOM detail fetch error:", error);
-        setApiError(error.message || "Failed to fetch engineering delete BOM detail");
+        setApiError(
+          error.message || "Failed to fetch engineering delete BOM detail"
+        );
       } finally {
         setLoading(false);
       }
     };
 
-    if (queryString) fetchDetail();
-    else setApiError("Missing Engineering Change ID for Deleted BOM change type.");
+    if (queryString) {
+      fetchDetail();
+    } else {
+      setApiError("Missing Engineering Change ID for Deleted BOM change type.");
+    }
   }, [queryString]);
 
   const deletedBomRecords = safeArray(detail?.deletedBomRecords);
+
+  const isBomRoutingDelete = Boolean(
+    detail?.isBomRoutingDelete ||
+      String(detail?.summaryDisplayType || "").toUpperCase() ===
+        "DELETED_ITEM_BOM_ROUTING_RECORD_SUMMARY" ||
+      (String(detail?.changeSummary || "")
+        .toLowerCase()
+        .includes("bom_produced") &&
+        String(detail?.changeSummary || "")
+          .toLowerCase()
+          .includes("item_bom_routing"))
+  );
 
   const summaryBomRows = useMemo(() => {
     return uniqueBy(
@@ -115,6 +143,38 @@ export default function EngineeringChangeDetailDeleteBOM() {
           row.bomId.toUpperCase(),
           row.location.toUpperCase(),
           row.producedItem.toUpperCase(),
+        ].join("__")
+    );
+  }, [deletedBomRecords]);
+
+  const deletedRoutingRows = useMemo(() => {
+    return uniqueBy(
+      deletedBomRecords
+        .map((row) => ({
+          location: toText(row.location),
+          item: toText(row.producedItem || row.item),
+          bomId: toText(row.bomId || row.bom_id),
+          resource: toText(row.resource),
+          priority: toText(row.itemBomRoutingPriority || row.priority),
+          routingId: toText(row.routingId || row.routing_id),
+        }))
+        .filter(
+          (row) =>
+            row.location ||
+            row.item ||
+            row.bomId ||
+            row.resource ||
+            row.priority ||
+            row.routingId
+        ),
+      (row) =>
+        [
+          row.location.toUpperCase(),
+          row.item.toUpperCase(),
+          row.bomId.toUpperCase(),
+          row.resource.toUpperCase(),
+          row.priority.toUpperCase(),
+          row.routingId.toUpperCase(),
         ].join("__")
     );
   }, [deletedBomRecords]);
@@ -161,21 +221,21 @@ export default function EngineeringChangeDetailDeleteBOM() {
       marginBottom: "8px",
     },
     title: {
-      fontSize: "22px",
+      fontSize: "28px",
       fontWeight: 700,
-      color: "#111827",
-      marginBottom: "18px",
+      color: "#081a33",
+      marginBottom: "26px",
     },
     warningCard: {
-      background: "#fff3df",
-      border: "1px solid #f5d39b",
+      background: "#fff7ed",
+      border: "1px solid #fdba74",
       borderRadius: "4px",
-      padding: "14px 18px",
-      marginBottom: "16px",
-      maxWidth: "1270px",
-      color: "#a15c00",
-      fontSize: "14px",
-      fontWeight: 600,
+      padding: "16px 18px",
+      marginBottom: "20px",
+      maxWidth: "100%",
+      color: "#b93800",
+      fontSize: "16px",
+      fontWeight: 500,
       display: "flex",
       alignItems: "center",
       gap: "10px",
@@ -185,9 +245,9 @@ export default function EngineeringChangeDetailDeleteBOM() {
       border: "1px solid #d5d7db",
       borderRadius: "4px",
       overflow: "hidden",
-      maxWidth: "1270px",
+      maxWidth: "100%",
       boxShadow: "0 2px 3px rgba(0,0,0,0.08)",
-      marginBottom: "24px",
+      marginBottom: "26px",
     },
     table: {
       width: "100%",
@@ -196,12 +256,12 @@ export default function EngineeringChangeDetailDeleteBOM() {
     },
     thDeleted: {
       textAlign: "left",
-      fontSize: "14px",
+      fontSize: "16px",
       fontWeight: 700,
-      padding: "16px 18px",
+      padding: "22px 18px",
       borderBottom: "1px solid #d5d7db",
-      color: "#111827",
-      background: "#f1dada",
+      color: "#000000",
+      background: "#efd4d4",
     },
     thNeutral: {
       textAlign: "left",
@@ -213,10 +273,10 @@ export default function EngineeringChangeDetailDeleteBOM() {
       background: "#f7f7f7",
     },
     td: {
-      fontSize: "14px",
-      padding: "16px 18px",
+      fontSize: "16px",
+      padding: "18px 22px",
       borderBottom: "1px solid #d5d7db",
-      color: "#111827",
+      color: "#02142c",
       verticalAlign: "middle",
       wordBreak: "break-word",
       background: "#ffffff",
@@ -249,37 +309,80 @@ export default function EngineeringChangeDetailDeleteBOM() {
       fontSize: "14px",
       color: "#374151",
     },
-    metaLine: {
+    infoCard: {
+      background: "#dbeaf4",
+      border: "1px solid #bfd3df",
+      borderRadius: "4px",
+      padding: "18px 22px",
+      marginBottom: "24px",
       maxWidth: "1270px",
-      fontSize: "13px",
-      color: "#4b5563",
-      marginTop: "-12px",
-      marginBottom: "16px",
-    },infoCard: {
-  background: "#dbeaf4",
-  border: "1px solid #bfd3df",
-  borderRadius: "4px",
-  padding: "18px 22px",
-  marginBottom: "24px",
-  maxWidth: "1270px",
-},
-
-infoRow: {
-  fontSize: "14px",
-  color: "#0f3f66",
-  marginBottom: "10px",
-},
-
+    },
+    infoRow: {
+      fontSize: "14px",
+      color: "#0f3f66",
+      marginBottom: "10px",
+    },
+    notesBox: {
+      background: "#ffffff",
+      border: "1px solid #cbd5e1",
+      borderRadius: "4px",
+      minHeight: "92px",
+      maxWidth: "100%",
+      marginTop: "0px",
+      marginBottom: "24px",
+      padding: "20px 16px",
+      color: "#6b7280",
+      fontSize: "20px",
+      boxSizing: "border-box",
+    },
+    actionBar: {
+      display: "flex",
+      alignItems: "center",
+      gap: "18px",
+      marginTop: "6px",
+    },
+    deleteButton: {
+      background: "#dc2b24",
+      color: "#ffffff",
+      border: "none",
+      borderRadius: "4px",
+      padding: "20px 46px",
+      fontSize: "16px",
+      fontWeight: 700,
+      cursor: "pointer",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.18)",
+    },
+    mainMenuButton: {
+      background: "#ffffff",
+      color: "#1f5fbf",
+      border: "1px solid #60a5fa",
+      borderRadius: "4px",
+      padding: "19px 28px",
+      fontSize: "18px",
+      fontWeight: 700,
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "10px",
+    },
   };
 
   return (
     <div style={styles.page}>
-      <button type="button" style={styles.backButton} onClick={() => navigate("/change-log")}>
+      <button
+        type="button"
+        style={styles.backButton}
+        onClick={() => navigate("/change-log")}
+      >
         <span style={{ fontSize: "16px" }}>←</span>
         <span>BACK</span>
       </button>
 
-      <div style={styles.title}>Step 2: Deleted BOM Summary</div>
+      <div style={styles.title}>
+        {isBomRoutingDelete
+          ? "Step 2: Deleted Item BOM Routing Record Summary"
+          : "Step 2: Deleted BOM Summary"}
+      </div>
 
       {loading ? (
         <div style={styles.loading}>Loading engineering delete BOM detail...</div>
@@ -287,103 +390,185 @@ infoRow: {
         <div style={styles.error}>{apiError}</div>
       ) : (
         <>
-          <div style={styles.infoCard}>
-            <div style={styles.infoRow}>
-              <strong>Engineering Change #:</strong>{" "}
-              {toText(detail?.engineeringChangeId || engineeringChangeId) || "-"}
-            </div>
+          {!isBomRoutingDelete && (
+            <div style={styles.infoCard}>
+              <div style={styles.infoRow}>
+                <strong>Engineering Change #:</strong>{" "}
+                {toText(detail?.engineeringChangeId || engineeringChangeId) ||
+                  "-"}
+              </div>
 
-            <div style={styles.infoRow}>
-              <strong>Change Date:</strong>{" "}
-              {formatDisplayDate(detail?.changeDate)}
-            </div>
+              <div style={styles.infoRow}>
+                <strong>Change Date:</strong>{" "}
+                {formatDisplayDate(detail?.changeDate)}
+              </div>
 
-            <div style={styles.infoRow}>
-              <strong>User:</strong>{" "}
-              {toText(detail?.user) || "-"}
-            </div>
+              <div style={styles.infoRow}>
+                <strong>User:</strong> {toText(detail?.user) || "-"}
+              </div>
 
-            <div style={styles.infoRow}>
-              <strong>Change Type:</strong>{" "}
-              {toText(detail?.changeType) || "Deleted"}
-            </div>
+              <div style={styles.infoRow}>
+                <strong>Change Type:</strong>{" "}
+                {toText(detail?.changeType) || "Deleted"}
+              </div>
 
-            <div style={styles.infoRow}>
-              <strong>Change Summary:</strong>{" "}
-              {toText(detail?.changeSummary) || "-"}
-            </div>
+              <div style={styles.infoRow}>
+                <strong>Change Summary:</strong>{" "}
+                {toText(detail?.changeSummary) || "-"}
+              </div>
 
-            <div style={styles.infoRow}>
-              <strong>Notes:</strong>{" "}
-              {toText(detail?.notes) || "-"}
+              <div style={styles.infoRow}>
+                <strong>Notes:</strong> {toText(detail?.notes) || "-"}
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={styles.warningCard}>
-            <span style={{ fontSize: "18px" }}>⚠</span>
-            <span>Warning: The following records will be permanently deleted</span>
+            <span>
+              {isBomRoutingDelete
+                ? "Warning: When a parent item is selected, the associated co-products are also deleted."
+                : "Warning: The following records will be permanently deleted"}
+            </span>
           </div>
 
-          <div style={styles.tableCard}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.thDeleted}>Produced Item</th>
-                  <th style={styles.thDeleted}>Item Description</th>
-                  <th style={styles.thDeleted}>Location</th>
-                  <th style={styles.thDeleted}>BOM ID</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summaryBomRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} style={styles.emptyRow}>No deleted BOM records found.</td>
-                  </tr>
-                ) : (
-                  summaryBomRows.map((row, index) => (
-                    <tr key={`${row.bomId}__${row.location}__${row.producedItem}__${index}`}>
-                      <td style={styles.td}>{row.producedItem || "-"}</td>
-                      <td style={styles.td}>{row.itemDescription || "-"}</td>
-                      <td style={styles.td}>{row.location || "-"}</td>
-                      <td style={styles.td}>{row.bomId || "-"}</td>
+          {isBomRoutingDelete ? (
+            <>
+              <div style={styles.tableCard}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.thDeleted}>Location</th>
+                      <th style={styles.thDeleted}>Item</th>
+                      <th style={styles.thDeleted}>BOM ID</th>
+                      <th style={styles.thDeleted}>Resource</th>
+                      <th style={styles.thDeleted}>Priority</th>
+                      <th style={styles.thDeleted}>Routing ID</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
 
-          <div style={styles.sectionTitle}>Connected Routing IDs</div>
-          <div style={styles.sectionSubText}>
-            The following Routing IDs are connected to the BOM records and will also be deleted
-          </div>
+                  <tbody>
+                    {deletedRoutingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={styles.emptyRow}>
+                          No deleted routing records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      deletedRoutingRows.map((row, index) => (
+                        <tr
+                          key={`${row.location}_${row.item}_${row.bomId}_${row.resource}_${row.routingId}_${index}`}
+                        >
+                          <td style={styles.td}>{row.location || "-"}</td>
+                          <td style={styles.td}>{row.item || "-"}</td>
+                          <td style={styles.td}>{row.bomId || "-"}</td>
+                          <td style={styles.td}>{row.resource || "-"}</td>
+                          <td style={styles.td}>{row.priority || "-"}</td>
+                          <td style={styles.td}>{row.routingId || "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-          <div style={styles.tableCard}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.thNeutral}>BOM ID</th>
-                  <th style={styles.thNeutral}>Resource</th>
-                  <th style={styles.thNeutral}>Routing ID</th>
-                </tr>
-              </thead>
-              <tbody>
-                {connectedRoutingRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} style={styles.emptyRow}>No connected routing records found.</td>
-                  </tr>
-                ) : (
-                  connectedRoutingRows.map((row, index) => (
-                    <tr key={`${row.bomId}__${row.resource}__${row.routingId}__${index}`}>
-                      <td style={styles.td}>{row.bomId || "-"}</td>
-                      <td style={styles.td}>{row.resource || "-"}</td>
-                      <td style={styles.td}>{row.routingId || "-"}</td>
+              <div style={styles.notesBox}>
+                {toText(detail?.notes || detail?.summaryNotes) ||
+                  "Notes (Optional)"}
+              </div>
+
+              <div style={styles.actionBar}>
+                <button type="button" style={styles.deleteButton}>
+                  CONFIRM DELETION
+                </button>
+
+                <button
+                  type="button"
+                  style={styles.mainMenuButton}
+                  onClick={() => navigate("/change-log")}
+                >
+                  <span style={{ fontSize: "14px" }}>⌂</span>
+                  <span>RETURN TO MAIN MENU</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={styles.tableCard}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.thDeleted}>Produced Item</th>
+                      <th style={styles.thDeleted}>Item Description</th>
+                      <th style={styles.thDeleted}>Location</th>
+                      <th style={styles.thDeleted}>BOM ID</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+
+                  <tbody>
+                    {summaryBomRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} style={styles.emptyRow}>
+                          No deleted BOM records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      summaryBomRows.map((row, index) => (
+                        <tr
+                          key={`${row.bomId}_${row.location}_${row.producedItem}_${index}`}
+                        >
+                          <td style={styles.td}>{row.producedItem || "-"}</td>
+                          <td style={styles.td}>
+                            {row.itemDescription || "-"}
+                          </td>
+                          <td style={styles.td}>{row.location || "-"}</td>
+                          <td style={styles.td}>{row.bomId || "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={styles.sectionTitle}>Connected Routing IDs</div>
+
+              <div style={styles.sectionSubText}>
+                The following Routing IDs are connected to the BOM records and
+                will also be deleted
+              </div>
+
+              <div style={styles.tableCard}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.thNeutral}>BOM ID</th>
+                      <th style={styles.thNeutral}>Resource</th>
+                      <th style={styles.thNeutral}>Routing ID</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {connectedRoutingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={styles.emptyRow}>
+                          No connected routing records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      connectedRoutingRows.map((row, index) => (
+                        <tr
+                          key={`${row.bomId}_${row.resource}_${row.routingId}_${index}`}
+                        >
+                          <td style={styles.td}>{row.bomId || "-"}</td>
+                          <td style={styles.td}>{row.resource || "-"}</td>
+                          <td style={styles.td}>{row.routingId || "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

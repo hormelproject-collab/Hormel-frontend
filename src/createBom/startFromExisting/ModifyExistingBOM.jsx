@@ -14,7 +14,7 @@ import {
 const NEXT_ROUTE = "/summary";
 const BOM_VERSION_OPTIONS = [
   "PRIMARY",
-  ...Array.from({ length: 20 }, (_, i) => `BOM${i + 1}`),
+  ...Array.from({ length: 40 }, (_, i) => `BOM${i + 1}`),
 ];
 const RESOURCE_PAGE_SIZE = 50;
 
