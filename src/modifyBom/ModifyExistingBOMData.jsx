@@ -10,6 +10,11 @@ import {
   clearModifyExistingBomState,
 } from "../redux/bomSlice";
 
+const ITEM_MASTER_ENDPOINT = "/api/bigquery/table/item-master-with-releaseflag";
+
+let itemIdCounter = 0;
+const generateItemId = () => `item-${Date.now()}-${++itemIdCounter}`;
+
 const toText = (value) => String(value ?? "").trim();
 const normalizeArray = (value) => (Array.isArray(value) ? value : []);
 const getBomIdFromRecord = (row = {}) => row?.bom_id || row?.BOMID || row?.bomId || "";
@@ -56,6 +61,7 @@ const normalizeComponentRowsFromSearch = (rows = []) =>
     const standardUsage = getComponentStandardUsage(row);
     return {
       ...row,
+      id: row.id || generateItemId(),
       component_item: componentItem,
       original_component_item: row.original_component_item || row.originalComponentItem || componentItem,
       component_desc: componentDesc,
@@ -79,6 +85,7 @@ const normalizeCoProductRowsFromSearch = (rows = [], selectedResource = "", sele
     const priority = getCoProductPriority(row);
     return {
       ...row,
+      id: row.id || generateItemId(),
       item,
       original_item: row.original_item || row.originalItem || item,
       desc,
@@ -169,8 +176,12 @@ export default function ModifyExistingBOMData() {
       return;
     }
 
-    const hydrateKey = `${bomId}__${producedItem}__${location}`;
-    if (hydratedKeyRef.current === hydrateKey) return;
+    if (hasInvalidNumericValues) {
+      setValidationError(
+        "Standard Usage must be greater than 0. Qty Produced must be greater than 0 and less than 1. Item BOM Routing Priority must be a whole number."
+      );
+      return;
+    }
 
     let cancelled = false;
     const fetchModifyExistingBomDetails = async () => {
@@ -205,7 +216,6 @@ export default function ModifyExistingBOMData() {
         setCoProducts(normalizedCoProducts);
         setInitialCoProducts(normalizedCoProducts.map((row) => ({ ...row })));
         setProducedCoProduct(normalizedCoProducts.length > 0);
-        hydratedKeyRef.current = hydrateKey;
       } catch (err) {
         if (cancelled) return;
         console.error("Error fetching modify existing BOM details:", err);
@@ -400,11 +410,11 @@ export default function ModifyExistingBOMData() {
     );
   };
 
-  const addComponent = () => setComponentItems((prev) => [...prev, { component_item: "", component_desc: "", original_component_item: "", original_component_desc: "", standard_usage: "", original_standard_usage: "", isNew: true }]);
+  const addComponent = () => setComponentItems((prev) => [...prev, { id: generateItemId(), component_item: "", component_desc: "", original_component_item: "", original_component_desc: "", standard_usage: "", original_standard_usage: "", isNew: true }]);
   const updateComponent = (index, field, value) => setComponentItems((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
   const handleComponentItemChange = (index, value, description = "") => setComponentItems((prev) => prev.map((item, i) => i === index ? { ...item, component_item: value, component_desc: description || "" } : item));
   const removeComponent = (index) => setComponentItems((prev) => prev.filter((_, i) => i !== index));
-  const addCoProduct = () => setCoProducts((prev) => [...prev, { item: "", original_item: "", desc: "", original_desc: "", qty: "", original_qty: "", resource: "", original_resource: "", routing_id: "", original_routing_id: "", itemBomRoutingPriority: "", isNew: true }]);
+  const addCoProduct = () => setCoProducts((prev) => [...prev, { id: generateItemId(), item: "", original_item: "", desc: "", original_desc: "", qty: "", original_qty: "", resource: "", original_resource: "", routing_id: "", original_routing_id: "", itemBomRoutingPriority: "", isNew: true }]);
   const updateCoProduct = (index, field, value) => setCoProducts((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
   const handleCoProductItemChange = (index, value, description = "") => setCoProducts((prev) => prev.map((item, i) => i === index ? { ...item, item: value, desc: description || "" } : item));
   const handleCoProductResourceChange = (index, value) => setCoProducts((prev) => prev.map((item, i) => i === index ? { ...item, resource: value, routing_id: buildRoutingId(selectedProducedItem, value) } : item));
@@ -480,7 +490,7 @@ export default function ModifyExistingBOMData() {
             <div style={styles.editTableWrap}>
               <div style={styles.editTableHeader}><div>Component Item</div><div>Item Description</div><div>Standard Usage</div><div /></div>
               {componentItems.map((item, index) => (
-                <div key={item.id || item.original_component_item || item.component_item || index} style={styles.editTableRow}>
+                <div key={item.id} style={styles.editTableRow}>
                   {isExistingComponentRow(item) ? <input value={toText(item.component_item)} disabled style={styles.tableInputDisabled} placeholder="Component Item" /> : renderLazyItemInput({ rowKey: `component-${item.id || item.original_component_item || index}`, value: toText(item.component_item), placeholder: "Search Component Item", applySelection: (option) => handleComponentItemChange(index, option.item, option.item_desc || option.description || "") })}
                   <input title={item.component_desc} style={styles.tableInputDisabled} placeholder="Item Description" value={item.component_desc || ""} readOnly />
                   <input type="number" min="0" step="any" style={styles.tableInput} placeholder="Standard Usage" value={item.standard_usage || ""} onChange={(e) => updateComponent(index, "standard_usage", e.target.value)} />
@@ -502,7 +512,7 @@ export default function ModifyExistingBOMData() {
               <div style={styles.editTableWrap}>
                 <div style={styles.coProductEditTableHeader}><div>Co-Product Item</div><div>Item Description</div><div>Resource</div><div>Qty Produced Per</div><div /></div>
                 {coProducts.map((cp, index) => (
-                  <div key={cp.id || cp.original_item || cp.item || index} style={styles.coProductEditTableRow}>
+                  <div key={cp.id} style={styles.coProductEditTableRow}>
                     {isExistingCoProductRow(cp) ? <input value={toText(cp.item)} disabled style={styles.tableInputDisabled} placeholder="Co-Product Item" /> : renderLazyItemInput({ rowKey: `coproduct-${cp.id || cp.original_item || index}`, value: toText(cp.item), placeholder: "Search Co-Product Item", applySelection: (option) => handleCoProductItemChange(index, option.item, option.item_desc || option.description || "") })}
                     <input title={cp.desc} style={styles.tableInputDisabled} placeholder="Item Description" value={cp.desc || ""} readOnly />
                     {isExistingCoProductRow(cp) ? <input title={cp.resource} value={toText(cp.resource)} disabled style={styles.tableInputDisabled} placeholder="Resource" /> : renderLazyResourceInput({ rowKey: `coproduct-resource-${cp.id || cp.original_item || index}`, value: toText(cp.resource), updateValue: (value) => handleCoProductResourceChange(index, value) })}
