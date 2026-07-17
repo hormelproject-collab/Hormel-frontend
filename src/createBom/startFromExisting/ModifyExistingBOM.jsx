@@ -4,6 +4,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { MdDelete } from "react-icons/md";
 import ProgressIndicator from "../../components/CommonProgressIndicator";
 import {
+  fetchResourcesLazyOptions,
+  selectResourceOptionsByKey,
   selectModifyExistingBomState,
   setModifyExistingBomState,
   setModifyExistingBomValues,
@@ -17,6 +19,7 @@ const BOM_VERSION_OPTIONS = [
   ...Array.from({ length: 40 }, (_, i) => `BOM${i + 1}`),
 ];
 const RESOURCE_PAGE_SIZE = 50;
+const buildConfigKey = (item, location) => `${item}__${location}`;
 
 // Required format: ROUTING_item_resource. Location is intentionally ignored.
 const buildRoutingId = (item, _location, resource) =>
@@ -105,9 +108,18 @@ const normalizeSelectedBom = (row) => {
   };
 };
 
-const getResourceRelevancy = (resourceMasterMap, resource) => {
+const getResourceRelevancy = (resourceOptions = [], resource) => {
   const key = String(resource ?? "").trim().toUpperCase();
-  return resourceMasterMap.get(key)?.resourceRelevancy ?? "";
+  const matched = (resourceOptions || []).find(
+    (row) => String(row?.resource ?? "").trim().toUpperCase() === key
+  );
+  return (
+    matched?.resourceRelevancy ??
+    matched?.resourcePlanningRelevance ??
+    matched?.resource_relevancy ??
+    matched?.resource_planning_relevance ??
+    ""
+  );
 };
 
 const makeComponentRow = (seed = {}) => {
@@ -306,6 +318,7 @@ const ModifyExistingBOM = () => {
   const { id } = useParams();
   const dispatch = useDispatch();
   const savedModifyState = useSelector(selectModifyExistingBomState);
+  const resourceOptionsByKey = useSelector(selectResourceOptionsByKey);
   const savedModifyStateRef = useRef(savedModifyState);
 
   const [selectedBom, setSelectedBom] = useState(normalizeSelectedBom(routerLocation?.state?.selectedBom));
@@ -319,10 +332,7 @@ const ModifyExistingBOM = () => {
   const [coProducts, setCoProducts] = useState([]);
   const [producedCoProduct, setProducedCoProduct] = useState(false);
   const [routingRows, setRoutingRows] = useState([]);
-
-  const [allGcpResourceOptions, setAllGcpResourceOptions] = useState([]);
-  const [allResourceOptions, setAllResourceOptions] = useState([]);
-  const [resourceMasterMap, setResourceMasterMap] = useState(new Map());
+  const [resourceOptionsMemoryByKey, setResourceOptionsMemoryByKey] = useState({});
   const [loadingResourceOptions, setLoadingResourceOptions] = useState(false);
   const [resourceSearch, setResourceSearch] = useState("");
   const [resourcePage, setResourcePage] = useState(1);
@@ -330,7 +340,6 @@ const ModifyExistingBOM = () => {
   const [existingBomVersions, setExistingBomVersions] = useState([]);
   const [existingBomVersionsLoading, setExistingBomVersionsLoading] = useState(false);
   const resourceSearchTimerRef = useRef(null);
-  const resourceOptionsLoadedRef = useRef(false);
 
   const itemSearchTimerRef = useRef({});
   const itemSearchCacheRef = useRef({});
@@ -345,64 +354,94 @@ const ModifyExistingBOM = () => {
     savedModifyStateRef.current = savedModifyState;
   }, [savedModifyState]);
 
-  const loadGcpResourceOptions = async ({ searchText = resourceSearch, page = 1 } = {}) => {
-    if (loadingResourceOptions) return;
+  const selectedBomResourceKey = useMemo(
+    () =>
+      selectedBom?.produced_item && selectedBom?.location
+        ? buildConfigKey(selectedBom.produced_item, selectedBom.location)
+        : "",
+    [selectedBom?.produced_item, selectedBom?.location]
+  );
+
+  const reduxResourceOptions = useMemo(
+    () => (selectedBomResourceKey ? resourceOptionsByKey[selectedBomResourceKey] || [] : []),
+    [resourceOptionsByKey, selectedBomResourceKey]
+  );
+
+  useEffect(() => {
+    if (!selectedBomResourceKey) return;
+
+    setResourceOptionsMemoryByKey((prev) => {
+      const currentRows = prev[selectedBomResourceKey] || [];
+      const seen = new Set();
+      const merged = [];
+
+      currentRows.forEach((row) => {
+        const resource = String(row?.resource ?? "").trim();
+        if (!resource) return;
+        const resourceKey = resource.toUpperCase();
+        if (seen.has(resourceKey)) return;
+        seen.add(resourceKey);
+        merged.push(row);
+      });
+
+      reduxResourceOptions.forEach((row) => {
+        const resource = String(row?.resource ?? "").trim();
+        if (!resource) return;
+        const resourceKey = resource.toUpperCase();
+        if (seen.has(resourceKey)) return;
+        seen.add(resourceKey);
+        merged.push(row);
+      });
+
+      selectedResources.forEach((resourceValue) => {
+        const resource = String(resourceValue ?? "").trim();
+        if (!resource) return;
+        const resourceKey = resource.toUpperCase();
+        if (seen.has(resourceKey)) return;
+        seen.add(resourceKey);
+        merged.push({ resource });
+      });
+
+      return { ...prev, [selectedBomResourceKey]: merged };
+    });
+  }, [selectedBomResourceKey, reduxResourceOptions, selectedResources]);
+
+  const allResourceOptions = useMemo(
+    () => (selectedBomResourceKey ? resourceOptionsMemoryByKey[selectedBomResourceKey] || [] : []),
+    [resourceOptionsMemoryByKey, selectedBomResourceKey]
+  );
+
+  const loadResourceOptionsFromBomSlice = async ({
+    searchText = resourceSearch,
+    page = 1,
+    append = false,
+  } = {}) => {
+    if (!selectedBom?.produced_item || !selectedBom?.location || loadingResourceOptions) return;
+
+    const key = buildConfigKey(selectedBom.produced_item, selectedBom.location);
     setLoadingResourceOptions(true);
 
     try {
-      let fullResourceOptions = allGcpResourceOptions;
+      const resultAction = await dispatch(
+        fetchResourcesLazyOptions({
+          key,
+          producedItem: selectedBom.produced_item,
+          location: selectedBom.location,
+          search: searchText,
+          page,
+          pageSize: RESOURCE_PAGE_SIZE,
+          append,
+        })
+      );
 
-      // Old working GCP fetch. Search + pagination are applied on frontend.
-      if (!resourceOptionsLoadedRef.current || fullResourceOptions.length === 0) {
-        const [routingResconsRows, resourceMasterRows] = await Promise.all([
-          fetchJsonNoLimit("/api/bigquery/table/routing_rescons"),
-          fetchJsonNoLimit("/api/bigquery/table/resource_master"),
-        ]);
-
-        const tempResourceMap = new Map();
-        (Array.isArray(resourceMasterRows) ? resourceMasterRows : []).forEach((row) => {
-          const resourceKey = String(row.resource ?? "").trim().toUpperCase();
-          if (!resourceKey) return;
-          tempResourceMap.set(resourceKey, {
-            resourceRelevancy:
-              row.resource_planning_relevance ?? row.resource_relevancy ?? row.relevancy ?? "",
-          });
-        });
-
-        const seenResources = new Set();
-        const tempResourceOptions = [];
-        (Array.isArray(routingResconsRows) ? routingResconsRows : []).forEach((row) => {
-          const resource = String(row.resource ?? "").trim();
-          if (!resource) return;
-          const key = resource.toUpperCase();
-          if (seenResources.has(key)) return;
-          seenResources.add(key);
-          tempResourceOptions.push({
-            resource,
-            resourceRelevancy: tempResourceMap.get(key)?.resourceRelevancy ?? "",
-          });
-        });
-
-        fullResourceOptions = tempResourceOptions;
-        setAllGcpResourceOptions(tempResourceOptions);
-        setResourceMasterMap(tempResourceMap);
-        resourceOptionsLoadedRef.current = true;
+      if (fetchResourcesLazyOptions.fulfilled.match(resultAction)) {
+        setResourcePage(page);
+        setResourceHasNext(!!resultAction.payload?.pagination?.hasNext);
+      } else {
+        setResourceHasNext(false);
       }
-
-      const cleanSearch = String(searchText || "").trim().toLowerCase();
-      const filteredOptions = cleanSearch
-        ? fullResourceOptions.filter((opt) =>
-            String(opt.resource ?? "").toLowerCase().includes(cleanSearch)
-          )
-        : fullResourceOptions;
-
-      const endIndex = page * RESOURCE_PAGE_SIZE;
-      setAllResourceOptions(filteredOptions.slice(0, endIndex));
-      setResourcePage(page);
-      setResourceHasNext(endIndex < filteredOptions.length);
-    } catch (e) {
-      console.error("Error fetching GCP resource options:", e);
-      setAllResourceOptions([]);
+    } catch (error) {
+      console.error("Error fetching resource options from bomSlice:", error);
       setResourceHasNext(false);
     } finally {
       setLoadingResourceOptions(false);
@@ -413,13 +452,17 @@ const ModifyExistingBOM = () => {
     setResourceSearch(value);
     if (resourceSearchTimerRef.current) clearTimeout(resourceSearchTimerRef.current);
     resourceSearchTimerRef.current = setTimeout(() => {
-      loadGcpResourceOptions({ searchText: value, page: 1 });
+      loadResourceOptionsFromBomSlice({ searchText: value, page: 1, append: false });
     }, 300);
   };
 
   const handleResourceLoadMore = () => {
     if (!resourceHasNext || loadingResourceOptions) return;
-    loadGcpResourceOptions({ searchText: resourceSearch, page: Number(resourcePage || 1) + 1 });
+    loadResourceOptionsFromBomSlice({
+      searchText: resourceSearch,
+      page: Number(resourcePage || 1) + 1,
+      append: true,
+    });
   };
 
   const loadLazyItemOptions = async ({ rowKey, searchText = "", page = 1, append = false }) => {
@@ -660,22 +703,21 @@ const ModifyExistingBOM = () => {
   }, [selectedBom?.produced_item, selectedBom?.location]);
 
   useEffect(() => {
-    if (!selectedBom || resourceOptionsLoadedRef.current) return;
-    loadGcpResourceOptions({ searchText: resourceSearch, page: 1 });
-    // Load resource master once so Resource Relevancy is available.
+    if (!selectedBom) return;
+    loadResourceOptionsFromBomSlice({ searchText: resourceSearch, page: 1, append: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBom]);
+  }, [selectedBom?.produced_item, selectedBom?.location]);
 
   useEffect(() => {
     if (!selectedBom) return;
     setRoutingRows(
       selectedResources.map((resource) => ({
         resource,
-        resourceRelevancy: getResourceRelevancy(resourceMasterMap, resource),
+        resourceRelevancy: getResourceRelevancy(allResourceOptions, resource),
         routingId: buildRoutingId(selectedBom.produced_item, selectedBom.location, resource),
       }))
     );
-  }, [selectedResources, selectedBom, resourceMasterMap]);
+  }, [selectedResources, selectedBom, allResourceOptions]);
 
   useEffect(() => {
     if (!selectedBom || !detailsHydrated) return;
@@ -1003,7 +1045,7 @@ const ModifyExistingBOM = () => {
                 options={allResourceOptions}
                 selectedValues={selectedResources}
                 onChange={setSelectedResources}
-                onOpen={() => loadGcpResourceOptions({ searchText: resourceSearch, page: 1 })}
+                onOpen={() => loadResourceOptionsFromBomSlice({ searchText: resourceSearch, page: 1, append: false })}
                 searchValue={resourceSearch}
                 onSearchChange={handleResourceSearchChange}
                 onLoadMore={handleResourceLoadMore}

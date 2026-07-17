@@ -307,7 +307,7 @@ export default function DeleteItemBomRoutingSummaryStep2() {
             <div style={styles.modalBody}>
               The selected Item BOM Routing record(s), including any associated co-products,
               will be permanently deleted from the live system. Related records will also be
-              removed from the bom_consumed table. Do you still want to continue?
+              removed from the bom_produced table. Do you still want to continue?
             </div>
             <div style={styles.modalActions}>
               <button type="button" onClick={() => setShowModal(false)} style={styles.subtleBtn}>Cancel</button>

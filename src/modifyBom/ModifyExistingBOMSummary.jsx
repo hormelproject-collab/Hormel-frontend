@@ -8,12 +8,6 @@ import {
 
 const toText = (value) => String(value ?? "").trim();
 
-const toNumberOrEmpty = (value) => {
-  if (value === null || value === undefined || value === "") return "";
-  const num = Number(value);
-  return Number.isFinite(num) ? num : "";
-};
-
 const toNumberOrZero = (value) => {
   const num = Number(String(value ?? "").trim());
   return Number.isFinite(num) ? num : 0;
@@ -24,16 +18,13 @@ const getResourceFromRoutingId = (routingId) => {
     .split("_")
     .map((part) => part.trim())
     .filter(Boolean);
-
   return parts.length >= 3 ? parts.slice(2).join("_") : "";
 };
 
 const buildRoutingId = (producedItem, resource) => {
   const cleanProducedItem = toText(producedItem);
   const cleanResource = toText(resource);
-
   if (!cleanProducedItem || !cleanResource) return "";
-
   return `ROUTING_${cleanProducedItem}_${cleanResource}`;
 };
 
@@ -80,11 +71,10 @@ const getCoProductQty = (item) =>
   item?.erp_bom_qty_produced_per ??
   "";
 
-const getCoProductPriority = (item) =>
-  item?.itemBomRoutingPriority ??
-  item?.item_bom_routing_priority ??
-  item?.erp_item_bom_routing_priority ??
-  "";
+const getCoProductResource = (item, fallbackResource = "") =>
+  toText(item?.resource || item?.Resource || item?.original_resource || item?.originalResource) ||
+  getResourceFromRoutingId(item?.routing_id || item?.routingId || item?.original_routing_id || item?.originalRoutingId) ||
+  toText(fallbackResource);
 
 const formatNumber = (value) => {
   const num = Number(value);
@@ -174,6 +164,7 @@ const normalizeValidationEntries = (validationResult) => {
   if (Array.isArray(fallbackArray)) {
     fallbackArray.forEach((entry, index) => pushEntry(entry, index));
   }
+
   if (fallbackArray && !Array.isArray(fallbackArray) && typeof fallbackArray === "object") {
     Object.entries(fallbackArray).forEach(([code, entry], index) => {
       pushEntry({ code, ...entry }, index);
@@ -197,7 +188,6 @@ const ModifyExistingBOMSummary = () => {
   const [notes, setNotes] = useState("");
   const [validationResult, setValidationResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
 
   const record = routerLocation?.state?.record ?? {};
   const componentItems = routerLocation?.state?.componentItems ?? [];
@@ -214,11 +204,13 @@ const ModifyExistingBOMSummary = () => {
     getResourceFromRoutingId(record?.routing_id || record?.routingId);
 
   const resolvedRoutingId = useMemo(() => {
-    const directRoutingId =
-      toText(record?.routing_id || record?.routingId || record?.resourceInfo?.routingId || record?.resourceInfo?.routing_id);
-
+    const directRoutingId = toText(
+      record?.routing_id ||
+        record?.routingId ||
+        record?.resourceInfo?.routingId ||
+        record?.resourceInfo?.routing_id
+    );
     if (directRoutingId) return directRoutingId;
-
     return buildRoutingId(producedItem, selectedResource);
   }, [record, producedItem, selectedResource]);
 
@@ -241,12 +233,9 @@ const ModifyExistingBOMSummary = () => {
   const existingComponentItems = componentItems
     .filter((item) => !item.isNew && (item.original_component_item || getComponentItem(item)))
     .map((item) => {
-      const originalUsage = String(
-        item.original_standard_usage ?? getComponentStandardUsage(item) ?? ""
-      );
+      const originalUsage = String(item.original_standard_usage ?? getComponentStandardUsage(item) ?? "");
       const updatedUsage = String(getComponentStandardUsage(item) ?? "");
       const hasStandardUsageChanged = originalUsage.trim() !== updatedUsage.trim();
-
       return {
         ...item,
         component_item: getComponentItem(item),
@@ -263,27 +252,18 @@ const ModifyExistingBOMSummary = () => {
       initialComponentItemsFromState.find(
         (it) => toText(it.original_component_item || it.component_item || it.componentItem || "") === key
       ) || {};
-
     return {
       ...item,
       component_item: getComponentItem(item) || key,
       component_desc: getComponentDescription(item) || getComponentDescription(fallback),
-      original_standard_usage: String(
-        item.original_standard_usage ?? getComponentStandardUsage(item) ?? ""
-      ),
+      original_standard_usage: String(item.original_standard_usage ?? getComponentStandardUsage(item) ?? ""),
       updated_standard_usage: "Item Removed",
       hasStandardUsageChanged: true,
     };
   });
 
-  const finalExistingComponentItems = [
-    ...existingComponentItems,
-    ...removedMappedComponentItems,
-  ];
-
-  const addedComponentItems = componentItems.filter(
-    (item) => item.isNew || !item.original_component_item
-  );
+  const finalExistingComponentItems = [...existingComponentItems, ...removedMappedComponentItems];
+  const addedComponentItems = componentItems.filter((item) => item.isNew || !item.original_component_item);
 
   const existingCoProducts = coProducts
     .filter((cp) => !cp.isNew && (cp.original_item || getCoProductItem(cp)))
@@ -291,26 +271,15 @@ const ModifyExistingBOMSummary = () => {
       const originalQty = String(cp.original_qty ?? getCoProductQty(cp) ?? "");
       const updatedQty = String(getCoProductQty(cp) ?? "");
       const hasQtyChanged = originalQty.trim() !== updatedQty.trim();
-      const originalResource = String(cp.original_resource ?? cp.resource ?? selectedResource ?? "");
-      const updatedResource = String(cp.resource ?? selectedResource ?? "");
-      const hasResourceChanged = originalResource.trim() !== updatedResource.trim();
-      const originalPriority = String(cp.original_itemBomRoutingPriority ?? cp.original_item_bom_routing_priority ?? getCoProductPriority(cp) ?? "");
-      const updatedPriority = String(getCoProductPriority(cp) ?? "");
-      const hasPriorityChanged = originalPriority.trim() !== updatedPriority.trim();
-
+      const resource = getCoProductResource(cp, selectedResource);
       return {
         ...cp,
         item: getCoProductItem(cp),
         desc: getCoProductDescription(cp),
+        resource,
         original_qty: originalQty,
         updated_qty: hasQtyChanged ? updatedQty : "No Changes",
-        original_resource: originalResource,
-        updated_resource: hasResourceChanged ? updatedResource : "No Changes",
-        original_priority: originalPriority,
-        updated_priority: hasPriorityChanged ? updatedPriority : "No Changes",
         hasQtyChanged,
-        hasResourceChanged,
-        hasPriorityChanged,
       };
     });
 
@@ -320,39 +289,30 @@ const ModifyExistingBOMSummary = () => {
       initialCoProductsFromState.find(
         (it) => toText(it.original_item || it.item || it.coProductItem || "") === key
       ) || {};
-
     return {
       ...cp,
       item: getCoProductItem(cp) || key,
       desc: getCoProductDescription(cp) || getCoProductDescription(fallback),
+      resource: getCoProductResource(cp, getCoProductResource(fallback, selectedResource)),
       original_qty: String(cp.original_qty ?? getCoProductQty(cp) ?? ""),
-      original_resource: String(cp.original_resource ?? cp.resource ?? fallback.original_resource ?? fallback.resource ?? ""),
-      original_priority: String(getCoProductPriority(cp) || getCoProductPriority(fallback) || ""),
-      updated_resource: "Item Removed",
       updated_qty: "Item Removed",
-      updated_priority: "Item Removed",
       hasQtyChanged: true,
-      hasResourceChanged: true,
-      hasPriorityChanged: true,
     };
   });
 
-  const finalExistingCoProducts = [
-    ...existingCoProducts,
-    ...removedMappedCoProducts,
-  ];
-
-  const addedCoProducts = coProducts.filter(
-    (cp) => cp.isNew || !cp.original_item
-  );
+  const finalExistingCoProducts = [...existingCoProducts, ...removedMappedCoProducts];
+  const addedCoProducts = coProducts.filter((cp) => cp.isNew || !cp.original_item);
 
   const validationEntries = useMemo(() => {
     return normalizeValidationEntries(validationResult).filter((entry) => {
-      return String(entry?.desc || "").trim() ||
+      return (
+        String(entry?.desc || "").trim() ||
         String(entry?.error || "").trim() ||
-        String(entry?.rm || "").trim();
+        String(entry?.rm || "").trim()
+      );
     });
   }, [validationResult]);
+
   const responseStatus = String(validationResult?.status || "").toLowerCase();
   const responseSuccessFlag = validationResult?.success === true;
   const responseFailureFlag =
@@ -360,6 +320,7 @@ const ModifyExistingBOMSummary = () => {
     responseStatus === "failure" ||
     responseStatus === "failed" ||
     responseStatus === "error";
+
   const validationFailed = validationEntries.length > 0;
   const validationPassedButNotPushed =
     !!validationResult &&
@@ -371,6 +332,7 @@ const ModifyExistingBOMSummary = () => {
       validationResult?.pushedToDb === false ||
       responseStatus === "failure" ||
       responseStatus === "failed");
+
   const topLevelError = validationPassedButNotPushed
     ? "Validation is successful but the records are not pushed to DB. Please try again."
     : !validationFailed && responseFailureFlag
@@ -381,6 +343,7 @@ const ModifyExistingBOMSummary = () => {
       : !validationFailed
         ? validationResult?.error || validationResult?.data?.error || ""
         : "";
+
   const isSuccess =
     !!validationResult &&
     !validationFailed &&
@@ -388,6 +351,7 @@ const ModifyExistingBOMSummary = () => {
     !topLevelError &&
     !responseFailureFlag &&
     (responseSuccessFlag || responseStatus === "success");
+
   const successEcNumber =
     validationResult?.engineeringChangeId ||
     validationResult?.engineering_change_id ||
@@ -436,26 +400,18 @@ const ModifyExistingBOMSummary = () => {
               const parsedStandardUsage = Number(getComponentStandardUsage(item));
               return {
                 componentItem: getComponentItem(item),
-                standardUsage: Number.isFinite(parsedStandardUsage)
-                  ? parsedStandardUsage
-                  : "",
+                standardUsage: Number.isFinite(parsedStandardUsage) ? parsedStandardUsage : "",
               };
             }),
             coProductItems: coProducts.map((cp) => {
               const coProductItem = getCoProductItem(cp);
-              const cpResource = toText(cp.resource || cp.original_resource || selectedResource);
+              const cpResource = getCoProductResource(cp, selectedResource);
               const parsedQty = Number(getCoProductQty(cp));
-              const priorityValue = getCoProductPriority(cp);
-
               return {
                 coProductItem,
                 resource: cpResource,
                 routingId: buildRoutingId(producedItem, cpResource),
                 standardUsage: Number.isFinite(parsedQty) ? parsedQty : "",
-                itemBomRoutingPriority:
-                  priorityValue === "" || priorityValue === null || priorityValue === undefined
-                    ? ""
-                    : Number(priorityValue),
                 isNew: !!cp?.isNew,
               };
             }),
@@ -500,12 +456,10 @@ const ModifyExistingBOMSummary = () => {
           to { transform: translateX(0); opacity: 1; }
         }
       `}</style>
-
       <div style={styles.wrapper}>
         <div style={styles.back} onClick={() => navigate(-1)}>
           ← BACK
         </div>
-
         <h1 style={styles.title}>Step 3: Modified BOM Summary</h1>
         <p style={styles.subtitle}>Review the changes to the BOM record</p>
 
@@ -531,9 +485,7 @@ const ModifyExistingBOMSummary = () => {
               </tr>
               <tr style={styles.summaryRow}>
                 <td style={styles.summaryCell}>Produced Item Description</td>
-                <td style={styles.summaryCell}>
-                  {record.produced_item_desc || record.component_desc || "-"}
-                </td>
+                <td style={styles.summaryCell}>{record.produced_item_desc || record.component_desc || "-"}</td>
               </tr>
               <tr style={styles.summaryRow}>
                 <td style={styles.summaryCell}>Item Release Flag</td>
@@ -563,10 +515,7 @@ const ModifyExistingBOMSummary = () => {
               </thead>
               <tbody>
                 {finalExistingComponentItems.map((item, index) => (
-                  <tr
-                    key={`existing-component-${index}`}
-                    style={item.hasStandardUsageChanged ? styles.changesAltRow : styles.changesRow}
-                  >
+                  <tr key={`existing-component-${index}`} style={item.hasStandardUsageChanged ? styles.changesAltRow : styles.changesRow}>
                     <td style={styles.changesCell}>{item.component_item || "-"}</td>
                     <td style={styles.changesCell}>{item.component_desc || "-"}</td>
                     <td style={styles.changesCell}>{item.original_standard_usage || "-"}</td>
@@ -609,35 +558,22 @@ const ModifyExistingBOMSummary = () => {
           {finalExistingCoProducts.length === 0 ? (
             <div style={styles.emptyBox}>No existing co-product values were changed.</div>
           ) : (
-            <table style={styles.changesTable}>
+            <table style={styles.coProductChangesTable}>
               <thead>
                 <tr>
                   <th style={styles.changesHeader}>Co-Product Item</th>
                   <th style={styles.changesHeader}>Description</th>
-                  <th style={styles.changesHeader}>Original Resource</th>
-                  <th style={styles.changesHeader}>Updated Resource</th>
-                  <th style={styles.changesHeader}>Original Priority</th>
-                  <th style={styles.changesHeader}>Updated Priority</th>
+                  <th style={styles.resourceHeader}>Resource</th>
                   <th style={styles.changesHeader}>Original Qty Produced</th>
                   <th style={styles.changesHeader}>Updated Qty Produced</th>
                 </tr>
               </thead>
               <tbody>
                 {finalExistingCoProducts.map((item, index) => (
-                  <tr
-                    key={`existing-coproduct-${index}`}
-                    style={
-                      item.hasQtyChanged || item.hasResourceChanged || item.hasPriorityChanged
-                        ? styles.changesAltRow
-                        : styles.changesRow
-                    }
-                  >
+                  <tr key={`existing-coproduct-${index}`} style={item.hasQtyChanged ? styles.changesAltRow : styles.changesRow}>
                     <td style={styles.changesCell}>{item.item || "-"}</td>
                     <td style={styles.changesCell}>{item.desc || "-"}</td>
-                    <td style={styles.changesCell}>{item.original_resource || "-"}</td>
-                    <td style={styles.changesCell}>{item.updated_resource || "-"}</td>
-                    <td style={styles.changesCell}>{item.original_priority || "-"}</td>
-                    <td style={styles.changesCell}>{item.updated_priority || "-"}</td>
+                    <td style={styles.resourceCell}>{item.resource || "-"}</td>
                     <td style={styles.changesCell}>{item.original_qty || "-"}</td>
                     <td style={styles.changesCell}>{item.updated_qty || "-"}</td>
                   </tr>
@@ -652,13 +588,12 @@ const ModifyExistingBOMSummary = () => {
           {addedCoProducts.length === 0 ? (
             <div style={styles.emptyBox}>No new co-product values were added.</div>
           ) : (
-            <table style={styles.changesTable}>
+            <table style={styles.addedCoProductChangesTable}>
               <thead>
                 <tr>
                   <th style={styles.changesHeader}>Co-Product Item</th>
                   <th style={styles.changesHeader}>Description</th>
-                  <th style={styles.changesHeader}>Resource</th>
-                  <th style={styles.changesHeader}>Item BOM Routing Priority</th>
+                  <th style={styles.resourceHeader}>Resource</th>
                   <th style={styles.changesHeader}>Qty Produced</th>
                 </tr>
               </thead>
@@ -667,8 +602,7 @@ const ModifyExistingBOMSummary = () => {
                   <tr key={`added-coproduct-${index}`} style={styles.changesAltRow}>
                     <td style={styles.changesCell}>{getCoProductItem(item) || "-"}</td>
                     <td style={styles.changesCell}>{getCoProductDescription(item) || "-"}</td>
-                    <td style={styles.changesCell}>{item.resource || selectedResource || "-"}</td>
-                    <td style={styles.changesCell}>{getCoProductPriority(item) || "-"}</td>
+                    <td style={styles.resourceCell}>{getCoProductResource(item, selectedResource) || "-"}</td>
                     <td style={styles.changesCell}>{getCoProductQty(item) || "-"}</td>
                   </tr>
                 ))}
@@ -716,9 +650,7 @@ const ModifyExistingBOMSummary = () => {
         ) : validationPassedButNotPushed ? (
           <div style={styles.warningCard}>
             <div style={styles.resultTitle}>Validation Success - Records Not Pushed</div>
-            <div style={styles.warningText}>
-              Validation is successful but the records are not pushed to DB. Please try again.
-            </div>
+            <div style={styles.warningText}>Validation is successful but the records are not pushed to DB. Please try again.</div>
           </div>
         ) : isSuccess ? (
           <div style={styles.successCard}>
@@ -735,277 +667,66 @@ const ModifyExistingBOMSummary = () => {
         ) : null}
 
         <div style={styles.footer}>
-          <button
-            type="button"
-            onClick={handleReturnToMainMenu}
-            style={styles.secondaryBtn}
-            disabled={isSubmitting}
-          >
+          <button type="button" onClick={handleReturnToMainMenu} style={styles.secondaryBtn} disabled={isSubmitting}>
             <span style={{ fontSize: "13px" }}>⌂</span>
             <span>RETURN TO MAIN MENU</span>
           </button>
           <button
             type="button"
-            style={{
-              ...styles.confirmBtn,
-              ...(isSubmitting || isSuccess ? styles.disabledBtn : {}),
-            }}
+            style={{ ...styles.confirmBtn, ...(isSubmitting || isSuccess ? styles.disabledBtn : {}) }}
             onClick={handleSubmit}
             disabled={isSubmitting || isSuccess}
           >
             {isSubmitting ? "SUBMITTING..." : "✓ CONFIRM AND SUBMIT BOM CHANGES"}
           </button>
         </div>
-
       </div>
     </div>
   );
 };
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#f3f4f6",
-    display: "flex",
-    justifyContent: "center",
-    padding: "24px 0",
-  },
-  wrapper: {
-    width: "100%",
-    maxWidth: "1180px",
-    padding: "0 16px",
-    boxSizing: "border-box",
-  },
-  back: {
-    color: "#2563eb",
-    cursor: "pointer",
-    marginBottom: "16px",
-    fontSize: "14px",
-  },
-  title: {
-    margin: 0,
-    fontSize: "28px",
-    fontWeight: 700,
-    color: "#111827",
-  },
-  subtitle: {
-    marginTop: "8px",
-    marginBottom: "18px",
-    color: "#6b7280",
-    fontSize: "15px",
-  },
-  card: {
-    background: "#fff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    padding: "22px",
-    marginBottom: "18px",
-    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
-    overflowX: "auto",
-  },
-  sectionTitle: {
-    margin: 0,
-    marginBottom: "16px",
-    fontSize: "18px",
-    fontWeight: 600,
-    color: "#111827",
-  },
-  summaryTable: {
-    width: "100%",
-    borderCollapse: "collapse",
-  },
-  summaryHeaderRow: {
-    background: "#f3f4f6",
-  },
-  summaryHeader: {
-    textAlign: "left",
-    color: "#374151",
-    padding: "12px 16px",
-    borderBottom: "1px solid #e5e7eb",
-    fontSize: "13px",
-  },
-  summaryRow: {
-    background: "#fff",
-  },
-  summaryCell: {
-    padding: "14px 16px",
-    borderBottom: "1px solid #e5e7eb",
-    color: "#111827",
-    fontSize: "14px",
-  },
-  changesTable: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "760px",
-  },
-  changesHeader: {
-    textAlign: "left",
-    padding: "12px 16px",
-    fontSize: "13px",
-    color: "#374151",
-    borderBottom: "1px solid #e5e7eb",
-    background: "#f8fafc",
-    whiteSpace: "nowrap",
-  },
-  changesRow: {
-    background: "#fff",
-  },
-  changesAltRow: {
-    background: "lightyellow",
-  },
-  changesCell: {
-    padding: "12px 16px",
-    borderBottom: "1px solid #e5e7eb",
-    color: "#111827",
-    fontSize: "14px",
-    verticalAlign: "top",
-    wordBreak: "break-word",
-  },
-  emptyBox: {
-    padding: "18px",
-    border: "1px dashed #d1d5db",
-    borderRadius: "6px",
-    background: "#f8fafc",
-    color: "#475569",
-    fontSize: "14px",
-  },
-  noteLabel: {
-    display: "block",
-    marginBottom: "8px",
-    color: "#374151",
-    fontSize: "13px",
-    fontWeight: 500,
-  },
-  textarea: {
-    width: "100%",
-    minHeight: "120px",
-    borderRadius: "6px",
-    border: "1px solid #d1d5db",
-    padding: "12px",
-    fontSize: "14px",
-    color: "#111827",
-    boxSizing: "border-box",
-    resize: "vertical",
-  },
-  footer: {
-    display: "flex",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    gap: "12px",
-    marginTop: "20px",
-  },
-  secondaryBtn: {
-    height: "44px",
-    minWidth: "190px",
-    border: "1px solid #6da0e1",
-    borderRadius: "6px",
-    padding: "0 16px",
-    fontSize: "13px",
-    fontWeight: 600,
-    color: "#1e63b5",
-    background: "#fff",
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "8px",
-    boxSizing: "border-box",
-  },
-  confirmBtn: {
-    height: "44px",
-    minWidth: "300px",
-    background: "#166534",
-    color: "#fff",
-    border: "none",
-    borderRadius: "6px",
-    padding: "0 20px",
-    fontSize: "14px",
-    fontWeight: 700,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxSizing: "border-box",
-  },
-  disabledBtn: {
-    opacity: 0.65,
-    cursor: "not-allowed",
-  },
-  resultTitle: {
-    fontSize: "15px",
-    fontWeight: 700,
-    marginBottom: "10px",
-  },
-  errorCard: {
-    background: "#fff5f5",
-    border: "1px solid #fecaca",
-    borderRadius: "6px",
-    padding: "16px",
-    marginBottom: "16px",
-  },
-  successCard: {
-    background: "#f0fdf4",
-    border: "1px solid #bbf7d0",
-    borderRadius: "6px",
-    padding: "16px",
-    marginBottom: "16px",
-  },
-  warningCard: {
-    background: "#fff7ed",
-    border: "1px solid #fdba74",
-    borderRadius: "6px",
-    padding: "16px",
-    marginBottom: "16px",
-  },
-  errorText: {
-    fontSize: "14px",
-    color: "#991b1b",
-    whiteSpace: "pre-wrap",
-  },
-  successText: {
-    fontSize: "14px",
-    color: "#166534",
-    whiteSpace: "pre-wrap",
-  },
-  warningText: {
-    fontSize: "14px",
-    color: "#9a3412",
-    whiteSpace: "pre-wrap",
-  },
-  validationTableWrap: {
-    overflowX: "auto",
-    border: "1px solid #f3d0d0",
-    borderRadius: "4px",
-    background: "#ffffff",
-    marginTop: "12px",
-  },
-  validationTable: {
-    width: "100%",
-    borderCollapse: "collapse",
-  },
-  validationHeaderRow: {
-    background: "#fee2e2",
-  },
-  validationBodyRow: {
-    borderTop: "1px solid #f3d0d0",
-  },
-  validationTh: {
-    textAlign: "left",
-    padding: "12px 14px",
-    fontSize: "12px",
-    fontWeight: 700,
-    color: "#7f1d1d",
-    whiteSpace: "nowrap",
-    verticalAlign: "top",
-  },
-  validationTd: {
-    padding: "12px 14px",
-    fontSize: "14px",
-    color: "#111827",
-    verticalAlign: "top",
-    whiteSpace: "pre-wrap",
-    lineHeight: 1.5,
-  },
+  page: { minHeight: "100vh", background: "#f3f4f6", display: "flex", justifyContent: "center", padding: "24px 0" },
+  wrapper: { width: "100%", maxWidth: "1180px", padding: "0 16px", boxSizing: "border-box" },
+  back: { color: "#2563eb", cursor: "pointer", marginBottom: "16px", fontSize: "14px" },
+  title: { margin: 0, fontSize: "28px", fontWeight: 700, color: "#111827" },
+  subtitle: { marginTop: "8px", marginBottom: "18px", color: "#6b7280", fontSize: "15px" },
+  card: { background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "22px", marginBottom: "18px", boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)", overflowX: "auto" },
+  sectionTitle: { margin: 0, marginBottom: "16px", fontSize: "18px", fontWeight: 600, color: "#111827" },
+  summaryTable: { width: "100%", borderCollapse: "collapse" },
+  summaryHeaderRow: { background: "#f3f4f6" },
+  summaryHeader: { textAlign: "left", color: "#374151", padding: "12px 16px", borderBottom: "1px solid #e5e7eb", fontSize: "13px" },
+  summaryRow: { background: "#fff" },
+  summaryCell: { padding: "14px 16px", borderBottom: "1px solid #e5e7eb", color: "#111827", fontSize: "14px" },
+  changesTable: { width: "100%", borderCollapse: "collapse", minWidth: "760px" },
+  coProductChangesTable: { width: "100%", borderCollapse: "collapse", minWidth: "920px" },
+  addedCoProductChangesTable: { width: "100%", borderCollapse: "collapse", minWidth: "820px" },
+  changesHeader: { textAlign: "left", padding: "12px 16px", fontSize: "13px", color: "#374151", borderBottom: "1px solid #e5e7eb", background: "#f8fafc", whiteSpace: "nowrap" },
+  resourceHeader: { textAlign: "left", padding: "12px 16px", fontSize: "13px", color: "#374151", borderBottom: "1px solid #e5e7eb", background: "#f8fafc", whiteSpace: "nowrap", minWidth: "300px" },
+  changesRow: { background: "#fff" },
+  changesAltRow: { background: "lightyellow" },
+  changesCell: { padding: "12px 16px", borderBottom: "1px solid #e5e7eb", color: "#111827", fontSize: "14px", verticalAlign: "top", wordBreak: "break-word" },
+  resourceCell: { padding: "12px 16px", borderBottom: "1px solid #e5e7eb", color: "#111827", fontSize: "14px", verticalAlign: "top", wordBreak: "break-word", minWidth: "300px" },
+  emptyBox: { padding: "18px", border: "1px dashed #d1d5db", borderRadius: "6px", background: "#f8fafc", color: "#475569", fontSize: "14px" },
+  noteLabel: { display: "block", marginBottom: "8px", color: "#374151", fontSize: "13px", fontWeight: 500 },
+  textarea: { width: "100%", minHeight: "120px", borderRadius: "6px", border: "1px solid #d1d5db", padding: "12px", fontSize: "14px", color: "#111827", boxSizing: "border-box", resize: "vertical" },
+  footer: { display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px", marginTop: "20px" },
+  secondaryBtn: { height: "44px", minWidth: "190px", border: "1px solid #6da0e1", borderRadius: "6px", padding: "0 16px", fontSize: "13px", fontWeight: 600, color: "#1e63b5", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px", boxSizing: "border-box" },
+  confirmBtn: { height: "44px", minWidth: "300px", background: "#166534", color: "#fff", border: "none", borderRadius: "6px", padding: "0 20px", fontSize: "14px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" },
+  disabledBtn: { opacity: 0.65, cursor: "not-allowed" },
+  resultTitle: { fontSize: "15px", fontWeight: 700, marginBottom: "10px" },
+  errorCard: { background: "#fff5f5", border: "1px solid #fecaca", borderRadius: "6px", padding: "16px", marginBottom: "16px" },
+  successCard: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "6px", padding: "16px", marginBottom: "16px" },
+  warningCard: { background: "#fff7ed", border: "1px solid #fdba74", borderRadius: "6px", padding: "16px", marginBottom: "16px" },
+  errorText: { fontSize: "14px", color: "#991b1b", whiteSpace: "pre-wrap" },
+  successText: { fontSize: "14px", color: "#166534", whiteSpace: "pre-wrap" },
+  warningText: { fontSize: "14px", color: "#9a3412", whiteSpace: "pre-wrap" },
+  validationTableWrap: { overflowX: "auto", border: "1px solid #f3d0d0", borderRadius: "4px", background: "#ffffff", marginTop: "12px" },
+  validationTable: { width: "100%", borderCollapse: "collapse" },
+  validationHeaderRow: { background: "#fee2e2" },
+  validationBodyRow: { borderTop: "1px solid #f3d0d0" },
+  validationTh: { textAlign: "left", padding: "12px 14px", fontSize: "12px", fontWeight: 700, color: "#7f1d1d", whiteSpace: "nowrap", verticalAlign: "top" },
+  validationTd: { padding: "12px 14px", fontSize: "14px", color: "#111827", verticalAlign: "top", whiteSpace: "pre-wrap", lineHeight: 1.5 },
 };
 
 export default ModifyExistingBOMSummary;

@@ -176,11 +176,11 @@ export default function DeleteExistingBomStep1() {
     );
   };
 
-  const getMainItemConnectedRows = (row) => {
+  const getBomConnectedRows = (row) => {
     const stableRow = normalizeRowForSelection(row);
     const groupKey = getConnectedGroupKey(stableRow);
 
-    if (!groupKey || groupKey === "__") return [stableRow];
+    if (!groupKey) return [stableRow];
 
     const connectedRows = pageRows.filter(
       (candidate) => getConnectedGroupKey(candidate) === groupKey
@@ -218,13 +218,7 @@ export default function DeleteExistingBomStep1() {
 
   const handleRowSelection = (row) => {
     const stableRow = normalizeRowForSelection(row);
-
-    if (isCoProductRow(stableRow)) {
-      toggleRowsKeepingRedux([stableRow]);
-      return;
-    }
-
-    toggleRowsKeepingRedux(getMainItemConnectedRows(stableRow));
+    toggleRowsKeepingRedux(getBomConnectedRows(stableRow));
   };
 
   const handleDeselectAll = () => {
@@ -436,8 +430,8 @@ export default function DeleteExistingBomStep1() {
               <div>
                 <div style={styles.selectedTitle}>Selected BOM Records</div>
                 <div style={styles.selectedSubText}>
-                  Main produced item and attached co-products with the same BOM ID and Location
-                  are selected together. Co-products are highlighted in yellow.
+                  Main produced item and all attached co-products with the same BOM ID
+                  are selected together for full BOM deletion. Co-products are highlighted in yellow.
                 </div>
               </div>
               <button type="button" onClick={handleDeselectAll} style={styles.deselectAllBtn}>
@@ -467,7 +461,7 @@ export default function DeleteExistingBomStep1() {
         ) : null}
 
         <div style={styles.footerRow}>
-          <div style={styles.selectionText}>{selectedCount} record(s) selected for deletion</div>
+          <div style={styles.selectionText}>{selectedCount} record(s) selected for full BOM deletion</div>
           <button
             type="button"
             onClick={handleConfirm}

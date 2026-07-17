@@ -528,10 +528,9 @@ const ReviewSummary = () => {
             <span>RETURN TO MAIN MENU</span>
           </button>
           <button
-            style={{
+              style={{
               ...styles.submitButton,
-              opacity: canSubmit ? 1 : 0.6,
-              cursor: canSubmit ? "pointer" : "not-allowed",
+              ...(canSubmit || isSuccess? styles.submitBtnDisabled : {}),
             }}
             disabled={!canSubmit || isSuccess}
             onClick={handleSubmit}

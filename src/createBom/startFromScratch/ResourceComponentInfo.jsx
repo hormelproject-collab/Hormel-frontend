@@ -29,6 +29,29 @@ const buildBomId = (bomVersion, item, location) =>
   `${bomVersion}_${item}_${location}`;
 const buildRoutingId = (item, location, resource) =>
   `ROUTING_${item}_${resource}`;
+
+const getOriginalBomVersion = (bomId) => {
+  const text = String(bomId ?? "").trim();
+  if (!text) return "";
+  return text.split("_")[0] ?? "";
+};
+
+const getBomVersionFromBomProducedRow = (row = {}) => {
+  const directVersion =
+    row.bom_version ??
+    row.bomVersion ??
+    row.BOM_VERSION ??
+    row.version ??
+    "";
+
+  if (String(directVersion || "").trim()) {
+    return String(directVersion).trim();
+  }
+
+  const bomId = row.bom_id ?? row.bomId ?? row.BOMID ?? row.bomid ?? "";
+  return getOriginalBomVersion(bomId);
+};
+
 const RESOURCE_PAGE_SIZE = 50;
 
 const getResourceRelevancy = (resourceOptions = [], resource) => {
@@ -277,6 +300,8 @@ const ResourceComponentInfo = () => {
 
   const [loadingResourceOptionsByKey, setLoadingResourceOptionsByKey] = useState({});
   const [resourcePageByKey, setResourcePageByKey] = useState({});
+  const [existingBomVersionsByKey, setExistingBomVersionsByKey] = useState({});
+  const [existingBomVersionsLoading, setExistingBomVersionsLoading] = useState(false);
   const [resourceHasNextByKey, setResourceHasNextByKey] = useState({});
   const resourceSearchTimerRef = useRef({});
 
@@ -325,6 +350,77 @@ const ResourceComponentInfo = () => {
       });
     });
   }, [dispatch, producedItems, locations]);
+
+  useEffect(() => {
+    if (producedItems.length === 0 || locations.length === 0) {
+      setExistingBomVersionsByKey({});
+      setExistingBomVersionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadExistingBomVersions = async () => {
+      setExistingBomVersionsLoading(true);
+      try {
+        const response = await fetch("/api/bigquery/table/bom_produced");
+        if (!response.ok) throw new Error(await response.text());
+
+        const payload = await response.json();
+        const rows = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload)
+            ? payload
+            : [];
+
+        const nextVersionsByKey = {};
+
+        producedItems.forEach((item) => {
+          locations.forEach((loc) => {
+            const configKey = buildConfigKey(item.item, loc.location);
+            const producedItem = String(item.item ?? "").trim().toUpperCase();
+            const location = String(loc.location ?? "").trim().toUpperCase();
+
+            const versions = rows
+              .filter((row) => {
+                const rowProducedItem = String(
+                  row.produced_item ??
+                    row.producedItem ??
+                    row.item ??
+                    row.Item ??
+                    ""
+                )
+                  .trim()
+                  .toUpperCase();
+
+                const rowLocation = String(row.location ?? row.Location ?? "")
+                  .trim()
+                  .toUpperCase();
+
+                return rowProducedItem === producedItem && rowLocation === location;
+              })
+              .map(getBomVersionFromBomProducedRow)
+              .filter(Boolean);
+
+            nextVersionsByKey[configKey] = Array.from(new Set(versions));
+          });
+        });
+
+        if (!cancelled) setExistingBomVersionsByKey(nextVersionsByKey);
+      } catch (error) {
+        console.error("Failed to fetch existing BOM versions:", error);
+        if (!cancelled) setExistingBomVersionsByKey({});
+      } finally {
+        if (!cancelled) setExistingBomVersionsLoading(false);
+      }
+    };
+
+    loadExistingBomVersions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [producedItems, locations]);
 
   const loadLazyItemOptions = async ({ rowKey, searchText = "", page = 1, append = false }) => {
     const cleanSearch = String(searchText || "").trim();
@@ -394,7 +490,8 @@ const ResourceComponentInfo = () => {
     hasInactiveItems ||
     hasInactiveLocs ||
     locationsLoading ||
-    resourceMetaLoading;
+    resourceMetaLoading ||
+    existingBomVersionsLoading;
 
   const getConfig = (item, location) => {
     const key = buildConfigKey(item, location);
@@ -421,6 +518,54 @@ const ResourceComponentInfo = () => {
   const handleBOMVersionChange = (item, location, value) => {
     updateConfig(item, location, { bomVersion: value });
   };
+
+  const getBaseBomVersionOptions = () =>
+    bomVersions.length > 0
+      ? bomVersions
+      : ["PRIMARY", ...Array.from({ length: 40 }, (_, index) => `BOM${index + 1}`)];
+
+  const getAvailableBomVersionOptions = (item, location) => {
+    const key = buildConfigKey(item, location);
+    const existingVersionSet = new Set(
+      (existingBomVersionsByKey[key] || []).map((version) =>
+        String(version).trim().toUpperCase()
+      )
+    );
+
+    return getBaseBomVersionOptions().filter(
+      (version) =>
+        !existingVersionSet.has(String(version).trim().toUpperCase())
+    );
+  };
+
+  const isExistingBomVersion = (item, location, version) => {
+    const key = buildConfigKey(item, location);
+    const normalizedVersion = String(version ?? "").trim().toUpperCase();
+    if (!normalizedVersion) return false;
+
+    return (existingBomVersionsByKey[key] || []).some(
+      (existingVersion) =>
+        String(existingVersion).trim().toUpperCase() === normalizedVersion
+    );
+  };
+
+  useEffect(() => {
+    if (existingBomVersionsLoading) return;
+
+    producedItems.forEach((item) => {
+      locations.forEach((loc) => {
+        const config = getConfig(item.item, loc.location);
+        const currentBomVersion = String(config.bomVersion ?? "").trim();
+        if (!currentBomVersion) return;
+
+        const availableOptions = getAvailableBomVersionOptions(item.item, loc.location);
+        if (!availableOptions.includes(currentBomVersion)) {
+          updateConfig(item.item, loc.location, { bomVersion: "" });
+        }
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingBomVersionsByKey, existingBomVersionsLoading, producedItems, locations]);
 
   const loadResourceOptionsFromBomSlice = async ({
     key,
@@ -601,6 +746,9 @@ const ResourceComponentInfo = () => {
         const config = getConfig(item.item, loc.location);
 
         if (!config.bomVersion) return "BOM Version is required for every item and location.";
+        if (isExistingBomVersion(item.item, loc.location, config.bomVersion)) {
+          return `BOM Version ${config.bomVersion} already exists for ${item.item} / ${loc.location}. Please select another version.`;
+        }
         if (!Array.isArray(config.resources) || config.resources.length === 0) {
           return "Please select at least one resource for every Item";
         }
@@ -773,8 +921,13 @@ const ResourceComponentInfo = () => {
                       resource,
                       resourceRelevancy: getResourceRelevancy(resourceOptions, resource),
                     }));
-                    const bomVersion = config.bomVersion || "PRIMARY";
-                    const bomId = buildBomId(bomVersion, item.item, loc.location);
+                    const availableBomVersions = getAvailableBomVersionOptions(item.item, loc.location);
+                    const selectedBomVersion = config.bomVersion || "";
+                    const isSelectedBomVersionAvailable = availableBomVersions.includes(selectedBomVersion);
+                    const bomVersion = isSelectedBomVersionAvailable ? selectedBomVersion : "";
+                    const bomId = bomVersion
+                      ? buildBomId(bomVersion, item.item, loc.location)
+                      : "";
 
                     return (
                       <div key={key} style={styles.locationCard}>
@@ -821,17 +974,29 @@ const ResourceComponentInfo = () => {
                                 <select
                                   style={styles.input}
                                   value={bomVersion}
+                                  disabled={existingBomVersionsLoading || availableBomVersions.length === 0}
                                   onChange={(e) => handleBOMVersionChange(item.item, loc.location, e.target.value)}
                                 >
-                                  {(bomVersions.length > 0
-                                    ? bomVersions
-                                    : ["PRIMARY", ...Array.from({ length: 40 }, (_, index) => `BOM${index + 1}`)]
-                                  ).map((version) => (
+                                  <option value="">
+                                    {existingBomVersionsLoading
+                                      ? "Loading BOM Versions..."
+                                      : "Select BOM Version"}
+                                  </option>
+                                  {availableBomVersions.map((version) => (
                                     <option key={version} value={version}>
                                       {version}
                                     </option>
                                   ))}
                                 </select>
+                                {availableBomVersions.length === 0 && !existingBomVersionsLoading ? (
+                                  <div style={styles.errorHint}>
+                                    No available BOM Version remains for this Produced Item / Location.
+                                  </div>
+                                ) : (
+                                  <div style={styles.helperText}>
+                                    Existing BOM versions for this Produced Item / Location are hidden from this dropdown.
+                                  </div>
+                                )}
                               </div>
                             </div>
 
@@ -1183,6 +1348,7 @@ const styles = {
   inputDisabled: { width: "100%", height: "36px", padding: "0 10px", border: "1px solid #d1d5db", borderRadius: "4px", backgroundColor: "#f3f4f6", color: "#6b7280", boxSizing: "border-box", fontSize: "14px" },
   singleFieldWrap: { marginTop: "10px", maxWidth: "380px" },
   helperText: { marginTop: "4px", fontSize: "11px", color: "#6b7280" },
+  errorHint: { marginTop: "4px", fontSize: "11px", color: "#dc2626" },
   multiSelectWrap: { position: "relative" },
   multiSelectBox: { minHeight: "36px", border: "1px solid #d1d5db", borderRadius: "4px", backgroundColor: "#ffffff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px", gap: "8px", cursor: "pointer" },
   chipsWrap: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: 1 },
